@@ -33,9 +33,12 @@ export const env = {
   affiliateProvider: resolveAffiliateProvider(),
   accesstrade: {
     apiKey: optional("ACCESSTRADE_API_KEY", ""),
+    campaignId: optional("ACCESSTRADE_CAMPAIGN_ID", ""),
     apiBase: optional("ACCESSTRADE_API_BASE", "https://api.accesstrade.vn"),
     endpointPath: optional("ACCESSTRADE_ENDPOINT_PATH", "/v1/product_link/create"),
     timeoutMs: optionalInt("ACCESSTRADE_TIMEOUT_MS", 4000),
+    promotionsMerchant: optional("ACCESSTRADE_PROMOTIONS_MERCHANT", "shopee"),
+    promotionsCacheTtlMs: optionalInt("ACCESSTRADE_PROMOTIONS_CACHE_TTL_MS", 10 * 60 * 1000),
   },
 
   telegramBotToken: optional("TELEGRAM_BOT_TOKEN", ""),
@@ -45,16 +48,26 @@ export const env = {
     windowMs: optionalInt("RATE_LIMIT_WINDOW_MS", 5 * 60 * 1000),
   },
   maxLinksPerMessage: optionalInt("MAX_LINKS_PER_MESSAGE", 5),
+  promotionsDisplayLimit: optionalInt("PROMOTIONS_DISPLAY_LIMIT", 3),
 
   databasePath: optional("DATABASE_PATH", "./data/requests.db"),
 };
 
 export function assertAffiliateProviderConfigured(): void {
-  if (env.affiliateProvider === "accesstrade" && env.accesstrade.apiKey === "") {
+  if (env.affiliateProvider !== "accesstrade") return;
+
+  if (env.accesstrade.apiKey === "") {
     throw new Error(
       "AFFILIATE_PROVIDER=accesstrade nhung thieu ACCESSTRADE_API_KEY. " +
         "Hoan tat T0.1 (dang ky Accesstrade, lay API key) roi dien vao .env, " +
         "hoac dat AFFILIATE_PROVIDER=mock de chay thu."
+    );
+  }
+  if (env.accesstrade.campaignId === "") {
+    throw new Error(
+      "AFFILIATE_PROVIDER=accesstrade nhung thieu ACCESSTRADE_CAMPAIGN_ID. " +
+        "Lay campaign_id cua chien dich Shopee da duoc duyet trong dashboard Accesstrade " +
+        "(muc Campaign/Chien dich) roi dien vao .env."
     );
   }
 }

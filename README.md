@@ -8,7 +8,7 @@ Trien khai theo `spec_bot_ap_ma_shopee.md`. Scope da code trong lan nay:
 - **T1.5** Error handling cho cac failure mode (affiliate API loi/timeout, link hong)
 - **T1.6** Rate limit co ban theo user
 
-Zalo OA Adapter (T1.3) **chua lam** trong lan nay — theo roadmap, cho ho so Zalo OA duoc duyet (T0.3) roi lam sau, vi code chua the test that neu chua co OA.
+Zalo OA Adapter (T1.3) **khong lam** — da quyet dinh bo qua vi thu tuc dang ky Zalo OA phuc tap (T0.3 khong trien khai). Bot chi chay tren Telegram.
 
 Nguon affiliate da chon: **Accesstrade**. Chi phi build va format request/response API cua Accesstrade nam trong `src/core/providers/accesstradeProvider.ts` — co ghi chu ro can doi chieu lai voi tai lieu API chinh thuc trong dashboard Accesstrade cua ban truoc khi chay that, vi minh chua co credentials that de xac minh 100% field response.
 
@@ -82,9 +82,9 @@ src/
   index.ts                     wiring + khoi dong
 ```
 
-## Chua lam (ngoai scope Phase 1, theo spec)
+## Khong lam (ngoai scope, theo quyet dinh cua chu du an)
 
-- Zalo OA Adapter (T1.3, Phase 2) — cho T0.3 duyet.
+- Zalo OA Adapter (T1.3, Phase 2) — bo qua, khong dang ky Zalo OA vi thu tuc phuc tap.
 - Dashboard thong ke (T1.7, Phase 3).
 - Tra cuu voucher tu dong.
 - Phat hien nganh hang bi loai tru khoi hoa hong Shopee/Accesstrade — neu Accesstrade tra loi/that bai cho truong hop nay, bot se bao loi chung chung (T1.5) thay vi bao chi tiet ly do.

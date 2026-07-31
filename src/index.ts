@@ -30,7 +30,12 @@ if (env.telegramBotToken === "") {
       "Hoan tat T0.2 va dien TELEGRAM_BOT_TOKEN vao .env de bat bot."
   );
 } else {
-  telegramBot = createTelegramBot(resolver, env.telegramBotToken, env.maxLinksPerMessage);
+  telegramBot = createTelegramBot(
+    resolver,
+    env.telegramBotToken,
+    env.maxLinksPerMessage,
+    env.promotionsDisplayLimit
+  );
   telegramBot.launch();
   console.log("[telegram] Bot dang chay (long polling)");
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { AffiliateProvider } from "./affiliateProvider.js";
+import type { AffiliateProvider, PromotionItem } from "./affiliateProvider.js";
 import { AppError, RateLimitedError } from "./errors.js";
 import { LogStore } from "./logStore.js";
 import { parseShopeeLink } from "./linkValidator.js";
@@ -73,5 +73,10 @@ export class LinkResolverService {
       });
       throw appError;
     }
+  }
+
+  /** Danh sach khuyen mai Shopee dang chay chung (khong gan voi 1 san pham cu the). */
+  async getPromotions(limit: number): Promise<PromotionItem[]> {
+    return this.provider.getPromotions(limit);
   }
 }

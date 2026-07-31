@@ -3,12 +3,38 @@ import { message } from "telegraf/filters";
 import { AppError } from "../../core/errors.js";
 import { extractShopeeUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
+import type { PromotionItem } from "../../core/affiliateProvider.js";
 
 const USAGE_TEXT =
-  "Gui cho minh 1 link san pham Shopee (vi du: https://shopee.vn/...-i.123.456), " +
-  "minh se tra ve link rut gon cho ban.";
+  "👋 Gửi cho mình link sản phẩm Shopee (ví dụ: https://shopee.vn/...-i.123.456), " +
+  "mình sẽ trả về link áp mã cho bạn.";
 
-export function createTelegramBot(resolver: LinkResolverService, token: string, maxLinksPerMessage: number) {
+function formatSuccessReply(affiliateUrl: string): string {
+  return `👉 Link áp mã Shopee 22%: ${affiliateUrl}\n✅ Bấm vào link để nhận mã ưu đãi giảm sâu nhất`;
+}
+
+function formatErrorReply(userMessage: string): string {
+  return `❌ ${userMessage}`;
+}
+
+function formatSkippedReply(processedCount: number, skippedCount: number): string {
+  return `⚠️ Chỉ xử lý ${processedCount} link đầu tiên, bỏ qua ${skippedCount} link còn lại.`;
+}
+
+function formatPromotionsReply(items: PromotionItem[]): string {
+  const lines = items.map((item) => `- [${item.couponCode}] ${item.description}`);
+  return (
+    `🎟️ Mã giảm giá Shopee đang chạy (chung, không đảm bảo áp dụng cho sản phẩm này):\n` +
+    lines.join("\n")
+  );
+}
+
+export function createTelegramBot(
+  resolver: LinkResolverService,
+  token: string,
+  maxLinksPerMessage: number,
+  promotionsLimit: number
+) {
   const bot = new Telegraf(token);
 
   bot.start((ctx) => ctx.reply(USAGE_TEXT));
@@ -28,19 +54,37 @@ export function createTelegramBot(resolver: LinkResolverService, token: string, 
     const userId = String(ctx.from.id);
     const linksToProcess = links.slice(0, maxLinksPerMessage);
     const skippedCount = links.length - linksToProcess.length;
+    let successCount = 0;
 
     for (const rawUrl of linksToProcess) {
       try {
         const result = await resolver.resolve({ url: rawUrl, platform: "telegram", userId });
-        await ctx.reply(`Link affiliate: ${result.affiliateUrl}`, { reply_parameters: { message_id: ctx.message.message_id } });
+        successCount++;
+        await ctx.reply(formatSuccessReply(result.affiliateUrl), {
+          reply_parameters: { message_id: ctx.message.message_id },
+        });
       } catch (err) {
-        const message = err instanceof AppError ? err.userMessage : "Da co loi khong xac dinh, vui long thu lai sau.";
-        await ctx.reply(message, { reply_parameters: { message_id: ctx.message.message_id } });
+        const userMessage =
+          err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
+        await ctx.reply(formatErrorReply(userMessage), {
+          reply_parameters: { message_id: ctx.message.message_id },
+        });
       }
     }
 
     if (skippedCount > 0) {
-      await ctx.reply(`Chi xu ly ${maxLinksPerMessage} link dau tien, bo qua ${skippedCount} link con lai.`);
+      await ctx.reply(formatSkippedReply(linksToProcess.length, skippedCount));
+    }
+
+    if (successCount > 0 && promotionsLimit > 0) {
+      try {
+        const promotions = await resolver.getPromotions(promotionsLimit);
+        if (promotions.length > 0) {
+          await ctx.reply(formatPromotionsReply(promotions));
+        }
+      } catch (err) {
+        console.warn("[telegram] khong lay duoc danh sach khuyen mai:", (err as Error).message);
+      }
     }
   });
 
