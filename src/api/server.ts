@@ -2,9 +2,11 @@ import express, { type Request, type Response, type NextFunction } from "express
 import { AppError } from "../core/errors.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
 import type { LogStore } from "../core/logStore.js";
+import { MERCHANTS, type MerchantId } from "../core/merchants.js";
 import type { Platform } from "../core/types.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
+const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
 
 export function createServer(resolver: LinkResolverService, logStore: LogStore) {
   const app = express();
@@ -43,13 +45,17 @@ export function createServer(resolver: LinkResolverService, logStore: LogStore) 
     }
   });
 
-  // T1.4 acceptance: query lai lich su theo ngay/platform.
+  // T1.4 acceptance: query lai lich su theo ngay/platform/merchant.
   app.get("/api/v1/logs", (req: Request, res: Response) => {
     const from = typeof req.query.from === "string" ? req.query.from : undefined;
     const to = typeof req.query.to === "string" ? req.query.to : undefined;
     const platform =
       typeof req.query.platform === "string" && VALID_PLATFORMS.includes(req.query.platform as Platform)
         ? (req.query.platform as Platform)
+        : undefined;
+    const merchant =
+      typeof req.query.merchant === "string" && VALID_MERCHANTS.includes(req.query.merchant as MerchantId)
+        ? (req.query.merchant as MerchantId)
         : undefined;
 
     if (!from || !to) {
@@ -60,7 +66,7 @@ export function createServer(resolver: LinkResolverService, logStore: LogStore) 
       return;
     }
 
-    const entries = logStore.queryByDateRange(from, to, platform);
+    const entries = logStore.queryByDateRange(from, to, platform, merchant);
     res.status(200).json({ success: true, data: entries });
   });
 

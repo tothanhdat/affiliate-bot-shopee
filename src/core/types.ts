@@ -1,7 +1,10 @@
+import type { MerchantId } from "./merchants.js";
+
 export type Platform = "telegram" | "zalo" | "http";
 
-export interface ParsedShopeeLink {
-  /** URL Shopee sau khi da resolve short domain (neu co) */
+export interface ParsedProductLink {
+  merchant: MerchantId;
+  /** URL san pham sau khi da resolve short domain (neu co) */
   canonicalUrl: string;
   shopId: string | null;
   itemId: string | null;
@@ -15,6 +18,7 @@ export interface ResolveLinkRequest {
 }
 
 export interface ResolveLinkResult {
+  merchant: MerchantId;
   originalUrl: string;
   canonicalUrl: string;
   affiliateUrl: string;
@@ -29,6 +33,8 @@ export interface RequestLogEntry {
   id: string;
   timestamp: string;
   platform: Platform;
+  /** null khi loi xay ra truoc khi xac dinh duoc merchant (vi du URL khong hop le) */
+  merchant: MerchantId | null;
   userId: string;
   originalUrl: string;
   subId: string | null;

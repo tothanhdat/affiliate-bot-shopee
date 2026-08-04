@@ -12,7 +12,13 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "paths": {
+      // zca-js root index.d.ts lam "export * from \"./dist\"" thieu duong dan file
+      // day du, khong resolve duoc duoi moduleResolution NodeNext. Tro thang toi
+      // dist/index.d.ts (co day du .js extension) de fix, khong anh huong runtime.
+      "zca-js": ["./node_modules/zca-js/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

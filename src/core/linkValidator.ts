@@ -1,35 +1,24 @@
-import { InvalidLinkError, NotShopeeLinkError } from "./errors.js";
-import type { ParsedShopeeLink } from "./types.js";
-
-const SHOPEE_HOST_PATTERN = /(^|\.)shopee\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i;
-const SHOPEE_SHORT_HOSTS = new Set(["s.shopee.vn", "shp.ee", "vn.shp.ee"]);
+import { InvalidLinkError, UnsupportedMerchantLinkError } from "./errors.js";
+import { detectMerchantByHost, type MerchantConfig } from "./merchants.js";
+import type { ParsedProductLink } from "./types.js";
 
 const URL_IN_TEXT_PATTERN = /https?:\/\/[^\s<>"']+/gi;
 
-/** Tim tat ca URL Shopee (bao gom short link) trong 1 doan text tin nhan. */
-export function extractShopeeUrls(text: string): string[] {
+/** Tim tat ca URL cua cac merchant duoc ho tro (bao gom short link) trong 1 doan text tin nhan. */
+export function extractProductUrls(text: string): string[] {
   const matches = text.match(URL_IN_TEXT_PATTERN) ?? [];
   return matches.filter((raw) => {
     try {
-      const host = new URL(raw).hostname.toLowerCase();
-      return SHOPEE_HOST_PATTERN.test(host) || SHOPEE_SHORT_HOSTS.has(host);
+      const host = new URL(raw).hostname;
+      return detectMerchantByHost(host) !== null;
     } catch {
       return false;
     }
   });
 }
 
-function isShopeeHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return SHOPEE_HOST_PATTERN.test(host) || SHOPEE_SHORT_HOSTS.has(host);
-}
-
-function isShopeeShortHost(hostname: string): boolean {
-  return SHOPEE_SHORT_HOSTS.has(hostname.toLowerCase());
-}
-
 /**
- * Short link Shopee (s.shopee.vn, shp.ee) khong chua shop_id/item_id truc tiep trong URL,
+ * Short link (vi du s.shopee.vn, shp.ee) khong chua shop_id/item_id truc tiep trong URL,
  * can theo redirect de lay URL that. Dung HEAD truoc, fallback GET neu server khong ho tro HEAD.
  */
 async function resolveRedirect(shortUrl: string): Promise<string> {
@@ -44,12 +33,20 @@ async function resolveRedirect(shortUrl: string): Promise<string> {
     await res.body?.cancel();
     if (res.url) return res.url;
   } catch (err) {
-    throw new InvalidLinkError("khong the mo short link (co the da het han hoac mang loi)");
+    throw new InvalidLinkError("không thể mở short link (có thể đã hết hạn hoặc mạng lỗi)");
   }
   throw new InvalidLinkError("khong the mo short link (co the da het han hoac mang loi)");
 }
 
-function extractIds(url: URL): { shopId: string | null; itemId: string | null } {
+/**
+ * Tach shop_id/item_id tu URL - hien chi xac minh pattern cho Shopee. Voi merchant
+ * khac (vi du Lazada) chua co pattern duoc kiem chung, tra ve null thay vi doan mo.
+ * Khong tach duoc id khong phai loi - metadata nay la optional (xem ResolveLinkResult).
+ */
+function extractIds(merchant: MerchantConfig, url: URL): { shopId: string | null; itemId: string | null } {
+  if (merchant.id !== "shopee") {
+    return { shopId: null, itemId: null };
+  }
   // Dang: /ten-san-pham-i.{shopId}.{itemId}
   const iPatternMatch = url.pathname.match(/-i\.(\d+)\.(\d+)(?:$|[/?])/);
   if (iPatternMatch) {
@@ -64,36 +61,37 @@ function extractIds(url: URL): { shopId: string | null; itemId: string | null } 
 }
 
 /**
- * Validate + chuan hoa 1 link Shopee tho thanh canonical URL kem shop_id/item_id (neu tach duoc).
- * Khong tach duoc id khong phai loi - co the la link shop/category, van chuyen tiep sang buoc tao affiliate link.
+ * Validate + chuan hoa 1 link san pham tho thanh canonical URL kem merchant + shop_id/item_id (neu tach duoc).
  */
-export async function parseShopeeLink(rawUrl: string): Promise<ParsedShopeeLink> {
+export async function parseProductLink(rawUrl: string): Promise<ParsedProductLink> {
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
-    throw new InvalidLinkError("khong phai URL hop le");
+    throw new InvalidLinkError("không phải URL hợp lệ");
   }
 
-  if (!isShopeeHost(url.hostname)) {
-    throw new NotShopeeLinkError();
+  const merchant = detectMerchantByHost(url.hostname);
+  if (!merchant) {
+    throw new UnsupportedMerchantLinkError();
   }
 
-  if (isShopeeShortHost(url.hostname)) {
+  if (merchant.shortHosts.has(url.hostname.toLowerCase())) {
     const resolvedUrl = await resolveRedirect(rawUrl);
     let resolved: URL;
     try {
       resolved = new URL(resolvedUrl);
     } catch {
-      throw new InvalidLinkError("short link tra ve URL khong hop le");
+      throw new InvalidLinkError("short link trả về URL không hợp lệ");
     }
-    if (!isShopeeHost(resolved.hostname)) {
-      throw new NotShopeeLinkError();
+    const resolvedMerchant = detectMerchantByHost(resolved.hostname);
+    if (!resolvedMerchant) {
+      throw new UnsupportedMerchantLinkError();
     }
-    const { shopId, itemId } = extractIds(resolved);
-    return { canonicalUrl: resolved.toString(), shopId, itemId };
+    const { shopId, itemId } = extractIds(resolvedMerchant, resolved);
+    return { merchant: resolvedMerchant.id, canonicalUrl: resolved.toString(), shopId, itemId };
   }
 
-  const { shopId, itemId } = extractIds(url);
-  return { canonicalUrl: url.toString(), shopId, itemId };
+  const { shopId, itemId } = extractIds(merchant, url);
+  return { merchant: merchant.id, canonicalUrl: url.toString(), shopId, itemId };
 }

@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import type { MerchantId } from "./merchants.js";
 import type { Platform, RequestLogEntry, RequestOutcome } from "./types.js";
 
 export class LogStore {
@@ -17,6 +18,7 @@ export class LogStore {
         id TEXT PRIMARY KEY,
         timestamp TEXT NOT NULL,
         platform TEXT NOT NULL,
+        merchant TEXT,
         user_id TEXT NOT NULL,
         original_url TEXT NOT NULL,
         sub_id TEXT,
@@ -27,6 +29,19 @@ export class LogStore {
       CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
       CREATE INDEX IF NOT EXISTS idx_requests_platform ON requests(platform);
     `);
+    // Phai chay TRUOC khi tao index tren cot merchant - DB tao truoc khi co field nay se
+    // chua thieu cot, va CREATE INDEX se loi "no such column" neu chay truoc migration.
+    this.migrateAddMerchantColumn();
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_merchant ON requests(merchant);`);
+  }
+
+  /** DB tao truoc khi co field merchant se thieu cot nay - them vao neu chua co, khong mat du lieu cu. */
+  private migrateAddMerchantColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>;
+    const hasMerchantColumn = columns.some((col) => col.name === "merchant");
+    if (!hasMerchantColumn) {
+      this.db.exec("ALTER TABLE requests ADD COLUMN merchant TEXT");
+    }
   }
 
   record(entry: Omit<RequestLogEntry, "id" | "timestamp"> & { timestamp?: string }): RequestLogEntry {
@@ -34,6 +49,7 @@ export class LogStore {
       id: randomUUID(),
       timestamp: entry.timestamp ?? new Date().toISOString(),
       platform: entry.platform,
+      merchant: entry.merchant,
       userId: entry.userId,
       originalUrl: entry.originalUrl,
       subId: entry.subId,
@@ -45,13 +61,14 @@ export class LogStore {
     this.db
       .prepare(
         `INSERT INTO requests
-          (id, timestamp, platform, user_id, original_url, sub_id, outcome, error_code, affiliate_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          (id, timestamp, platform, merchant, user_id, original_url, sub_id, outcome, error_code, affiliate_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         full.id,
         full.timestamp,
         full.platform,
+        full.merchant,
         full.userId,
         full.originalUrl,
         full.subId,
@@ -63,24 +80,30 @@ export class LogStore {
     return full;
   }
 
-  /** Lay log theo khoang ngay (ISO date, vi du "2026-07-31"), loc theo platform neu co. */
+  /** Lay log theo khoang ngay (ISO date, vi du "2026-07-31"), loc theo platform/merchant neu co. */
   queryByDateRange(
     fromDateInclusive: string,
     toDateInclusive: string,
-    platform?: Platform
+    platform?: Platform,
+    merchant?: MerchantId
   ): RequestLogEntry[] {
     const from = `${fromDateInclusive}T00:00:00.000Z`;
     const to = `${toDateInclusive}T23:59:59.999Z`;
 
-    const rows = platform
-      ? this.db
-          .prepare(
-            `SELECT * FROM requests WHERE timestamp BETWEEN ? AND ? AND platform = ? ORDER BY timestamp DESC`
-          )
-          .all(from, to, platform)
-      : this.db
-          .prepare(`SELECT * FROM requests WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC`)
-          .all(from, to);
+    const conditions = ["timestamp BETWEEN ? AND ?"];
+    const params: (string | number)[] = [from, to];
+    if (platform) {
+      conditions.push("platform = ?");
+      params.push(platform);
+    }
+    if (merchant) {
+      conditions.push("merchant = ?");
+      params.push(merchant);
+    }
+
+    const rows = this.db
+      .prepare(`SELECT * FROM requests WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC`)
+      .all(...params);
 
     return rows.map(rowToEntry);
   }
@@ -96,6 +119,7 @@ function rowToEntry(row: unknown): RequestLogEntry {
     id: r.id as string,
     timestamp: r.timestamp as string,
     platform: r.platform as Platform,
+    merchant: (r.merchant as MerchantId | null) ?? null,
     userId: r.user_id as string,
     originalUrl: r.original_url as string,
     subId: (r.sub_id as string | null) ?? null,

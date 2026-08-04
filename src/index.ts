@@ -1,6 +1,7 @@
 import { env } from "./config/env.js";
 import { createServer } from "./api/server.js";
 import { createTelegramBot } from "./adapters/telegram/bot.js";
+import { createZaloGroupBot, type ZaloGroupBot } from "./adapters/zalo/bot.js";
 import { LogStore } from "./core/logStore.js";
 import { LinkResolverService } from "./core/linkResolverService.js";
 import { RateLimiter } from "./core/rateLimiter.js";
@@ -40,9 +41,29 @@ if (env.telegramBotToken === "") {
   console.log("[telegram] Bot dang chay (long polling)");
 }
 
+let zaloBot: ZaloGroupBot | null = null;
+if (!env.zaloGroup.enabled) {
+  console.warn(
+    "[warn] ZALO_GROUP_ENABLED khac true - bo qua khoi dong Zalo Adapter. " +
+      "Day la tinh nang tu dong hoa tai khoan Zalo ca nhan (khong chinh thuc), dat true trong .env neu muon bat."
+  );
+} else {
+  zaloBot = createZaloGroupBot(resolver, {
+    sessionPath: env.zaloGroup.sessionPath,
+    qrPath: env.zaloGroup.qrPath,
+    maxLinksPerMessage: env.maxLinksPerMessage,
+    promotionsLimit: env.promotionsDisplayLimit,
+  });
+  zaloBot.start().then(
+    () => console.log("[zalo] Bot dang chay"),
+    (err: unknown) => console.error("[zalo] Khong the khoi dong Zalo Adapter:", err)
+  );
+}
+
 async function shutdown(signal: string): Promise<void> {
   console.log(`\n[shutdown] Nhan ${signal}, dang dong service...`);
   telegramBot?.stop(signal);
+  zaloBot?.stop();
   rateLimiter.stop();
   await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   logStore.close();

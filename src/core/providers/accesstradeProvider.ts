@@ -1,4 +1,5 @@
-import { AffiliateApiError, AffiliateApiTimeoutError } from "../errors.js";
+import { AffiliateApiError, AffiliateApiTimeoutError, MerchantNotConfiguredError } from "../errors.js";
+import { getMerchantConfig, type MerchantId } from "../merchants.js";
 import type {
   AffiliateProvider,
   CreateAffiliateLinkInput,
@@ -6,23 +7,30 @@ import type {
   PromotionItem,
 } from "../affiliateProvider.js";
 
+export interface AccesstradeMerchantConfig {
+  /** campaign_id da duoc duyet trong dashboard Accesstrade cho merchant nay */
+  campaignId: string;
+  /** ten merchant dung cho API khuyen mai (vi du "shopee", "lazada_kol") */
+  promotionsMerchant: string;
+}
+
 export interface AccesstradeProviderConfig {
   apiKey: string;
-  campaignId: string;
   apiBase: string;
   endpointPath: string;
   timeoutMs: number;
-  /** ten merchant dung cho API khuyen mai (xac minh that: "shopee") */
-  promotionsMerchant: string;
   /** thoi gian cache danh sach khuyen mai trong bo nho, tranh goi API lai moi tin nhan */
   promotionsCacheTtlMs: number;
+  /** config rieng tung merchant - merchant khong co trong map se bi tu choi voi loi ro rang */
+  merchants: Partial<Record<MerchantId, AccesstradeMerchantConfig>>;
 }
 
 /**
  * Da xac minh voi API that (2026-07-31): endpoint can them field "campaign_id"
  * trong body, neu khong Accesstrade tra ve 400 {"message": {"campaign_id":
- * ["Missing data for required field."]}}. campaign_id la id chien dich Shopee
- * da duoc duyet trong dashboard Accesstrade (muc Campaign), khac voi API key.
+ * ["Missing data for required field."]}}. campaign_id la id chien dich da duoc
+ * duyet trong dashboard Accesstrade (muc Campaign), khac voi API key, va rieng
+ * cho tung merchant (Shopee, Lazada... moi merchant 1 campaign khac nhau).
  *
  * Ham parse response co chu y nhieu ten field co the co (short_link / aff_link /
  * shortLink) de giam rui ro vo hieu neu ten field thuc te khac mot chut, nhung
@@ -30,13 +38,22 @@ export interface AccesstradeProviderConfig {
  * thay vi crash (dung theo T1.1/T1.5).
  */
 export class AccesstradeProvider implements AffiliateProvider {
-  private promotionsCache: { fetchedAt: number; items: PromotionItem[] } | null = null;
+  private readonly promotionsCache = new Map<MerchantId, { fetchedAt: number; items: PromotionItem[] }>();
 
   constructor(private readonly config: AccesstradeProviderConfig) {}
+
+  private requireMerchantConfig(merchant: MerchantId): AccesstradeMerchantConfig {
+    const merchantConfig = this.config.merchants[merchant];
+    if (!merchantConfig || merchantConfig.campaignId === "") {
+      throw new MerchantNotConfiguredError(getMerchantConfig(merchant).displayName);
+    }
+    return merchantConfig;
+  }
 
   async createAffiliateLink(
     input: CreateAffiliateLinkInput
   ): Promise<CreateAffiliateLinkOutput> {
+    const merchantConfig = this.requireMerchantConfig(input.merchant);
     const endpoint = new URL(this.config.endpointPath, this.config.apiBase);
 
     const controller = new AbortController();
@@ -52,7 +69,7 @@ export class AccesstradeProvider implements AffiliateProvider {
         },
         body: JSON.stringify({
           url: input.productUrl,
-          campaign_id: this.config.campaignId,
+          campaign_id: merchantConfig.campaignId,
           utm_source: "bot-shopee",
           utm_content: input.subId,
         }),
@@ -95,17 +112,17 @@ export class AccesstradeProvider implements AffiliateProvider {
    * co field "so luot con lai" - Accesstrade khong cung cap du lieu nay, nen
    * PromotionItem chi co couponCode + description (da chua % giam san trong text).
    */
-  async getPromotions(limit: number): Promise<PromotionItem[]> {
+  async getPromotions(merchant: MerchantId, limit: number): Promise<PromotionItem[]> {
+    const merchantConfig = this.requireMerchantConfig(merchant);
+
     const now = Date.now();
-    if (
-      this.promotionsCache &&
-      now - this.promotionsCache.fetchedAt < this.config.promotionsCacheTtlMs
-    ) {
-      return this.promotionsCache.items.slice(0, limit);
+    const cached = this.promotionsCache.get(merchant);
+    if (cached && now - cached.fetchedAt < this.config.promotionsCacheTtlMs) {
+      return cached.items.slice(0, limit);
     }
 
     const endpoint = new URL("/v1/offers_informations", this.config.apiBase);
-    endpoint.searchParams.set("merchant", this.config.promotionsMerchant);
+    endpoint.searchParams.set("merchant", merchantConfig.promotionsMerchant);
     endpoint.searchParams.set("status", "1");
     // Luu y: param "coupon=1" (theo tai lieu) tra ve rong khi xac minh that (2026-07-31),
     // du item van co field coupons. Khong dung param nay - loc coupons rong o extractPromotionItems.
@@ -142,7 +159,7 @@ export class AccesstradeProvider implements AffiliateProvider {
     }
 
     const items = extractPromotionItems(json);
-    this.promotionsCache = { fetchedAt: now, items };
+    this.promotionsCache.set(merchant, { fetchedAt: now, items });
     return items.slice(0, limit);
   }
 }

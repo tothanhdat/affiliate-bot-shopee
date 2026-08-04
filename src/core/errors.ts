@@ -1,6 +1,7 @@
 export type ErrorCode =
   | "INVALID_LINK"
-  | "NOT_SHOPEE_LINK"
+  | "UNSUPPORTED_MERCHANT_LINK"
+  | "MERCHANT_NOT_CONFIGURED"
   | "AFFILIATE_API_ERROR"
   | "AFFILIATE_API_TIMEOUT"
   | "RATE_LIMITED";
@@ -21,13 +22,25 @@ export class AppError extends Error {
 
 export class InvalidLinkError extends AppError {
   constructor(reason: string) {
-    super("INVALID_LINK", `Link khong hop le: ${reason}`);
+    super("INVALID_LINK", `Link không hợp lệ: ${reason}`);
   }
 }
 
-export class NotShopeeLinkError extends AppError {
+export class UnsupportedMerchantLinkError extends AppError {
   constructor() {
-    super("NOT_SHOPEE_LINK", "Link nay khong phai link Shopee.");
+    super(
+      "UNSUPPORTED_MERCHANT_LINK",
+      "Link này không thuộc sàn (Shopee, Lazada) mà bot đang hỗ trợ."
+    );
+  }
+}
+
+export class MerchantNotConfiguredError extends AppError {
+  constructor(merchantDisplayName: string) {
+    super(
+      "MERCHANT_NOT_CONFIGURED",
+      `Hệ thống chưa được cấu hình để tạo link affiliate cho ${merchantDisplayName}, vui lòng thử lại sau.`
+    );
   }
 }
 
@@ -35,7 +48,7 @@ export class AffiliateApiError extends AppError {
   constructor(detail: string, cause?: unknown) {
     super(
       "AFFILIATE_API_ERROR",
-      "He thong affiliate dang gap su co, vui long thu lai sau it phut.",
+      "Hệ thống affiliate đang gặp sự cố, vui lòng thử lại sau ít phút.",
       cause
     );
     this.message = `Affiliate API error: ${detail}`;
@@ -46,7 +59,7 @@ export class AffiliateApiTimeoutError extends AppError {
   constructor() {
     super(
       "AFFILIATE_API_TIMEOUT",
-      "He thong affiliate phan hoi qua cham, vui long thu lai."
+      "Hệ thống affiliate phản hồi quá chậm, vui lòng thử lại."
     );
   }
 }
@@ -55,7 +68,7 @@ export class RateLimitedError extends AppError {
   constructor(retryAfterSeconds: number) {
     super(
       "RATE_LIMITED",
-      `Ban gui yeu cau qua nhanh, vui long thu lai sau ${retryAfterSeconds} giay.`
+      `Bạn gửi yêu cầu quá nhanh, vui lòng thử lại sau ${retryAfterSeconds} giây.`
     );
   }
 }

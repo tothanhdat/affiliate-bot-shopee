@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import type { AffiliateProvider, PromotionItem } from "./affiliateProvider.js";
 import { AppError, RateLimitedError } from "./errors.js";
 import { LogStore } from "./logStore.js";
-import { parseShopeeLink } from "./linkValidator.js";
+import { parseProductLink } from "./linkValidator.js";
+import type { MerchantId } from "./merchants.js";
 import { RateLimiter } from "./rateLimiter.js";
 import type { Platform, ResolveLinkRequest, ResolveLinkResult } from "./types.js";
 
@@ -35,15 +36,17 @@ export class LinkResolverService {
     }
 
     try {
-      const parsed = await parseShopeeLink(request.url);
+      const parsed = await parseProductLink(request.url);
       const subId = generateSubId(request.platform, request.userId);
       const { affiliateUrl } = await this.provider.createAffiliateLink({
+        merchant: parsed.merchant,
         productUrl: parsed.canonicalUrl,
         subId,
       });
 
       this.logStore.record({
         platform: request.platform,
+        merchant: parsed.merchant,
         userId: request.userId,
         originalUrl: request.url,
         subId,
@@ -53,6 +56,7 @@ export class LinkResolverService {
       });
 
       return {
+        merchant: parsed.merchant,
         originalUrl: request.url,
         canonicalUrl: parsed.canonicalUrl,
         affiliateUrl,
@@ -64,6 +68,8 @@ export class LinkResolverService {
       const appError = toAppError(err);
       this.logStore.record({
         platform: request.platform,
+        // Loi thuong xay ra truoc/trong luc xac dinh merchant (URL sai, khong ho tro...) nen chua biet merchant.
+        merchant: null,
         userId: request.userId,
         originalUrl: request.url,
         subId: null,
@@ -75,8 +81,8 @@ export class LinkResolverService {
     }
   }
 
-  /** Danh sach khuyen mai Shopee dang chay chung (khong gan voi 1 san pham cu the). */
-  async getPromotions(limit: number): Promise<PromotionItem[]> {
-    return this.provider.getPromotions(limit);
+  /** Danh sach khuyen mai dang chay chung cua 1 merchant (khong gan voi 1 san pham cu the). */
+  async getPromotions(merchant: MerchantId, limit: number): Promise<PromotionItem[]> {
+    return this.provider.getPromotions(merchant, limit);
   }
 }

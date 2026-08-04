@@ -9,12 +9,11 @@ export function createAffiliateProvider(): AffiliateProvider {
   if (env.affiliateProvider === "accesstrade") {
     return new AccesstradeProvider({
       apiKey: env.accesstrade.apiKey,
-      campaignId: env.accesstrade.campaignId,
       apiBase: env.accesstrade.apiBase,
       endpointPath: env.accesstrade.endpointPath,
       timeoutMs: env.accesstrade.timeoutMs,
-      promotionsMerchant: env.accesstrade.promotionsMerchant,
       promotionsCacheTtlMs: env.accesstrade.promotionsCacheTtlMs,
+      merchants: env.accesstrade.merchants,
     });
   }
 
