@@ -119,10 +119,10 @@ thuế       = commissionAmount × 10%
 sau thuế   = commissionAmount − thuế
 phí sàn    = sau thuế × 1%
 sau phí    = sau thuế − phí sàn
-user nhận  = sau phí × 80%
+user nhận  = sau phí × 90%   (đổi từ 80% ngày 2026-08-19, chủ bot giữ 10% thay vì 20%)
 ```
 
-Ví dụ với `commissionAmount = 15.000đ`: thuế 1.500đ → sau thuế 13.500đ → phí sàn 135đ → sau phí 13.365đ → **user nhận 10.692đ**.
+Ví dụ với `commissionAmount = 15.000đ`: thuế 1.500đ → sau thuế 13.500đ → phí sàn 135đ → sau phí 13.365đ → **user nhận 12.029đ**.
 
 3. Chặn ghi trùng: nếu `orderId` đã tồn tại cho đúng `merchant` đó, báo lỗi thay vì cộng 2 lần.
 
@@ -203,7 +203,7 @@ npx tsx src/scripts/ledgerAdmin.ts reverse-entry --id=<id đơn> --reason="khác
 | `tax_amount` | Thuế đã trừ (10%) | `1.500đ` |
 | `platform_fee_amount` | Phí sàn đã trừ (1% trên phần sau thuế) | `135đ` |
 | `after_tax_amount` | Còn lại sau thuế + phí | `13.365đ` |
-| `user_share_amount` | User thực nhận (80% của trên) | `10.692đ` |
+| `user_share_amount` | User thực nhận (90% của trên) | `12.029đ` |
 | `status` | `confirmed` / `paid` / `reversed` | `confirmed` |
 | `withdrawal_id` | Gắn với yêu cầu rút nào (null = chưa rút) | `null` |
 | `note` | Ghi chú nội bộ, không hiện cho user | `null` |
@@ -240,25 +240,25 @@ Giả định: group Zalo "Săn Sale ABC" có 100 thành viên dùng bot trong t
 
 **User "Minh Khuê" (Telegram, userId `566659887`)** — gửi 6 link trong tháng, có 2 đơn TikTok Shop thật:
 
-| Đơn | Hoa hồng gốc | Thuế (10%) | Phí sàn (1%) | User nhận (80%) |
+| Đơn | Hoa hồng gốc | Thuế (10%) | Phí sàn (1%) | User nhận (90%) |
 |---|---|---|---|---|
-| TT2608001 | 15.000đ | 1.500đ | 135đ | **10.692đ** |
-| TT2608014 | 9.000đ | 900đ | 81đ | **6.415đ** |
-| **Tổng** | | | | **17.107đ** |
+| TT2608001 | 15.000đ | 1.500đ | 135đ | **12.029đ** |
+| TT2608014 | 9.000đ | 900đ | 81đ | **7.217đ** |
+| **Tổng** | | | | **19.246đ** |
 
-→ Chưa đạt 50.000đ, dashboard hiện "Tích luỹ thêm 32.893đ nữa để đủ điều kiện rút". User này chỉ dùng bot xem tiến độ, chưa rút được.
+→ Chưa đạt 50.000đ, dashboard hiện "Tích luỹ thêm 30.754đ nữa để đủ điều kiện rút". User này chỉ dùng bot xem tiến độ, chưa rút được.
 
 **User "Thành Đạt" (Telegram, userId `900001`)** — 2 đơn Shopee:
 
 | Đơn | Hoa hồng gốc | Thuế | Phí sàn | User nhận |
 |---|---|---|---|---|
-| SP2608005 | 45.000đ | 4.500đ | 405đ | **32.076đ** |
-| SP2608022 | 30.000đ | 3.000đ | 270đ | **21.384đ** |
-| **Tổng** | | | | **53.460đ** |
+| SP2608005 | 45.000đ | 4.500đ | 405đ | **36.086đ** |
+| SP2608022 | 30.000đ | 3.000đ | 270đ | **24.057đ** |
+| **Tổng** | | | | **60.143đ** |
 
-→ Vượt 50.000đ! User nhắn `"idid"`, vào dashboard, bấm "Yêu cầu rút 53.460đ" → cả 2 dòng trên bị khoá (`withdrawal_id` được gán). Admin nhận thông báo Telegram, nhắn hỏi STK, chuyển khoản, chạy `mark-withdrawal-paid` → cả 2 dòng chuyển "đã nhận", user không rút trùng được nữa cho tới khi có đơn mới tích luỹ tiếp.
+→ Vượt 50.000đ! User nhắn `"idid"`, vào dashboard, bấm "Yêu cầu rút 60.143đ" → cả 2 dòng trên bị khoá (`withdrawal_id` được gán). Admin nhận thông báo Telegram, nhắn hỏi STK, chuyển khoản, chạy `mark-withdrawal-paid` → cả 2 dòng chuyển "đã nhận", user không rút trùng được nữa cho tới khi có đơn mới tích luỹ tiếp.
 
-**User "Hồng Anh" (Zalo, userId `700002`)** — 1 đơn Lazada 20.000đ hoa hồng gốc, đã ghi nhận (`user nhận` ước tính ~11.976đ) — nhưng 2 tuần sau khách trả hàng, admin phát hiện qua Accesstrade, chạy `reverse-entry`. Dòng này chuyển "đã huỷ", **không tính vào số dư của Hồng Anh nữa** — nếu Hồng Anh đã trót rút tiền trước đó (giả sử có đơn khác đủ ngưỡng), phần 11.976đ này là khoản admin phải tự bù, không đòi lại được từ user.
+**User "Hồng Anh" (Zalo, userId `700002`)** — 1 đơn Lazada 20.000đ hoa hồng gốc, đã ghi nhận (`user nhận` ước tính ~16.038đ) — nhưng 2 tuần sau khách trả hàng, admin phát hiện qua Accesstrade, chạy `reverse-entry`. Dòng này chuyển "đã huỷ", **không tính vào số dư của Hồng Anh nữa** — nếu Hồng Anh đã trót rút tiền trước đó (giả sử có đơn khác đủ ngưỡng), phần 16.038đ này là khoản admin phải tự bù, không đòi lại được từ user.
 
 ### Tổng kết quy mô tháng đó (minh hoạ):
 
@@ -308,7 +308,7 @@ Format chung: `npx tsx src/scripts/ledgerAdmin.ts <lệnh> --flag=value`
    ```
 4. Đọc kết quả in ra — mỗi dòng 1 kết quả OK/LỖI, cuối cùng có dòng tổng kết:
    ```
-   [dong 2] OK - orderId=TT2608001 subId=telegram-566659887-msww9vgx-a549ae - user_share=10692d
+   [dong 2] OK - orderId=TT2608001 subId=telegram-566659887-msww9vgx-a549ae - user_share=12029d
    [dong 3] LOI - orderId=SP2608005 subId=zalo-abc-xyz - Khong tim thay request thanh cong nao ung voi subId "zalo-abc-xyz"
 
    Tong: 2 dong, 1 thanh cong, 1 loi.

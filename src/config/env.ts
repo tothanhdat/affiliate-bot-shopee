@@ -110,8 +110,12 @@ export const env = {
   ledgerDatabasePath: optional("LEDGER_DATABASE_PATH", "./data/ledger.db"),
 
   commission: {
-    /** % hoa hong user duoc nhan tren phan DA TRU thue/phi, phan con lai thuoc chu bot. Chot tai thoi diem ghi nhan entry, doi sau khong anh huong nguoc cac don da ghi. */
-    userSharePercent: optionalInt("COMMISSION_USER_SHARE_PERCENT", 80),
+    /**
+     * % hoa hong user duoc nhan tren phan DA TRU thue/phi, phan con lai thuoc chu bot. Chot tai
+     * thoi diem ghi nhan entry, doi sau khong anh huong nguoc cac don da ghi. Mac dinh 90% (doi tu
+     * 80% ngay 2026-08-19, chu bot giu 10%).
+     */
+    userSharePercent: optionalInt("COMMISSION_USER_SHARE_PERCENT", 90),
     /** % thue tren hoa hong goc, tru truoc tien. Mac dinh 10% theo tham khao 1 bot doi thu (xem CLAUDE.md). */
     taxPercent: optionalInt("COMMISSION_TAX_PERCENT", 10),
     /** % phi san, tinh tren phan hoa hong DA TRU THUE (khong phai tren hoa hong goc). Mac dinh 1% theo tham khao 1 bot doi thu. */

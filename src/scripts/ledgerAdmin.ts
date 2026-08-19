@@ -2,7 +2,7 @@
  * Script quan tri ledger chay tay tren server - GIAI PHAP TAM THOI thay the T2.1 (dong bo don
  * hang/hoa hong tu dong tu nguon affiliate qua subId). Dung khi ban tu mat thay 1 don hang that
  * thanh cong tren dashboard Accesstrade/Shopee Affiliate va muon ghi vao ledger de user nhan duoc
- * 80% hoa hong. Khi T2.1 tu dong hoa xong, script nay van con dung duoc cho cac truong hop can
+ * phan hoa hong cua ho (COMMISSION_USER_SHARE_PERCENT trong .env). Khi T2.1 tu dong hoa xong, script nay van con dung duoc cho cac truong hop can
  * sua tay (reverse-entry, mark-withdrawal-paid).
  *
  * Chay: npx tsx src/scripts/ledgerAdmin.ts <subcommand> --flag=value
