@@ -20,8 +20,11 @@ export function formatSuccessReply(
   // KHONG tu bia so - giu dung nguyen tac da thong nhat.
   // 2026-08-18: rut gon theo lua chon "Vua phai" cua user (3 phuong an), bo dong du phong
   // "gui admin neu cho lau" de tin nhan ngan hon.
+  // 2026-08-20: them lai canh bao so nay chi la uoc tinh SNAPSHOT tai thoi diem tao link (ty le +
+  // gia san pham co the doi truoc luc don duoc xac nhan that su ben Accesstrade) - da bi bo khi rut
+  // gon text truoc do, phat hien lai qua so sanh thuc te bot tra vs bao cao Accesstrade lech nhau.
   const commissionLine = commissionEstimate
-    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này.\n\n`
+    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.\n\n`
     : "";
   // 2026-08-19: rut gon thanh 1 cau duy nhat (bo phan biet co/khong co estimate) theo yeu cau user -
   // cau moi khong con nhac "so tien" nen khong con ly do phai tach nhanh de tranh mau thuan nhu truoc.
