@@ -25,8 +25,8 @@ Adapter nay dieu khien **1 tai khoan Zalo ca nhan** qua `zca-js` (mo phong Zalo 
 1. **T0.1** — Dang ky Accesstrade, lay API key.
 2. **T0.2** — Tao Telegram Bot qua [@BotFather](https://t.me/BotFather), lay bot token.
 3. **Voi moi merchant muon dung that** (Shopee, Lazada...) — vao dashboard Accesstrade, muc Campaign, tim va **bam dang ky** campaign tuong ung (khac voi buoc da co API key):
-   - Shopee: **"Shopee Việt Nam Smartlink cho tất cả thiết bị"** (merchant `shopee`, id `[REDACTED_CAMPAIGN_ID]`)
-   - Lazada: **"Lazada Việt Nam"** (merchant `lazada_kol`, id `[REDACTED_CAMPAIGN_ID]`)
+   - Shopee: **"Shopee Việt Nam Smartlink cho tất cả thiết bị"** (merchant `shopee`, id xem dashboard Accesstrade)
+   - Lazada: **"Lazada Việt Nam"** (merchant `lazada_kol`, id xem dashboard Accesstrade)
    - Xac minh that (2026-07-31): ca 2 campaign tren dang o trang thai "unregistered" tren tai khoan hien tai — can dang ky truoc khi dung `AFFILIATE_PROVIDER=accesstrade`.
 4. **Neu dung Zalo Group Adapter** — chuan bi san 1 tai khoan Zalo phu, cai app Zalo tren dien thoai dung tai khoan do de quet QR khi bot khoi dong lan dau.
 

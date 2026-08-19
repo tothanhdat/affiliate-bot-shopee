@@ -173,7 +173,7 @@ test("GET /s/:code redirect 302 THAT sang target_url (khong proxy noi dung) - T3
   const { logStore, baseUrl, cleanup } = setup();
   try {
     const targetUrl =
-      "https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2Fproduct%2F123%2F456&affiliate_id=[REDACTED_AFFILIATE_ID]&sub_id=abc";
+      "https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2Fproduct%2F123%2F456&affiliate_id=99900011122&sub_id=abc";
     const code = logStore.createShortLink(targetUrl);
 
     const res = await fetch(`${baseUrl}/s/${code}`, { redirect: "manual" });

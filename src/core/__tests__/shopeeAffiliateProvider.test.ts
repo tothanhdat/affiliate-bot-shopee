@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ShopeeAffiliateProvider } from "../providers/shopeeAffiliateProvider.js";
 import { MerchantNotConfiguredError } from "../errors.js";
 
-const AFFILIATE_ID = "[REDACTED_AFFILIATE_ID]";
+const AFFILIATE_ID = "99900011122";
 const SHORT_LINK_BASE_URL = "https://bot.example.com";
 
 /** Fake createShortLink - ghi lai targetUrl duoc rut gon, tra ve code co doan de assert URL cuoi. */
