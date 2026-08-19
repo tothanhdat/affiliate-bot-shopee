@@ -14,6 +14,9 @@ const MOCK_PROMOTIONS: Record<MerchantId, PromotionItem[]> = {
   lazada: [
     { couponCode: "MOCKLAZADA15", description: "Giam 15% toi da 80,000d cho don tu 300,000d (du lieu gia lap)" },
   ],
+  tiktokshop: [
+    { couponCode: "MOCKTIKTOK10", description: "Giam 10% toi da 40,000d cho don tu 150,000d (du lieu gia lap)" },
+  ],
 };
 
 /**

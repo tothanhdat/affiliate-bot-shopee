@@ -1,4 +1,4 @@
-import { InvalidLinkError, UnsupportedMerchantLinkError } from "./errors.js";
+import { InvalidLinkError, NotAProductLinkError, UnsupportedMerchantLinkError } from "./errors.js";
 import { detectMerchantByHost, type MerchantConfig } from "./merchants.js";
 import type { ParsedProductLink } from "./types.js";
 
@@ -39,25 +39,52 @@ async function resolveRedirect(shortUrl: string): Promise<string> {
 }
 
 /**
- * Tach shop_id/item_id tu URL - hien chi xac minh pattern cho Shopee. Voi merchant
- * khac (vi du Lazada) chua co pattern duoc kiem chung, tra ve null thay vi doan mo.
- * Khong tach duoc id khong phai loi - metadata nay la optional (xem ResolveLinkResult).
+ * Tach shop_id/item_id tu URL - hien chi xac minh pattern cho Shopee va TikTok Shop.
+ * Voi merchant khac (vi du Lazada) chua co pattern duoc kiem chung, tra ve null thay
+ * vi doan mo. Voi Shopee, khong tach duoc id KHONG phai loi - metadata nay la optional
+ * (xem ResolveLinkResult). Voi TikTok Shop thi khac: itemId (product_id) la BAT BUOC
+ * de goi duoc AccesstradeProvider (xem accesstradeProvider.ts) - buildParsedLink() ben
+ * duoi se nem NotAProductLinkError neu tach that bai, KHONG coi la optional metadata.
  */
 function extractIds(merchant: MerchantConfig, url: URL): { shopId: string | null; itemId: string | null } {
-  if (merchant.id !== "shopee") {
+  if (merchant.id === "shopee") {
+    // Dang: /ten-san-pham-i.{shopId}.{itemId}
+    const iPatternMatch = url.pathname.match(/-i\.(\d+)\.(\d+)(?:$|[/?])/);
+    if (iPatternMatch) {
+      return { shopId: iPatternMatch[1], itemId: iPatternMatch[2] };
+    }
+    // Dang: /product/{shopId}/{itemId}
+    const productPatternMatch = url.pathname.match(/\/product\/(\d+)\/(\d+)/);
+    if (productPatternMatch) {
+      return { shopId: productPatternMatch[1], itemId: productPatternMatch[2] };
+    }
     return { shopId: null, itemId: null };
   }
-  // Dang: /ten-san-pham-i.{shopId}.{itemId}
-  const iPatternMatch = url.pathname.match(/-i\.(\d+)\.(\d+)(?:$|[/?])/);
-  if (iPatternMatch) {
-    return { shopId: iPatternMatch[1], itemId: iPatternMatch[2] };
+
+  if (merchant.id === "tiktokshop") {
+    // Dang da xac minh that (2026-08-18): /view/product/{productId}
+    const productMatch = url.pathname.match(/\/view\/product\/(\d+)/);
+    if (productMatch) {
+      return { shopId: null, itemId: productMatch[1] };
+    }
+    return { shopId: null, itemId: null };
   }
-  // Dang: /product/{shopId}/{itemId}
-  const productPatternMatch = url.pathname.match(/\/product\/(\d+)\/(\d+)/);
-  if (productPatternMatch) {
-    return { shopId: productPatternMatch[1], itemId: productPatternMatch[2] };
-  }
+
   return { shopId: null, itemId: null };
+}
+
+/**
+ * Ghep merchant + canonical URL thanh ParsedProductLink, kem validate rieng cho TikTok
+ * Shop: itemId la bat buoc (khac Shopee) vi tiktok.com dung chung cho ca video thuong -
+ * link khong khop pattern /view/product/{id} coi nhu KHONG PHAI link san pham, tu choi
+ * ro rang thay vi goi API voi du lieu thieu.
+ */
+function buildParsedLink(merchant: MerchantConfig, canonicalUrl: URL): ParsedProductLink {
+  const { shopId, itemId } = extractIds(merchant, canonicalUrl);
+  if (merchant.id === "tiktokshop" && itemId === null) {
+    throw new NotAProductLinkError(merchant.displayName);
+  }
+  return { merchant: merchant.id, canonicalUrl: canonicalUrl.toString(), shopId, itemId };
 }
 
 /**
@@ -88,10 +115,8 @@ export async function parseProductLink(rawUrl: string): Promise<ParsedProductLin
     if (!resolvedMerchant) {
       throw new UnsupportedMerchantLinkError();
     }
-    const { shopId, itemId } = extractIds(resolvedMerchant, resolved);
-    return { merchant: resolvedMerchant.id, canonicalUrl: resolved.toString(), shopId, itemId };
+    return buildParsedLink(resolvedMerchant, resolved);
   }
 
-  const { shopId, itemId } = extractIds(merchant, url);
-  return { merchant: merchant.id, canonicalUrl: url.toString(), shopId, itemId };
+  return buildParsedLink(merchant, url);
 }

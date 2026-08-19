@@ -38,10 +38,11 @@ export class LinkResolverService {
     try {
       const parsed = await parseProductLink(request.url);
       const subId = generateSubId(request.platform, request.userId);
-      const { affiliateUrl } = await this.provider.createAffiliateLink({
+      const { affiliateUrl, commissionEstimate } = await this.provider.createAffiliateLink({
         merchant: parsed.merchant,
         productUrl: parsed.canonicalUrl,
         subId,
+        itemId: parsed.itemId,
       });
 
       this.logStore.record({
@@ -63,6 +64,7 @@ export class LinkResolverService {
         shopId: parsed.shopId,
         itemId: parsed.itemId,
         subId,
+        commissionEstimate: commissionEstimate ?? null,
       };
     } catch (err) {
       const appError = toAppError(err);

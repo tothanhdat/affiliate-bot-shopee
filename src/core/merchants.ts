@@ -1,4 +1,4 @@
-export type MerchantId = "shopee" | "lazada";
+export type MerchantId = "shopee" | "lazada" | "tiktokshop";
 
 export interface MerchantConfig {
   id: MerchantId;
@@ -24,6 +24,17 @@ export const MERCHANTS: readonly MerchantConfig[] = [
     displayName: "Lazada",
     hostPattern: /(^|\.)lazada\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i,
     shortHosts: new Set(),
+  },
+  {
+    id: "tiktokshop",
+    displayName: "TikTok Shop",
+    // tiktok.com dung chung cho ca video thuong lan san pham TikTok Shop - khong tach rieng
+    // duoc bang domain, nen link khong phai san pham se bi extractIds() (linkValidator.ts)
+    // tu choi bang NotAProductLinkError thay vi xu ly nham nhu link san pham.
+    hostPattern: /(^|\.)tiktok\.com$/i,
+    // Da xac minh that (2026-08-18): link share tu app/Shop tab dung domain nay, resolve thang
+    // ra www.tiktok.com/view/product/{id}. Chua xac minh cac domain rut gon khac (vm.tiktok.com...).
+    shortHosts: new Set(["vt.tiktok.com"]),
   },
 ];
 

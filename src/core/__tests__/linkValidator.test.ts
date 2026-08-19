@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extractProductUrls, parseProductLink } from "../linkValidator.js";
-import { InvalidLinkError, UnsupportedMerchantLinkError } from "../errors.js";
+import { InvalidLinkError, NotAProductLinkError, UnsupportedMerchantLinkError } from "../errors.js";
 
 test("extractProductUrls: tim link Shopee trong tin nhan lan text khac", () => {
   const text =
@@ -55,6 +55,26 @@ test("parseProductLink: nhan dien merchant Lazada, chua co pattern tach id nen s
 
 test("parseProductLink: nem UnsupportedMerchantLinkError voi domain khong duoc ho tro", async () => {
   await assert.rejects(() => parseProductLink("https://example.com/product"), UnsupportedMerchantLinkError);
+});
+
+test("extractProductUrls: nhan dien link TikTok Shop (tiktok.com)", () => {
+  const text = "san pham ngon: https://www.tiktok.com/view/product/1733294149780801469?region=VN";
+  const urls = extractProductUrls(text);
+  assert.equal(urls.length, 1);
+});
+
+test("parseProductLink: tach dung product_id tu dang /view/product/{id} cua TikTok Shop", async () => {
+  const result = await parseProductLink("https://www.tiktok.com/view/product/1733294149780801469?region=VN&local=en");
+  assert.equal(result.merchant, "tiktokshop");
+  assert.equal(result.shopId, null);
+  assert.equal(result.itemId, "1733294149780801469");
+});
+
+test("parseProductLink: nem NotAProductLinkError voi link tiktok.com khong phai san pham (vd video thuong)", async () => {
+  await assert.rejects(
+    () => parseProductLink("https://www.tiktok.com/@someuser/video/1234567890123456789"),
+    NotAProductLinkError
+  );
 });
 
 test("parseProductLink: nem InvalidLinkError voi chuoi khong phai URL", async () => {

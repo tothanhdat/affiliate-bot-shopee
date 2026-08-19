@@ -1,5 +1,6 @@
-import { Zalo, LoginQRCallbackEventType, type Message, type API } from "zca-js";
+import { Zalo, LoginQRCallbackEventType, ThreadType, type Message, type API } from "zca-js";
 import { AppError } from "../../core/errors.js";
+import type { LedgerStore } from "../../core/ledgerStore.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
@@ -10,6 +11,7 @@ import {
   formatErrorReply,
   formatSkippedReply,
   formatPromotionsReply,
+  formatDashboardLinkReply,
 } from "../shared/replyText.js";
 
 export interface ZaloGroupBotOptions {
@@ -17,6 +19,8 @@ export interface ZaloGroupBotOptions {
   qrPath: string;
   maxLinksPerMessage: number;
   promotionsLimit: number;
+  ledgerStore: LedgerStore;
+  dashboardBaseUrl: string;
 }
 
 /**
@@ -25,6 +29,8 @@ export interface ZaloGroupBotOptions {
  * chinh thuc (da bo scope nay, xem CLAUDE.md). Zalo cam ro hanh vi tu dong hoa tai
  * khoan ca nhan trong dieu khoan su dung - tai khoan co the bi khoa, nen dung tai
  * khoan phu/throwaway, khong dung tai khoan chinh.
+ * T2.3 them lenh "idid" xu ly rieng trong tin nhan DM (ThreadType.User) - lan dau file
+ * nay phan biet DM vs group, vi truoc gio chi tra loi giong het nhau ca 2 loai thread.
  */
 export class ZaloGroupBot {
   private api: API | null = null;
@@ -116,6 +122,27 @@ export class ZaloGroupBot {
     if (typeof message.data.content !== "string") return;
 
     const text = message.data.content;
+    const userId = message.data.uidFrom;
+    this.options.ledgerStore.upsertUserProfile("zalo", userId, message.data.dName ?? "");
+
+    // T2.3: lenh "idid" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
+    // thanh vien khac trong group vo tinh kich hoat link ca nhan cua nguoi khac (link dashboard
+    // se lo hoa hong/don hang ca nhan neu bot lo tra loi trong group).
+    if (message.type === ThreadType.User) {
+      if (text.trim().toLowerCase() === "idid") {
+        const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
+        await api.sendMessage(
+          formatDashboardLinkReply(`${this.options.dashboardBaseUrl}/d/${token}`, userId),
+          message.threadId,
+          message.type
+        );
+      }
+      // Tin nhan rieng (DM) voi noi dung khac "idid" (vd link san pham, cau hoi...): bot CHU Y
+      // IM LANG, khong tu dong xu ly hay tra loi gi - de admin tu vao tra loi thu cong. Day la
+      // quyet dinh co chu dich (2026-08-17), khac voi group (van xu ly link nhu binh thuong ben duoi).
+      return;
+    }
+
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
@@ -123,7 +150,6 @@ export class ZaloGroupBot {
       return;
     }
 
-    const userId = message.data.uidFrom;
     const linksToProcess = links.slice(0, this.options.maxLinksPerMessage);
     const skippedCount = links.length - linksToProcess.length;
     const successMerchants = new Set<MerchantId>();
@@ -133,7 +159,7 @@ export class ZaloGroupBot {
         const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId });
         successMerchants.add(result.merchant);
         await api.sendMessage(
-          formatSuccessReply(result.merchant, result.affiliateUrl),
+          formatSuccessReply(result.merchant, result.affiliateUrl, result.commissionEstimate),
           message.threadId,
           message.type
         );

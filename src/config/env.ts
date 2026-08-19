@@ -41,6 +41,10 @@ function resolveAffiliateProvider(): AffiliateProviderName {
 const DEFAULT_PROMOTIONS_MERCHANT: Record<MerchantId, string> = {
   shopee: "shopee",
   lazada: "lazada_kol",
+  // Rong vi chua xac minh TikTok Shop co dung chung endpoint /v1/offers_informations
+  // khong (endpoint tao link cua no da khac hoan toan Shopee/Lazada, xem accesstradeProvider.ts) -
+  // khong doan mo slug. getPromotions cho merchant nay se bao loi ro rang neu bi goi ma chua co config.
+  tiktokshop: "",
 };
 
 function resolveAccesstradeMerchants(): Record<MerchantId, { campaignId: string; promotionsMerchant: string }> {
@@ -87,9 +91,48 @@ export const env = {
     windowMs: optionalInt("RATE_LIMIT_WINDOW_MS", 5 * 60 * 1000),
   },
   maxLinksPerMessage: optionalInt("MAX_LINKS_PER_MESSAGE", 5),
-  promotionsDisplayLimit: optionalInt("PROMOTIONS_DISPLAY_LIMIT", 3),
+  // Mac dinh 0 (tat) tu 2026-08-17 - tap trung hoan toan vao cashback, khong con hien
+  // ma giam gia chung nua. Bat lai bang cach set > 0 trong .env neu can dung sau.
+  promotionsDisplayLimit: optionalInt("PROMOTIONS_DISPLAY_LIMIT", 0),
 
   databasePath: optional("DATABASE_PATH", "./data/requests.db"),
+
+  /** DB rieng cho ledger tai chinh (tach khoi requests.db de co lap du lieu tien bac). */
+  ledgerDatabasePath: optional("LEDGER_DATABASE_PATH", "./data/ledger.db"),
+
+  commission: {
+    /** % hoa hong user duoc nhan tren phan DA TRU thue/phi, phan con lai thuoc chu bot. Chot tai thoi diem ghi nhan entry, doi sau khong anh huong nguoc cac don da ghi. */
+    userSharePercent: optionalInt("COMMISSION_USER_SHARE_PERCENT", 80),
+    /** % thue tren hoa hong goc, tru truoc tien. Mac dinh 10% theo tham khao 1 bot doi thu (xem CLAUDE.md). */
+    taxPercent: optionalInt("COMMISSION_TAX_PERCENT", 10),
+    /** % phi san, tinh tren phan hoa hong DA TRU THUE (khong phai tren hoa hong goc). Mac dinh 1% theo tham khao 1 bot doi thu. */
+    platformFeePercent: optionalInt("COMMISSION_PLATFORM_FEE_PERCENT", 1),
+    /**
+     * Nguong hop ly cua commissionAmount so voi orderAmount (%) khi ghi nhan don tay - vuot qua bi
+     * tu choi ngay (ImplausibleCommissionAmountError), chan loi go nham (vd them 1 so 0) luc nhap CLI/CSV.
+     */
+    maxRatioPercent: optionalInt("COMMISSION_MAX_RATIO_PERCENT", 50),
+  },
+
+  withdrawal: {
+    /** So du kha dung toi thieu (VND) de duoc gui yeu cau rut tien. */
+    thresholdVnd: optionalInt("WITHDRAWAL_THRESHOLD_VND", 50_000),
+    /** Thu muc luu anh chup man hinh bang chung da chuyen khoan (bat buoc khi "Danh dau da tra"). */
+    proofDir: optional("WITHDRAWAL_PROOF_DIR", "./data/withdrawal-proofs"),
+  },
+
+  dashboard: {
+    /** Dung de dung link "/d/:token" tra ve khi user nhan "idid". */
+    baseUrl: optional("DASHBOARD_BASE_URL", "http://localhost:3000"),
+  },
+
+  /** Chat ID Telegram cua chu bot, dung de bao khi co yeu cau rut tien moi. Rong = chi xem duoc qua ledgerAdmin.ts list-pending-withdrawals. */
+  adminTelegramChatId: optional("ADMIN_TELEGRAM_CHAT_ID", ""),
+
+  admin: {
+    /** Mat khau dang nhap trang /admin (1 tai khoan mac dinh). Rong = khong ai dang nhap duoc. */
+    password: optional("ADMIN_PASSWORD", ""),
+  },
 };
 
 export function assertAffiliateProviderConfigured(): void {

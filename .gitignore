@@ -1,8 +1,10 @@
 node_modules/
 dist/
 .env
+.DS_Store
 data/*.db
 data/*.db-journal
 data/zalo-session.json
 data/zalo-qr.png
+data/withdrawal-proofs/
 *.log

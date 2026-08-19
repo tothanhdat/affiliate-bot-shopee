@@ -33,6 +33,7 @@ export class LogStore {
     // chua thieu cot, va CREATE INDEX se loi "no such column" neu chay truoc migration.
     this.migrateAddMerchantColumn();
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_merchant ON requests(merchant);`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_sub_id ON requests(sub_id);`);
   }
 
   /** DB tao truoc khi co field merchant se thieu cot nay - them vao neu chua co, khong mat du lieu cu. */
@@ -106,6 +107,14 @@ export class LogStore {
       .all(...params);
 
     return rows.map(rowToEntry);
+  }
+
+  /** Dung boi ledgerAdmin.ts de suy ra platform/userId/merchant tu 1 subId da ghi log truoc do. */
+  findBySubId(subId: string): RequestLogEntry | null {
+    const rows = this.db
+      .prepare(`SELECT * FROM requests WHERE sub_id = ? ORDER BY timestamp DESC LIMIT 1`)
+      .all(subId);
+    return rows.length > 0 ? rowToEntry(rows[0]) : null;
   }
 
   close(): void {

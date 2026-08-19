@@ -1,24 +1,39 @@
-import type { PromotionItem } from "../../core/affiliateProvider.js";
+import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
 import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
 
 export const USAGE_TEXT =
   "👋 Gửi cho mình link sản phẩm Shopee hoặc Lazada (ví dụ: https://shopee.vn/...-i.123.456), " +
   "mình sẽ trả về link áp mã cho bạn.";
 
-/**
- * Nhan hien thi rieng tung merchant. "22%" la con so marketing co dinh cho Shopee
- * theo yeu cau cua chu bot - KHONG phai % thuc te tinh tu API (Accesstrade khong
- * cung cap % giam theo tung san pham). Merchant moi mac dinh dung ten thuong hieu
- * thuan, khong bia them con so khi chua co du lieu/xac nhan.
- */
-const MERCHANT_LABELS: Record<MerchantId, string> = {
-  shopee: "Shopee 22%",
-  lazada: "Lazada",
-};
+function formatVnd(amount: number): string {
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
+}
 
-export function formatSuccessReply(merchant: MerchantId, affiliateUrl: string): string {
-  const label = MERCHANT_LABELS[merchant];
-  return `👉 Link áp mã ${label}: ${affiliateUrl}\n✅ Bấm vào link để nhận mã ưu đãi giảm sâu nhất`;
+export function formatSuccessReply(
+  merchant: MerchantId,
+  affiliateUrl: string,
+  commissionEstimate?: CommissionEstimate | null
+): string {
+  const displayName = getMerchantConfig(merchant).displayName;
+  // commissionEstimate chi co khi provider lay duoc du lieu CHINH THUC (khong phai scrape/doan) -
+  // hien chi TikTok Shop qua Accesstrade (xem accesstradeProvider.ts). Khong co thi bo qua dong nay,
+  // KHONG tu bia so - giu dung nguyen tac da thong nhat.
+  // 2026-08-18: rut gon theo lua chon "Vua phai" cua user (3 phuong an), bo dong du phong
+  // "gui admin neu cho lau" de tin nhan ngan hon.
+  const commissionLine = commissionEstimate
+    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này.\n\n`
+    : "";
+  // 2 cau dong cuoi khac nhau de tranh mau thuan: co estimate thi da biet %, chi con cho XAC NHAN
+  // don; khong co estimate thi van chua biet gi ca (khac nhau ro rang, khong dung chung 1 cau).
+  const pendingLine = commissionEstimate
+    ? `Nhắn "idid" để xem hoa hồng của bạn. Số tiền cuối cùng chốt sau khi đơn được xác nhận.`
+    : `Nhắn "idid" để xem hoa hồng của bạn. Số tiền chỉ biết chính xác sau khi đơn được xác nhận.`;
+  return (
+    `🛒 ${displayName}: ${affiliateUrl}\n\n` +
+    commissionLine +
+    `⚠️ Mở đúng link và đặt hàng ngay trong phiên đó để được ghi nhận.\n\n` +
+    pendingLine
+  );
 }
 
 export function formatErrorReply(userMessage: string): string {
@@ -35,5 +50,16 @@ export function formatPromotionsReply(merchant: MerchantId, items: PromotionItem
   return (
     `🎟️ Mã giảm giá ${displayName} đang chạy (chung, không đảm bảo áp dụng cho sản phẩm này):\n` +
     lines.join("\n")
+  );
+}
+
+/**
+ * userId tra ve kem theo de admin sau nay tim lai dung cuoc tro chuyen (vi du go thang userId
+ * vao o tim kiem cua Zalo/Telegram de nhay toi dung nguoi, khi can nhan tin hoi STK luc xu ly rut tien).
+ */
+export function formatDashboardLinkReply(dashboardUrl: string, userId: string): string {
+  return (
+    `🆔 ID của bạn là: ${userId}\n\n` +
+    `🎁 Đây là link theo dõi hoa hồng của bạn: ${dashboardUrl}`
   );
 }
