@@ -12,7 +12,7 @@ import { createAffiliateProvider } from "./core/providers/index.js";
 const logStore = new LogStore(env.databasePath);
 const ledgerStore = new LedgerStore(env.ledgerDatabasePath);
 const rateLimiter = new RateLimiter(env.rateLimit.maxRequests, env.rateLimit.windowMs);
-const affiliateProvider = createAffiliateProvider();
+const affiliateProvider = createAffiliateProvider(logStore);
 const resolver = new LinkResolverService(affiliateProvider, logStore, rateLimiter);
 
 if (env.affiliateProvider === "mock") {

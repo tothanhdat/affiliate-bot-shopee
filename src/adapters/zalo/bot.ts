@@ -1,4 +1,4 @@
-import { Zalo, LoginQRCallbackEventType, ThreadType, type Message, type API } from "zca-js";
+import { Zalo, LoginQRCallbackEventType, ThreadType, type Message, type API, type TAttachmentContent } from "zca-js";
 import { AppError } from "../../core/errors.js";
 import type { LedgerStore } from "../../core/ledgerStore.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
@@ -104,7 +104,11 @@ export class ZaloGroupBot {
   }
 
   private registerListener(api: API): void {
+    api.listener.on("connected", () => {
+      console.log("[zalo] Listener da ket noi WebSocket thanh cong.");
+    });
     api.listener.on("message", (message) => {
+      console.log(`[zalo] Nhan tin nhan tu ${message.data.uidFrom} (thread=${message.threadId}, type=${message.type})`);
       this.handleMessage(api, message).catch((err: unknown) => {
         console.error("[zalo] Loi khong xu ly duoc khi xu ly tin nhan:", err);
       });
@@ -115,13 +119,16 @@ export class ZaloGroupBot {
     api.listener.on("closed", (code, reason) => {
       console.warn(`[zalo] Ket noi bi dong (code=${code}): ${reason}`);
     });
+    api.listener.on("disconnected", (code, reason) => {
+      console.warn(`[zalo] Bi ngat ket noi (code=${code}): ${reason}`);
+    });
   }
 
   private async handleMessage(api: API, message: Message): Promise<void> {
     if (message.isSelf) return;
-    if (typeof message.data.content !== "string") return;
 
-    const text = message.data.content;
+    const text = extractMessageText(message.data.content);
+    if (text === null) return;
     const userId = message.data.uidFrom;
     this.options.ledgerStore.upsertUserProfile("zalo", userId, message.data.dName ?? "");
 
@@ -195,6 +202,21 @@ export class ZaloGroupBot {
   stop(): void {
     this.api?.listener.stop();
   }
+}
+
+/**
+ * message.data.content la string CHI KHI tin nhan la text thuan - neu nguoi gui de Zalo tu dong
+ * tao link preview (mac dinh khi dan URL, tru khi tat preview tay), content tro thanh object
+ * TAttachmentContent voi URL that nam o field href, khong phai string nua. Truoc day code chi
+ * check `typeof content === "string"` nen IM LANG voi moi tin nhan co preview - tuc la voi da so
+ * cach user thuong gui link (phat hien 2026-08-19, xem rui-ro-can-giai-quyet.md).
+ */
+function extractMessageText(content: string | TAttachmentContent | Record<string, unknown>): string | null {
+  if (typeof content === "string") return content;
+  if (typeof content === "object" && content !== null && typeof (content as TAttachmentContent).href === "string") {
+    return (content as TAttachmentContent).href;
+  }
+  return null;
 }
 
 export function createZaloGroupBot(resolver: LinkResolverService, options: ZaloGroupBotOptions): ZaloGroupBot {

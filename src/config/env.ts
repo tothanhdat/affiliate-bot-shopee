@@ -22,13 +22,16 @@ function optionalBool(name: string, fallback: boolean): boolean {
   return raw.toLowerCase() === "true";
 }
 
-export type AffiliateProviderName = "mock" | "accesstrade";
+// "shopee_direct" (them 2026-08-19, xem spec_bot_ap_ma_shopee.md muc 5/T3.1): Shopee dung
+// ShopeeAffiliateProvider (co che an_redir truc tiep, khong qua Accesstrade), Lazada/TikTok Shop
+// van qua AccesstradeProvider nhu cu - xem CompositeAffiliateProvider trong providers/index.ts.
+export type AffiliateProviderName = "mock" | "accesstrade" | "shopee_direct";
 
 function resolveAffiliateProvider(): AffiliateProviderName {
   const raw = optional("AFFILIATE_PROVIDER", "mock").toLowerCase();
-  if (raw !== "mock" && raw !== "accesstrade") {
+  if (raw !== "mock" && raw !== "accesstrade" && raw !== "shopee_direct") {
     throw new Error(
-      `AFFILIATE_PROVIDER phai la "mock" hoac "accesstrade", nhan duoc: "${raw}"`
+      `AFFILIATE_PROVIDER phai la "mock", "accesstrade" hoac "shopee_direct", nhan duoc: "${raw}"`
     );
   }
   return raw;
@@ -74,6 +77,12 @@ export const env = {
     promotionsCacheTtlMs: optionalInt("ACCESSTRADE_PROMOTIONS_CACHE_TTL_MS", 10 * 60 * 1000),
     /** campaign_id + promotions merchant slug rieng cho tung merchant (Shopee, Lazada...) */
     merchants: resolveAccesstradeMerchants(),
+  },
+
+  /** Chi dung khi AFFILIATE_PROVIDER=shopee_direct (xem ShopeeAffiliateProvider). */
+  shopeeDirect: {
+    /** affiliate_id co dinh cua tai khoan, lay tai affiliate.shopee.vn/account_setting. */
+    affiliateId: optional("SHOPEE_AFFILIATE_ID", ""),
   },
 
   telegramBotToken: optional("TELEGRAM_BOT_TOKEN", ""),
@@ -136,11 +145,13 @@ export const env = {
 };
 
 export function assertAffiliateProviderConfigured(): void {
-  if (env.affiliateProvider !== "accesstrade") return;
+  if (env.affiliateProvider === "mock") return;
 
+  // Ca "accesstrade" va "shopee_direct" deu can Accesstrade API key - shopee_direct van dung
+  // AccesstradeProvider cho Lazada/TikTok Shop qua CompositeAffiliateProvider (providers/index.ts).
   if (env.accesstrade.apiKey === "") {
     throw new Error(
-      "AFFILIATE_PROVIDER=accesstrade nhung thieu ACCESSTRADE_API_KEY. " +
+      `AFFILIATE_PROVIDER=${env.affiliateProvider} nhung thieu ACCESSTRADE_API_KEY. ` +
         "Hoan tat T0.1 (dang ky Accesstrade, lay API key) roi dien vao .env, " +
         "hoac dat AFFILIATE_PROVIDER=mock de chay thu."
     );
@@ -148,6 +159,13 @@ export function assertAffiliateProviderConfigured(): void {
   // Khong bat buoc campaign_id cho TAT CA merchant o day - moi merchant duoc kiem tra
   // rieng luc xu ly request that (MerchantNotConfiguredError), vi co the ban chi dung
   // 1 vai merchant (vi du chi Shopee) chu chua dang ky Lazada.
+
+  if (env.affiliateProvider === "shopee_direct" && env.shopeeDirect.affiliateId === "") {
+    throw new Error(
+      "AFFILIATE_PROVIDER=shopee_direct nhung thieu SHOPEE_AFFILIATE_ID. " +
+        "Lay affiliate_id tai affiliate.shopee.vn/account_setting roi dien vao .env."
+    );
+  }
 }
 
 export function assertTelegramConfigured(): void {

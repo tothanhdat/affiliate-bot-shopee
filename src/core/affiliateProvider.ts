@@ -7,6 +7,12 @@ export interface CreateAffiliateLinkInput {
   /** id dung de tracking/doi soat hoa hong, xem T1.4 */
   subId: string;
   /**
+   * shop_id da tach san tu linkValidator.ts (Shopee). Optional - null neu link khong khop pattern
+   * tach duoc (vd link shop/category/campaign) hoac merchant khac Shopee. ShopeeAffiliateProvider
+   * dung gia tri nay (cung itemId) de dung origin_link gon thay vi giu nguyen productUrl.
+   */
+  shopId?: string | null;
+  /**
    * id san pham da tach san tu linkValidator.ts (vi du product_id cua TikTok Shop).
    * Optional - phan lon provider/merchant khong can, nhung AccesstradeProvider dung
    * gia tri nay cho TikTok Shop (bat buoc phai co, xem accesstradeProvider.ts).

@@ -23,11 +23,9 @@ export function formatSuccessReply(
   const commissionLine = commissionEstimate
     ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này.\n\n`
     : "";
-  // 2 cau dong cuoi khac nhau de tranh mau thuan: co estimate thi da biet %, chi con cho XAC NHAN
-  // don; khong co estimate thi van chua biet gi ca (khac nhau ro rang, khong dung chung 1 cau).
-  const pendingLine = commissionEstimate
-    ? `Nhắn "idid" để xem hoa hồng của bạn. Số tiền cuối cùng chốt sau khi đơn được xác nhận.`
-    : `Nhắn "idid" để xem hoa hồng của bạn. Số tiền chỉ biết chính xác sau khi đơn được xác nhận.`;
+  // 2026-08-19: rut gon thanh 1 cau duy nhat (bo phan biet co/khong co estimate) theo yeu cau user -
+  // cau moi khong con nhac "so tien" nen khong con ly do phai tach nhanh de tranh mau thuan nhu truoc.
+  const pendingLine = `Nhắn "idid" riêng cho Admin để xem hoa hồng của bạn nhé.`;
   return (
     `🛒 ${displayName}: ${affiliateUrl}\n\n` +
     commissionLine +

@@ -1,9 +1,21 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { MerchantId } from "./merchants.js";
 import type { Platform, RequestLogEntry, RequestOutcome } from "./types.js";
+
+const SHORT_LINK_CODE_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const SHORT_LINK_CODE_LENGTH = 7;
+
+function randomShortLinkCode(): string {
+  const bytes = randomBytes(SHORT_LINK_CODE_LENGTH);
+  let code = "";
+  for (let i = 0; i < SHORT_LINK_CODE_LENGTH; i++) {
+    code += SHORT_LINK_CODE_ALPHABET[bytes[i] % SHORT_LINK_CODE_ALPHABET.length];
+  }
+  return code;
+}
 
 export class LogStore {
   private readonly db: DatabaseSync;
@@ -34,6 +46,47 @@ export class LogStore {
     this.migrateAddMerchantColumn();
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_merchant ON requests(merchant);`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_sub_id ON requests(sub_id);`);
+
+    // short_links: T3.2 - rut gon link an_redir tu build (Shopee Direct, dai ~150-290+ ky tu)
+    // thanh "{DASHBOARD_BASE_URL}/s/{code}", dung chung DB voi requests (khong phai du lieu
+    // tai chinh nen khong can tach rieng nhu ledger.db). code KHONG doan duoc (base62 ngau nhien
+    // tu randomBytes), nhung day KHONG phai co che bao mat - chi la rut gon hien thi, target_url
+    // van la link cong khai (an_redir) khong chua thong tin nhay cam.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS short_links (
+        code TEXT PRIMARY KEY,
+        target_url TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  /**
+   * Tao 1 short link moi tro toi targetUrl, tra ve code. Retry vai lan neu trung code (xac suat
+   * cuc thap voi 7 ky tu base62 nhung khong loai tru hoan toan, khong dua vao may man).
+   */
+  createShortLink(targetUrl: string): string {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = randomShortLinkCode();
+      try {
+        this.db
+          .prepare(`INSERT INTO short_links (code, target_url, created_at) VALUES (?, ?, ?)`)
+          .run(code, targetUrl, new Date().toISOString());
+        return code;
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) continue;
+        throw err;
+      }
+    }
+    throw new Error("Khong the tao short link code duy nhat sau nhieu lan thu");
+  }
+
+  /** Dung boi route GET /s/:code de redirect that (302) - tra null neu code khong ton tai. */
+  resolveShortLink(code: string): string | null {
+    const row = this.db.prepare(`SELECT target_url FROM short_links WHERE code = ?`).get(code) as
+      | { target_url: string }
+      | undefined;
+    return row ? row.target_url : null;
   }
 
   /** DB tao truoc khi co field merchant se thieu cot nay - them vao neu chua co, khong mat du lieu cu. */

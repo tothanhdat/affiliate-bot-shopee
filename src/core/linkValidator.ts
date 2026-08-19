@@ -17,19 +17,32 @@ export function extractProductUrls(text: string): string[] {
   });
 }
 
+// Khong co timeout truoc day khien 1 short link (vd vt.tiktok.com) cham/khong phan hoi lam
+// treo VO THOI HAN ca luong xu ly tin nhan (khong loi, khong tra loi, khong log gi) - phat
+// hien qua Zalo Group Adapter "im lang" du listener nhan dung tin nhan (2026-08-19).
+const SHORT_LINK_TIMEOUT_MS = 8000;
+
 /**
  * Short link (vi du s.shopee.vn, shp.ee) khong chua shop_id/item_id truc tiep trong URL,
  * can theo redirect de lay URL that. Dung HEAD truoc, fallback GET neu server khong ho tro HEAD.
  */
 async function resolveRedirect(shortUrl: string): Promise<string> {
   try {
-    const res = await fetch(shortUrl, { method: "HEAD", redirect: "follow" });
+    const res = await fetch(shortUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(SHORT_LINK_TIMEOUT_MS),
+    });
     if (res.url) return res.url;
   } catch {
     // fallthrough to GET
   }
   try {
-    const res = await fetch(shortUrl, { method: "GET", redirect: "follow" });
+    const res = await fetch(shortUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(SHORT_LINK_TIMEOUT_MS),
+    });
     await res.body?.cancel();
     if (res.url) return res.url;
   } catch (err) {

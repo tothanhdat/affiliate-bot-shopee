@@ -85,6 +85,20 @@ export function createServer(
     res.json({ status: "ok" });
   });
 
+  // T3.2: rut gon link an_redir tu build (ShopeeAffiliateProvider). QUAN TRONG: PHAI la 302
+  // redirect THAT sang target_url (res.redirect), KHONG duoc fetch/proxy noi dung trang dich roi
+  // tra ve - proxy se lam mat toan bo cookie/uls_trackid Shopee tu sinh phia ho khi trinh duyet
+  // that cua user tu nhay tiep, pha tracking hoa hong. Code khong ton tai -> 404 HTML don gian,
+  // khong redirect ve dau (tranh open-redirect toi 1 URL mac dinh khong ro rang).
+  app.get("/s/:code", (req: Request, res: Response) => {
+    const targetUrl = logStore.resolveShortLink(req.params.code);
+    if (!targetUrl) {
+      res.status(404).type("html").send("Không tìm thấy link.");
+      return;
+    }
+    res.redirect(302, targetUrl);
+  });
+
   // T1.1 acceptance: POST link Shopee hop le -> short link; link khong hop le -> loi ro rang, khong crash.
   app.post("/api/v1/resolve", async (req: Request, res: Response) => {
     const { url, platform, userId } = req.body ?? {};

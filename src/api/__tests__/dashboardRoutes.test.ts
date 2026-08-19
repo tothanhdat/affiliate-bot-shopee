@@ -54,7 +54,7 @@ function setup() {
     rmSync(withdrawalProofDir, { recursive: true, force: true });
   }
 
-  return { ledgerStore, baseUrl, notifyCalls, withdrawalProofDir, cleanup };
+  return { ledgerStore, logStore, baseUrl, notifyCalls, withdrawalProofDir, cleanup };
 }
 
 test("GET /d/:token voi token khong ton tai -> 404", async () => {
@@ -164,6 +164,31 @@ test("don da rut hien link xem anh bang chung; user khac khong xem duoc anh cua 
     const { token: tokenB } = ledgerStore.findOrCreateDashboardToken("telegram", "user-b");
     const crossUserRes = await fetch(`${baseUrl}/d/${tokenB}/withdrawal-proofs/proof-a.png`);
     assert.equal(crossUserRes.status, 404);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /s/:code redirect 302 THAT sang target_url (khong proxy noi dung) - T3.2", async () => {
+  const { logStore, baseUrl, cleanup } = setup();
+  try {
+    const targetUrl =
+      "https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2Fproduct%2F123%2F456&affiliate_id=[REDACTED_AFFILIATE_ID]&sub_id=abc";
+    const code = logStore.createShortLink(targetUrl);
+
+    const res = await fetch(`${baseUrl}/s/${code}`, { redirect: "manual" });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get("location"), targetUrl);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /s/:code voi code khong ton tai -> 404", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const res = await fetch(`${baseUrl}/s/khong-ton-tai`, { redirect: "manual" });
+    assert.equal(res.status, 404);
   } finally {
     cleanup();
   }

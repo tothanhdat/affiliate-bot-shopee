@@ -8,3 +8,9 @@ data/zalo-session.json
 data/zalo-qr.png
 data/withdrawal-proofs/
 *.log
+
+# Tai lieu noi bo (chua thong tin nhay cam: affiliate_id that, campaign id, phan tich rui ro
+# kinh doanh) - khong dua len repo cong khai.
+nguon-kien-thuc-shopee-affiliate-portal.md
+rui-ro-can-giai-quyet.md
+spec_bot_ap_ma_shopee.md

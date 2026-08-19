@@ -85,6 +85,43 @@ test("LogStore: findBySubId tra ve dung entry hoac null neu khong co", () => {
   }
 });
 
+test("LogStore: createShortLink roi resolveShortLink tra ve dung target_url", () => {
+  const store = new LogStore(":memory:");
+  try {
+    const code = store.createShortLink("https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2Fx&affiliate_id=123&sub_id=abc");
+    assert.equal(typeof code, "string");
+    assert.equal(code.length, 7);
+    assert.equal(
+      store.resolveShortLink(code),
+      "https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2Fx&affiliate_id=123&sub_id=abc"
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("LogStore: resolveShortLink tra ve null voi code khong ton tai", () => {
+  const store = new LogStore(":memory:");
+  try {
+    assert.equal(store.resolveShortLink("khong-ton-tai"), null);
+  } finally {
+    store.close();
+  }
+});
+
+test("LogStore: createShortLink sinh code khac nhau cho nhieu lan goi", () => {
+  const store = new LogStore(":memory:");
+  try {
+    const codes = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      codes.add(store.createShortLink(`https://example.com/${i}`));
+    }
+    assert.equal(codes.size, 20);
+  } finally {
+    store.close();
+  }
+});
+
 test("LogStore: findBySubId bo qua entry loi (subId null)", () => {
   const store = new LogStore(":memory:");
   try {

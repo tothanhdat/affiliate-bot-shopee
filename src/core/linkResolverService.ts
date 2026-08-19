@@ -42,6 +42,7 @@ export class LinkResolverService {
         merchant: parsed.merchant,
         productUrl: parsed.canonicalUrl,
         subId,
+        shopId: parsed.shopId,
         itemId: parsed.itemId,
       });
 
