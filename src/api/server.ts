@@ -163,12 +163,16 @@ export function createServer(
 
     const summary = ledgerStore.getUserSummary(identity.platform, identity.userId);
     const pendingWithdrawal = ledgerStore.getPendingWithdrawal(identity.platform, identity.userId);
+    const displayName = ledgerStore.getDisplayName(identity.platform, identity.userId);
     res.type("html").send(
       renderDashboardPage({
         ...summary,
         pendingWithdrawal,
         thresholdVnd: withdrawalThresholdVnd,
         token: req.params.token,
+        platform: identity.platform,
+        userId: identity.userId,
+        displayName,
       })
     );
   });
@@ -215,6 +219,7 @@ export function createServer(
     } catch (err) {
       const summary = ledgerStore.getUserSummary(identity.platform, identity.userId);
       const pendingWithdrawal = ledgerStore.getPendingWithdrawal(identity.platform, identity.userId);
+      const displayName = ledgerStore.getDisplayName(identity.platform, identity.userId);
       const errorMessage = err instanceof AppError ? err.userMessage : "Loi khong xac dinh, vui long thu lai sau.";
       res.status(422).type("html").send(
         renderDashboardPage({
@@ -222,6 +227,9 @@ export function createServer(
           pendingWithdrawal,
           thresholdVnd: withdrawalThresholdVnd,
           token: req.params.token,
+          platform: identity.platform,
+          userId: identity.userId,
+          displayName,
           errorMessage,
         })
       );

@@ -1,5 +1,5 @@
 import { getMerchantConfig } from "../core/merchants.js";
-import type { CommissionEntry, WithdrawalRequest } from "../core/types.js";
+import type { CommissionEntry, Platform, WithdrawalRequest } from "../core/types.js";
 import { confirmOnSubmit, copyButton, escapeHtml, formatDateTime, formatVnd, statusBadge } from "./htmlHelpers.js";
 
 /**
@@ -119,7 +119,8 @@ function pageShell(title: string, body: string): string {
     padding: 2rem 1.25rem 4rem;
   }
   h1 { font-size: 1.75rem; font-weight: 700; margin: 0; color: #fff; }
-  .subtitle { color: var(--text-muted); font-size: 0.9375rem; margin: 0.35rem 0 1.75rem; }
+  .subtitle { color: var(--text-muted); font-size: 0.9375rem; margin: 0.35rem 0 0.3rem; }
+  .identity-line { color: var(--text-dim); font-size: 0.8125rem; margin: 0.5rem 0 1.75rem; }
   /* "The kinh" (glass) dung chung cho ca 3 loai the trong trang - nen mo + blur phia sau, tham
      khao dung file thiet ke user cung (Hoa Hong Dashboard.html). */
   .card, .totals .stat, .order-card {
@@ -234,6 +235,12 @@ export function renderInvalidTokenPage(): string {
   );
 }
 
+const PLATFORM_LABELS: Record<Platform, string> = {
+  telegram: "Telegram",
+  zalo: "Zalo",
+  http: "HTTP",
+};
+
 export function renderDashboardPage(input: {
   entries: CommissionEntry[];
   availableBalance: number;
@@ -242,6 +249,10 @@ export function renderDashboardPage(input: {
   pendingWithdrawal: WithdrawalRequest | null;
   thresholdVnd: number;
   token: string;
+  platform: Platform;
+  userId: string;
+  /** Ten hien thi lay tu profile Telegram/Zalo (user_profiles) - null neu chua co du lieu. */
+  displayName: string | null;
   errorMessage?: string;
 }): string {
   // The dang the xep doc (khong phai bang nhieu cot) - trang nay chu yeu mo tu dien thoai qua
@@ -300,8 +311,13 @@ export function renderDashboardPage(input: {
 </form>`
       : `<p class="progress-hint">Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - input.availableBalance))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).</p>`;
 
+  const platformLabel = PLATFORM_LABELS[input.platform];
+  const identityLine = input.displayName
+    ? `👤 ${escapeHtml(input.displayName)} · ${platformLabel} · ID: ${escapeHtml(input.userId)}`
+    : `👤 ${platformLabel} · ID: ${escapeHtml(input.userId)}`;
+
   const body = `<h1>💰 Hoa hồng của bạn</h1>
-<p class="subtitle">Đối soát hoa hồng affiliate theo từng đơn hàng</p>
+<p class="identity-line">${identityLine}</p>
 ${errorBlock}
 <div class="totals">
   <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div></div>

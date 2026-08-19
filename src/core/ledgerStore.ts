@@ -316,6 +316,14 @@ export class LedgerStore {
       .run(platform, userId, trimmed, updatedAt);
   }
 
+  /** Dung boi dashboard ca nhan (GET /d/:token) de hien ten hien thi + userId - tra 1 user, khong can load ca bang nhu getDisplayNamesMap(). */
+  getDisplayName(platform: Platform, userId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT display_name FROM user_profiles WHERE platform = ? AND user_id = ?`)
+      .get(platform, userId) as { display_name: string } | undefined;
+    return row ? row.display_name : null;
+  }
+
   /** Dung boi trang admin (withdrawals/orders) de tra cuu ten hien thi theo key "platform:userId". */
   getDisplayNamesMap(): Map<string, string> {
     const rows = this.db.prepare(`SELECT platform, user_id, display_name FROM user_profiles`).all() as Array<{
