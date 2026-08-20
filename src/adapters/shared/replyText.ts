@@ -7,14 +7,15 @@ export const USAGE_TEXT =
   "mình sẽ trả về link áp mã cho bạn.";
 
 /**
- * Zalo DM voi noi dung khong khop lenh "idid" - truoc day IM LANG hoan toan (quyet dinh 2026-08-17,
+ * Zalo DM voi noi dung khong khop lenh "xemhh" - truoc day IM LANG hoan toan (quyet dinh 2026-08-17,
  * tranh lo link dashboard neu lo tra loi nham trong group), nhung lam nguoi lan dau dung tuong bot loi.
  * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 10 (2026-08-20): tra loi 1 cau huong dan co dinh,
  * KHONG lo bat ky thong tin ca nhan/link dashboard nao. Dat o day (dung chung style cac template
  * khac) du hien chi Zalo DM dung, de neu sau can dung lai cho noi khac thi co san.
+ * Cu phap doi tu "idid" sang "xemhh" ngay 2026-08-20 (yeu cau truc tiep cua user, de nghia hon).
  */
 export const ZALO_DM_HELP_TEXT =
-  "Mình chỉ hỗ trợ lệnh \"idid\" trong tin nhắn riêng để lấy link theo dõi hoa hồng. " +
+  "Mình chỉ hỗ trợ lệnh \"xemhh\" trong tin nhắn riêng để lấy link theo dõi hoa hồng. " +
   "Muốn gửi link sản phẩm, vui lòng gửi trong group nhé.";
 
 function formatVnd(amount: number): string {
@@ -31,19 +32,19 @@ export function formatSuccessReply(
   // hien chi TikTok Shop qua Accesstrade (xem accesstradeProvider.ts). Khong co thi bo qua dong nay,
   // KHONG tu bia so - giu dung nguyen tac da thong nhat.
   // 2026-08-20 (viet lai theo gop y truc tiep cua user sau khi xem tin nhan that): cau "mình sẽ chủ
-  // dong nhan tin cho ban" thay cho "nhan 'idid' de theo doi" o dong nay - vi tu 2026-08-20 da co
+  // dong nhan tin cho ban" thay cho "nhan 'xemhh' de theo doi" o dong nay - vi tu 2026-08-20 da co
   // thong bao tu dong khi don duoc xac nhan (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1), noi
-  // "cho minh chu dong bao" khong con la loi hua suong nua. Dong "idid" van giu o duoi cho case user
+  // "cho minh chu dong bao" khong con la loi hua suong nua. Dong "xemhh" van giu o duoi cho case user
   // muon tu tra cuu truoc khi co thong bao.
   const commissionLine = commissionEstimate
     ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.`
     : merchant === "shopee"
-      ? `Vì sàn Shopee không cho phép hiển thị hoa hồng ước tính khi đơn chưa hoàn tất, nên bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
+      ? `Vì sàn Shopee không cho phép mình xem giá sản phẩm nên tạm thời mình chưa tính được hoa hồng thực tế. Bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
       : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
   return (
     `Mình gửi mã 🛒 ${displayName} nha: ${affiliateUrl}\n\n` +
     `${commissionLine}\n\n` +
-    `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được. Bạn vui lòng nhắn với cú pháp "idid" riêng cho Admin nhé.\n\n` +
+    `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được, bạn vui lòng nhắn với cú pháp "xemhh" riêng cho Admin nhé.\n\n` +
     `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`
   );
 }
@@ -123,7 +124,7 @@ export function formatWelcomeReply(userSharePercent: number, withdrawalThreshold
     `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
     `💰 Hoa hồng: Bạn nhận ${userSharePercent}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại ${botSharePercent}% để duy trì vận hành.\n\n` +
     `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
-    `📊 Theo dõi hoa hồng: Nhắn "idid" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
+    `📊 Theo dõi hoa hồng: Nhắn "xemhh" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
     `💵 Rút tiền: Khi số dư đạt từ ${formatVnd(withdrawalThresholdVnd)}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
     `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
     `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`

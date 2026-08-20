@@ -161,7 +161,7 @@ export const env = {
   },
 
   dashboard: {
-    /** Dung de dung link "/d/:token" tra ve khi user nhan "idid". */
+    /** Dung de dung link "/d/:token" tra ve khi user nhan "xemhh". */
     baseUrl: optional("DASHBOARD_BASE_URL", "http://localhost:3000"),
   },
 

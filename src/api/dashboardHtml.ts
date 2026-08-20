@@ -249,7 +249,7 @@ export function renderInvalidTokenPage(): string {
   return pageShell(
     "Đường dẫn không hợp lệ",
     `<h1>Đường dẫn không hợp lệ hoặc đã hết hạn</h1>
-<p class="subtitle">Vui lòng nhắn lại "idid" cho bot để lấy link mới.</p>`
+<p class="subtitle">Vui lòng nhắn lại "xemhh" cho bot để lấy link mới.</p>`
   );
 }
 

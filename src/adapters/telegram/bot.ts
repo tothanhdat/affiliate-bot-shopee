@@ -37,9 +37,9 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
       (ctx.from.username ? `@${ctx.from.username}` : "");
     ledgerStore.upsertUserProfile("telegram", userId, displayName);
 
-    // T2.3: lenh "idid" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
+    // T2.3: lenh "xemhh" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
     // thanh vien khac trong group vo tinh kich hoat link ca nhan cua nguoi khac.
-    if (ctx.chat.type === "private" && text.trim().toLowerCase() === "idid") {
+    if (ctx.chat.type === "private" && text.trim().toLowerCase() === "xemhh") {
       const { token: dashboardToken } = ledgerStore.findOrCreateDashboardToken("telegram", userId);
       await ctx.reply(formatDashboardLinkReply(`${dashboardBaseUrl}/d/${dashboardToken}`, userId));
       return;

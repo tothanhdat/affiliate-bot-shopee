@@ -35,7 +35,7 @@ export interface ZaloGroupBotOptions {
  * chinh thuc (da bo scope nay, xem CLAUDE.md). Zalo cam ro hanh vi tu dong hoa tai
  * khoan ca nhan trong dieu khoan su dung - tai khoan co the bi khoa, nen dung tai
  * khoan phu/throwaway, khong dung tai khoan chinh.
- * T2.3 them lenh "idid" xu ly rieng trong tin nhan DM (ThreadType.User) - lan dau file
+ * T2.3 them lenh "xemhh" xu ly rieng trong tin nhan DM (ThreadType.User) - lan dau file
  * nay phan biet DM vs group, vi truoc gio chi tra loi giong het nhau ca 2 loai thread.
  */
 export class ZaloGroupBot {
@@ -138,11 +138,11 @@ export class ZaloGroupBot {
     const userId = message.data.uidFrom;
     this.options.ledgerStore.upsertUserProfile("zalo", userId, message.data.dName ?? "");
 
-    // T2.3: lenh "idid" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
+    // T2.3: lenh "xemhh" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
     // thanh vien khac trong group vo tinh kich hoat link ca nhan cua nguoi khac (link dashboard
     // se lo hoa hong/don hang ca nhan neu bot lo tra loi trong group).
     if (message.type === ThreadType.User) {
-      if (text.trim().toLowerCase() === "idid") {
+      if (text.trim().toLowerCase() === "xemhh") {
         const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
         await api.sendMessage(
           formatDashboardLinkReply(`${this.options.dashboardBaseUrl}/d/${token}`, userId),
@@ -150,7 +150,7 @@ export class ZaloGroupBot {
           message.type
         );
       } else {
-        // Tin nhan rieng (DM) voi noi dung khac "idid" (vd link san pham, cau hoi...): KHONG tu
+        // Tin nhan rieng (DM) voi noi dung khac "xemhh" (vd link san pham, cau hoi...): KHONG tu
         // dong xu ly link/tra loi chi tiet - van la quyet dinh co chu dich (2026-08-17), tranh lo
         // link dashboard neu lo tra loi nham trong group. Nhung tu 2026-08-20 (phan-hoi-cai-thien-
         // trai-nghiem-nguoi-dung.md muc 10) tra loi 1 cau huong dan co dinh thay vi im lang hoan
