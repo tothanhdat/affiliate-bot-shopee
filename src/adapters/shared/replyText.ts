@@ -120,7 +120,7 @@ export function formatWelcomeReply(userSharePercent: number, withdrawalThreshold
   return (
     `Chào bạn, rất vui vì bạn đã tham gia group nha! 🎉\n\n` +
     `Mình là bot hỗ trợ săn sale hoàn tiền (cashback) khi mua hàng qua Shopee, TikTok Shop. Trước khi dùng, gửi bạn vài thông tin quan trọng để dùng cho thuận tiện nhé:\n\n` +
-    `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng kèm ưu đãi — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
+    `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
     `💰 Hoa hồng: Bạn nhận ${userSharePercent}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại ${botSharePercent}% để duy trì vận hành.\n\n` +
     `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
     `📊 Theo dõi hoa hồng: Nhắn "idid" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
