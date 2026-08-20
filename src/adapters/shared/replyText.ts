@@ -127,6 +127,7 @@ export function formatWelcomeReply(userSharePercent: number, withdrawalThreshold
     `📊 Theo dõi hoa hồng: Nhắn "xemhh" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
     `💵 Rút tiền: Khi số dư đạt từ ${formatVnd(withdrawalThresholdVnd)}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
     `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
+    `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1spfX8GtUQQjS0hNNHToaQpClOsJ9GVvQBmcXS7Lurjg/edit?tab=t.0\n\n` +
     `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`
   );
 }
