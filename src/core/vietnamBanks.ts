@@ -1,10 +1,13 @@
 /**
- * Danh sach ngan hang VN pho bien de user chon khi gui yeu cau rut tien (form ngan hang,
+ * Danh sach ngan hang/vi dien tu VN pho bien de user chon khi gui yeu cau rut tien (form ngan hang,
  * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9). Khong day du 100% ngan hang tai VN, nhung
  * bao gom cac ngan hang thuong dung nhat - KHONG xac thuc gia tri chon co dung thuc te hay khong,
  * chi la danh sach goi y cho <select>, admin tu doi chieu lai qua tin nhan rieng voi user.
+ * Momo (2026-08-20, yeu cau truc tiep cua user) - vi dien tu, khong phai ngan hang that, nhung
+ * dung chung 1 danh sach/1 field "bankName" de khong phai them field/logic rieng cho vi dien tu.
  */
 export const VIETNAM_BANKS: readonly string[] = [
+  "Momo",
   "Vietcombank",
   "VietinBank",
   "BIDV",

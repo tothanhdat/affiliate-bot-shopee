@@ -87,7 +87,13 @@ export const env = {
    */
   accesstradeSync: {
     enabled: optionalBool("ACCESSTRADE_SYNC_ENABLED", false),
-    /** Gio chay hang ngay (0-23, gio server). Mac dinh 8h sang. */
+    /**
+     * Gio chay hang ngay (0-23) - LA GIO CUA PROCESS DANG CHAY (new Date().setHours() dung timezone
+     * he dieu hanh/container, KHONG PHAI gio Viet Nam co dinh). Railway container mac dinh chay UTC
+     * (da xac nhan qua SSH, 2026-08-20) - muon chay 8h sang gio VN (UTC+7) thi phai dat bien nay = 1
+     * tren Railway (1h UTC = 8h sang ICT), KHONG PHAI 8. Chay local (may dev da o timezone ICT san)
+     * thi dat = 8 la dung. Luon kiem tra timezone thuc te cua moi truong dang deploy truoc khi doi so nay.
+     */
     hour: optionalInt("ACCESSTRADE_SYNC_HOUR", 8),
     /** So ngay nhin lai moi lan chay - du dai de bat duoc don duyet tre, khong chi "hom qua". */
     lookbackDays: optionalInt("ACCESSTRADE_SYNC_LOOKBACK_DAYS", 30),

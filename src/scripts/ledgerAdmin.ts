@@ -1,9 +1,12 @@
 /**
- * Script quan tri ledger chay tay tren server - GIAI PHAP TAM THOI thay the T2.1 (dong bo don
- * hang/hoa hong tu dong tu nguon affiliate qua subId). Dung khi ban tu mat thay 1 don hang that
- * thanh cong tren dashboard Accesstrade/Shopee Affiliate va muon ghi vao ledger de user nhan duoc
- * phan hoa hong cua ho (COMMISSION_USER_SHARE_PERCENT trong .env). Khi T2.1 tu dong hoa xong, script nay van con dung duoc cho cac truong hop can
- * sua tay (reverse-entry, mark-withdrawal-paid).
+ * Script quan tri ledger chay tay tren server. Tu 2026-08-20: T2.1 (dong bo don hang/hoa hong tu
+ * dong qua subId) DA XONG cho TikTok Shop/Lazada (xem accesstradeSync.ts, sync-accesstrade duoi day)
+ * - script nay KHONG con la "giai phap tam" cho 2 merchant do nua, ma la cong cu du phong/sua tay
+ * (reverse-entry, mark-withdrawal-paid, ghi truoc lich chay...). Rieng Shopee thi day VAN LA duong
+ * DUY NHAT va VINH VIEN (Shopee di thang qua an_redir, khong qua Accesstrade nen khong the tu dong
+ * hoa qua sync-accesstrade - xem chi tiet trong accesstradeSync.ts) - dung khi ban tu mat thay 1 don
+ * hang Shopee that thanh cong tren dashboard affiliate.shopee.vn va muon ghi vao ledger de user nhan
+ * duoc phan hoa hong cua ho (COMMISSION_USER_SHARE_PERCENT trong .env).
  *
  * Chay: npx tsx src/scripts/ledgerAdmin.ts <subcommand> --flag=value
  *
@@ -13,7 +16,9 @@
  *   mark-withdrawal-paid --id= --proofImagePath=<duong dan anh chup man hinh da chuyen khoan>
  *     (anh se duoc COPY vao WITHDRAWAL_PROOF_DIR, ban chi can tro toi 1 file da co san tren may -
  *     bat buoc, xem rui ro so 7 trong rui-ro-can-giai-quyet.md)
- *   reverse-entry --id= --reason=
+ *   reverse-entry --id= --reason=   (2026-08-20: huy duoc CA don "confirmed"/"Kha dung" - loi thoat
+ *     rieng cho CLI, vi Shopee ghi tay khong co giai doan "pending". Tren admin web/accesstradeSync.ts
+ *     CHI huy duoc don "pending" - xem CLAUDE.md muc "Doi soat tu dong" de biet ly do)
  *   list-pending-withdrawals
  *   record-accesstrade-payment --amount= [--note=]   (Accesstrade CHUYEN KHOAN THAT cho chu bot, doi chieu dong tien)
  *   reconciliation-summary                            (da nhan that vs da tra that cho user, canh bao neu am)
@@ -227,7 +232,10 @@ async function main(): Promise<void> {
       case "reverse-entry": {
         const id = requireFlag(values, "id");
         const reason = requireFlag(values, "reason");
-        const result = ledgerStore.reverseCommissionEntry(id, reason);
+        // allowNonPending: true - Shopee (ghi tay) khong co giai doan "pending" nhu duong Accesstrade
+        // tu dong, nen CLI la loi thoat DUY NHAT de huy 1 don da "confirmed" (nhap sai, tra hang phat
+        // hien tre...). Van bi chan neu entry da gan vao 1 yeu cau rut tien (EntryAlreadyWithdrawnError).
+        const result = ledgerStore.reverseCommissionEntry(id, reason, { allowNonPending: true });
         console.log(JSON.stringify(result, null, 2));
         break;
       }

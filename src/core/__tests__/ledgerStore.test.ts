@@ -4,6 +4,7 @@ import { LedgerStore } from "../ledgerStore.js";
 import {
   DuplicateConversionError,
   EntryAlreadyWithdrawnError,
+  EntryNotPendingError,
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   InvalidPaymentAmountError,
@@ -155,6 +156,73 @@ test("LedgerStore: ghi trung (merchant, orderId) nem DuplicateConversionError", 
   }
 });
 
+test("LedgerStore: recordConversion voi status='pending' khong tinh vao so du kha dung", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    store.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-pending",
+      orderAmount: 500_000,
+      commissionAmount: 100_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
+    const entries = store.getUserSummary("telegram", "user-a").entries;
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].status, "pending");
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: confirmPendingEntry chuyen entry tu pending sang confirmed, tinh lai so tien tu du lieu moi", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    const pending = store.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-promote",
+      orderAmount: 100_000,
+      commissionAmount: 8_000, // uoc tinh luc con hold
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
+
+    const confirmed = store.confirmPendingEntry(pending.id, {
+      orderAmount: 100_000,
+      commissionAmount: 10_000, // so that luc duyet - khac so uoc tinh luc hold
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+    });
+
+    assert.equal(confirmed.id, pending.id); // UPDATE tai cho, khong tao id moi
+    assert.equal(confirmed.status, "confirmed");
+    assert.equal(confirmed.commissionAmount, 10_000);
+    assert.equal(confirmed.userShareAmount, 8_000); // 80% cua 10_000
+    assert.equal(store.getAvailableBalance("telegram", "user-a"), 8_000);
+
+    const entries = store.getUserSummary("telegram", "user-a").entries;
+    assert.equal(entries.length, 1); // khong tao entry trung
+  } finally {
+    store.close();
+  }
+});
+
 test("LedgerStore: getAvailableBalance cong dung nhieu entry cua 1 user, khong lan sang user khac", () => {
   const store = new LedgerStore(":memory:");
   try {
@@ -290,41 +358,99 @@ test("LedgerStore: markWithdrawalPaid chuyen dung trang thai withdrawal va cac e
   }
 });
 
-test("LedgerStore: reverseCommissionEntry loai entry khoi so du kha dung", () => {
+test("LedgerStore: reverseCommissionEntry huy dung don dang 'pending'", () => {
   const store = new LedgerStore(":memory:");
   try {
-    const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    assert.equal(store.getAvailableBalance("telegram", "user-a"), 80_000);
+    const entry = store.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-pending-1",
+      orderAmount: 500_000,
+      commissionAmount: 100_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
 
-    const reversed = store.reverseCommissionEntry(entry.id, "khach hoan hang");
+    const reversed = store.reverseCommissionEntry(entry.id, "khong dat doi soat");
     assert.equal(reversed.status, "reversed");
-    assert.match(reversed.note ?? "", /khach hoan hang/);
+    assert.match(reversed.note ?? "", /khong dat doi soat/);
     assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
   } finally {
     store.close();
   }
 });
 
-test("LedgerStore: reverseCommissionEntry nem EntryAlreadyWithdrawnError khi entry dang cho rut (chua paid)", () => {
+// 2026-08-20 (quyet dinh chot lai voi user, dua theo FAQ Accesstrade: "hoa hong duoc duyet" la so
+// lieu cuoi cung dung de thanh toan) - don "confirmed" (Kha dung) duoc xem la da hoan tat, KHONG
+// con huy duoc qua reverseCommissionEntry nua, du chua gan vao yeu cau rut tien nao.
+test("LedgerStore: reverseCommissionEntry nem EntryNotPendingError khi entry da 'confirmed' (Kha dung)", () => {
   const store = new LedgerStore(":memory:");
   try {
     const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO); // gan withdrawal_id cho entry nay
-
-    assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryAlreadyWithdrawnError);
+    assert.equal(entry.status, "confirmed");
+    assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryNotPendingError);
+    assert.equal(store.getAvailableBalance("telegram", "user-a"), 80_000); // khong bi anh huong
   } finally {
     store.close();
   }
 });
 
-test("LedgerStore: reverseCommissionEntry nem EntryAlreadyWithdrawnError khi entry da paid", () => {
+test("LedgerStore: reverseCommissionEntry nem EntryNotPendingError khi entry dang cho rut (chua paid)", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
+    store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO); // gan withdrawal_id cho entry nay
+
+    assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryNotPendingError);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: reverseCommissionEntry nem EntryNotPendingError khi entry da paid", () => {
   const store = new LedgerStore(":memory:");
   try {
     const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
     const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
     store.markWithdrawalPaid(withdrawal.id, "proof-1.png");
 
-    assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryAlreadyWithdrawnError);
+    assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryNotPendingError);
+  } finally {
+    store.close();
+  }
+});
+
+// 2026-08-20: loi thoat rieng cho CLI reverse-entry - Shopee ghi tay khong co giai doan "pending"
+// nen day la cach duy nhat sua loi nhap sai/xu ly tra hang phat hien tre cho merchant nay.
+test("LedgerStore: reverseCommissionEntry voi allowNonPending=true huy duoc entry 'confirmed' chua gan withdrawal", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
+    assert.equal(entry.status, "confirmed");
+
+    const reversed = store.reverseCommissionEntry(entry.id, "nhap sai gia don", { allowNonPending: true });
+    assert.equal(reversed.status, "reversed");
+    assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: reverseCommissionEntry voi allowNonPending=true VAN nem EntryAlreadyWithdrawnError neu da gan vao yeu cau rut tien", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
+    store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
+
+    assert.throws(
+      () => store.reverseCommissionEntry(entry.id, "nhap sai gia don", { allowNonPending: true }),
+      EntryAlreadyWithdrawnError
+    );
   } finally {
     store.close();
   }

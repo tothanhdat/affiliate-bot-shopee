@@ -452,10 +452,11 @@ export function createServer(
       return;
     }
     const displayName = ledgerStore.getDisplayNamesMap().get(`${entry.platform}:${entry.userId}`) ?? null;
-    // Chan tu truoc neu entry da gan vao 1 yeu cau rut tien - khong de admin dien ly do roi moi bao loi.
+    // Chan tu truoc neu entry khong con "pending" - khong de admin dien ly do roi moi bao loi
+    // (2026-08-20: chi huy duoc don dang "Cho xac nhan", "Kha dung" xem la da hoan tat).
     const blockedMessage =
-      entry.withdrawalId !== null
-        ? "Đơn hàng này đã nằm trong 1 yêu cầu rút tiền (đang chờ hoặc đã trả), không thể huỷ trực tiếp qua đây."
+      entry.status !== "pending"
+        ? "Chỉ huỷ được đơn đang ở trạng thái \"Chờ xác nhận\" - đơn này đã \"Khả dụng\" (hoặc đã rút/đã huỷ), được xem là đã hoàn tất, không thể huỷ qua đây nữa."
         : null;
     res.type("html").send(renderReverseConfirmPage(entry, displayName, blockedMessage));
   });

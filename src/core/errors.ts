@@ -15,7 +15,8 @@ export type ErrorCode =
   | "IMPLAUSIBLE_COMMISSION_AMOUNT"
   | "INVALID_PAYMENT_AMOUNT"
   | "MISSING_WITHDRAWAL_PROOF"
-  | "MISSING_BANK_INFO";
+  | "MISSING_BANK_INFO"
+  | "ENTRY_NOT_PENDING";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -129,6 +130,20 @@ export class NotAProductLinkError extends AppError {
   }
 }
 
+export class EntryNotPendingError extends AppError {
+  constructor() {
+    super(
+      "ENTRY_NOT_PENDING",
+      "Chỉ huỷ được đơn đang ở trạng thái \"Chờ xác nhận\" - đơn đã \"Khả dụng\" được xem là đã hoàn tất, không thể huỷ qua đây nữa."
+    );
+  }
+}
+
+/**
+ * Rieng cho reverseCommissionEntry() khi goi voi allowNonPending=true (chi CLI reverse-entry dung -
+ * loi thoat duy nhat cho Shopee, khong co giai doan "pending" nhu duong Accesstrade tu dong) - van
+ * chan neu entry da gan vao 1 yeu cau rut tien, vi tien co the da chuyen that.
+ */
 export class EntryAlreadyWithdrawnError extends AppError {
   constructor() {
     super(

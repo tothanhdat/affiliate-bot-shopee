@@ -1,6 +1,6 @@
 # Bot Ap Ma Shopee/Lazada Affiliate — Core Service + Telegram + Zalo Group Adapter
 
-Trien khai theo `spec_bot_ap_ma_shopee.md`, mo rong them ho tro nhieu merchant (Shopee, Lazada) va them Zalo Group Adapter (thay cho Zalo OA chinh thuc). Scope da code:
+Chi tiet implementation/kien truc xem `CLAUDE.md`; huong dan van hanh xem `huong-dan-van-hanh-admin.md`; huong dan su dung cho user xem `huong-dan-nguoi-dung.md`. Ho tro nhieu merchant (Shopee, TikTok Shop qua Accesstrade, Lazada du phong) va Zalo Group Adapter (thay cho Zalo OA chinh thuc). Scope da code:
 
 - **T1.1** Core Link Resolver Service (validate link, nhan dien merchant theo domain, tao affiliate link qua Accesstrade)
 - **T1.2** Telegram Adapter (long polling)

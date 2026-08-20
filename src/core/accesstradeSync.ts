@@ -1,13 +1,7 @@
-import { AppError, DuplicateConversionError, SubIdNotFoundError } from "./errors.js";
+import { AppError, DuplicateConversionError } from "./errors.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
-import {
-  recordOrderFromAccesstrade,
-  summarizeOrderResultsByUser,
-  type OrderRowResult,
-  type RecordOrderConfig,
-  type UserOrderSummary,
-} from "./orderIngest.js";
+import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
 
 /**
  * T2.1 tu dong hoa (2026-08-20, rui-ro-can-giai-quyet.md muc 8, da live-verify API that voi
@@ -18,9 +12,14 @@ import {
  *
  * Mapping trang thai (chot voi user 2026-08-20, giu nguyen 4 trang thai CommissionStatus hien co,
  * KHONG them trang thai moi):
- *   Accesstrade status=1 (approved) VA is_confirmed=1 (da chot so lieu)  -> "confirmed" (ghi entry)
- *   Accesstrade status=2 (rejected)                                      -> "reversed" (huy entry da co)
- *   Accesstrade status=0 (hold) HOAC is_confirmed=0 (chua chot)          -> BO QUA, khong sync
+ *   status=1 (approved) VA is_confirmed=1 (da chot so lieu)  -> "confirmed" (ghi/chuyen tu pending)
+ *   status=2 (rejected)                                       -> "reversed" (huy entry da co, ke
+ *     ca dang "pending" - don chua duoc duyet ma bi tu choi thi cung khong con gi de theo doi nua)
+ *   status=0 (hold) HOAC is_confirmed=0 (chua chot)           -> "pending" (2026-08-20, doi theo
+ *     yeu cau user sau khi thay Accesstrade hien "2 don cho xu ly" ma he thong lai khong hien gi -
+ *     TRUOC DAY bo qua hoan toan, gio ghi nhan de user thay don dang duoc xu ly). Entry "pending"
+ *     KHONG tinh vao so du kha dung/rut duoc (getAvailableBalance chi cong status='confirmed'),
+ *     KHONG gui DM thong bao (chi gui khi that su "confirmed", xem confirmedByUser).
  *   "paid" khong bao gio sync tu Accesstrade - chi admin tu danh dau qua /admin/withdrawals.
  */
 export interface AccesstradeSyncConfig {
@@ -38,13 +37,14 @@ export interface AccesstradeSyncResult {
   transactionsScanned: number;
   confirmedNew: number;
   confirmedDuplicate: number;
+  pendingNew: number;
   reversedCount: number;
   /** Giao dich khong tach duoc subId tu ca utm_content lan _extra.sub_params.sub1. */
   skippedNoSubId: number;
   /** subId tach duoc nhung khong khop request nao trong requests.db (findBySubId tra null). */
   skippedSubIdNotFound: number;
   errors: string[];
-  /** Dung de gui thong bao gop cho user (giong record-conversions-csv, xem formatOrdersConfirmedReply). */
+  /** Dung de gui thong bao gop cho user (giong record-conversions-csv, xem formatOrdersConfirmedReply). CHI cho don MOI "confirmed" - khong bao gom pending. */
   confirmedByUser: UserOrderSummary[];
 }
 
@@ -138,6 +138,7 @@ export async function syncAccesstradeTransactions(
     transactionsScanned: transactions.length,
     confirmedNew: 0,
     confirmedDuplicate: 0,
+    pendingNew: 0,
     reversedCount: 0,
     skippedNoSubId: 0,
     skippedSubIdNotFound: 0,
@@ -146,11 +147,12 @@ export async function syncAccesstradeTransactions(
   };
 
   const confirmedRows: OrderRowResult[] = [];
+  const { recordOrderConfig } = config;
 
   for (const tx of transactions) {
     const isConfirmedApproved = tx.status === 1 && tx.is_confirmed === 1;
     const isRejected = tx.status === 2;
-    if (!isConfirmedApproved && !isRejected) continue; // status=0 (hold) hoac is_confirmed=0 - bo qua
+    const isPending = !isConfirmedApproved && !isRejected; // status=0, hoac status=1 & is_confirmed=0
 
     const subId = extractSubId(tx);
     if (!subId) {
@@ -158,16 +160,57 @@ export async function syncAccesstradeTransactions(
       continue;
     }
 
+    const requestEntry = logStore.findBySubId(subId);
+    if (!requestEntry || !requestEntry.merchant) {
+      result.skippedSubIdNotFound += 1;
+      continue;
+    }
+
+    const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, tx.transaction_id);
+
     if (isConfirmedApproved) {
+      if (existing?.status === "confirmed") {
+        result.confirmedDuplicate += 1;
+        continue;
+      }
+      if (existing?.status === "reversed" || existing?.status === "paid") {
+        // Accesstrade "lat keo": tra ve confirmed sau khi truoc do da reversed/paid o phia bot -
+        // khong tu dong ghi de (UNIQUE constraint cung se chan INSERT moi), can admin tu xem lai.
+        result.errors.push(
+          `[confirm ${tx.transaction_id}] Accesstrade bao da duyet nhung entry noi bo dang o trang thai "${existing.status}" - can admin kiem tra tay, khong tu dong ghi de.`
+        );
+        continue;
+      }
+
       try {
-        const entry = recordOrderFromAccesstrade(logStore, ledgerStore, config.recordOrderConfig, {
-          subId,
-          orderId: tx.transaction_id,
-          productName: tx.product_name,
-          orderAmount: tx.transaction_value,
-          commissionAmount: tx.commission,
-          note: "Tu dong dong bo tu Accesstrade (/v1/transactions)",
-        });
+        let entry;
+        if (existing?.status === "pending") {
+          entry = ledgerStore.confirmPendingEntry(existing.id, {
+            orderAmount: tx.transaction_value,
+            commissionAmount: tx.commission,
+            productName: tx.product_name,
+            taxPercent: recordOrderConfig.taxPercent,
+            platformFeePercent: recordOrderConfig.platformFeePercent,
+            userSharePercent: recordOrderConfig.userSharePercent,
+            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+          });
+        } else {
+          entry = ledgerStore.recordConversion({
+            subId,
+            platform: requestEntry.platform,
+            userId: requestEntry.userId,
+            merchant: requestEntry.merchant,
+            orderId: tx.transaction_id,
+            productName: tx.product_name,
+            orderAmount: tx.transaction_value,
+            commissionAmount: tx.commission,
+            taxPercent: recordOrderConfig.taxPercent,
+            platformFeePercent: recordOrderConfig.platformFeePercent,
+            userSharePercent: recordOrderConfig.userSharePercent,
+            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+            note: "Tu dong dong bo tu Accesstrade (/v1/transactions)",
+          });
+        }
         result.confirmedNew += 1;
         confirmedRows.push({
           line: 0,
@@ -183,8 +226,6 @@ export async function syncAccesstradeTransactions(
       } catch (err) {
         if (err instanceof DuplicateConversionError) {
           result.confirmedDuplicate += 1;
-        } else if (err instanceof SubIdNotFoundError) {
-          result.skippedSubIdNotFound += 1;
         } else {
           const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
           result.errors.push(`[confirm ${tx.transaction_id}] ${msg}`);
@@ -193,22 +234,67 @@ export async function syncAccesstradeTransactions(
       continue;
     }
 
-    // isRejected: chi reverse neu TRUOC DO da ghi "confirmed" - khong lam gi neu chua tung ghi
-    // (khong co gi de huy) hoac da o trang thai khac (da reversed/dang giu boi 1 withdrawal).
-    const requestEntry = logStore.findBySubId(subId);
-    if (!requestEntry || !requestEntry.merchant) {
-      result.skippedSubIdNotFound += 1;
+    if (isRejected) {
+      // CHI reverse duoc entry dang "pending" (2026-08-20, quyet dinh chot lai voi user - khop FAQ
+      // chinh thuc Accesstrade: "hoa hong tam duyet" - tuong duong pending ben minh - co the bi
+      // huy sau doi soat, nhung "hoa hong duoc duyet" - tuong duong confirmed, is_confirmed=1 - la
+      // so lieu CUOI CUNG dung de thanh toan, khong con thay doi nua).
+      if (!existing) continue; // chua tung ghi nhan - khong co gi de xu ly, im lang la dung.
+
+      if (existing.status !== "pending") {
+        // 2026-08-20 (tu ra soat lai, phat hien comment cu o day claim sai): TRUOC DAY code chi
+        // "continue" im lang cho moi truong hop khong phai pending, ke ca khi entry da "confirmed"
+        // hoac "paid" - tuc la neu Accesstrade THAT SU dao nguoc 1 don da chot (rui ro da duoc user
+        // chap nhan CO Y THUC, nhung van can biet KHI NAO no that su xay ra), admin se KHONG BAO GIO
+        // duoc bao - khong log, khong loi, khong gi ca. Gio ghi ro vao result.errors cho 2 truong hop
+        // dang chu y (confirmed/paid) de admin it nhat con thay duoc trong ket qua chay/thong bao,
+        // du he thong KHONG tu dong huy nua (dung quyet dinh da chot).
+        if (existing.status === "confirmed" || existing.status === "paid") {
+          result.errors.push(
+            `[reverse ${tx.transaction_id}] Accesstrade báo rejected nhưng entry nội bộ đang "${existing.status}" - KHÔNG tự huỷ (đơn đã ${existing.status === "paid" ? "trả cho user rồi" : "\"Khả dụng\", coi là final"}), cần admin tự kiểm tra tay (dùng reverse-entry CLI nếu thật sự cần huỷ).`
+          );
+        }
+        continue;
+      }
+
+      try {
+        ledgerStore.reverseCommissionEntry(existing.id, "Accesstrade tra ve status=rejected qua dong bo tu dong");
+        result.reversedCount += 1;
+      } catch (err) {
+        const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+        result.errors.push(`[reverse ${tx.transaction_id}] ${msg}`);
+      }
       continue;
     }
-    const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, tx.transaction_id);
-    if (!existing || existing.status !== "confirmed") continue;
 
+    // isPending: chi tao moi neu CHUA co entry nao (moi trang thai khac deu da "vuot qua" pending
+    // roi, khong lui lai - vd don da confirmed truoc do ma lan quet nay Accesstrade tra ve du lieu
+    // hold cu do phan trang/cache thi cung khong duoc ghi de nguoc ve pending).
+    if (existing) continue;
     try {
-      ledgerStore.reverseCommissionEntry(existing.id, "Accesstrade tra ve status=rejected qua dong bo tu dong");
-      result.reversedCount += 1;
+      ledgerStore.recordConversion({
+        subId,
+        platform: requestEntry.platform,
+        userId: requestEntry.userId,
+        merchant: requestEntry.merchant,
+        orderId: tx.transaction_id,
+        productName: tx.product_name,
+        orderAmount: tx.transaction_value,
+        commissionAmount: tx.commission,
+        taxPercent: recordOrderConfig.taxPercent,
+        platformFeePercent: recordOrderConfig.platformFeePercent,
+        userSharePercent: recordOrderConfig.userSharePercent,
+        maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+        status: "pending",
+        note: "Tu dong dong bo tu Accesstrade - dang cho Accesstrade duyet",
+      });
+      result.pendingNew += 1;
     } catch (err) {
-      const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-      result.errors.push(`[reverse ${tx.transaction_id}] ${msg}`);
+      if (!(err instanceof DuplicateConversionError)) {
+        // DuplicateConversionError o day la race hiem (2 lan chay chong nhau) - bo qua im lang.
+        const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+        result.errors.push(`[pending ${tx.transaction_id}] ${msg}`);
+      }
     }
   }
 

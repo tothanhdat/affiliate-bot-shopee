@@ -409,10 +409,13 @@ export function renderOrdersPage(
     .map((e) => {
       const badge = statusBadge(e);
       const product = e.productName ? escapeHtml(e.productName) : `<span class="muted">—</span>`;
+      // 2026-08-20 (quyet dinh chot lai voi user): CHI huy duoc don dang "pending" - "confirmed"
+      // (Khai dung) nghia la Accesstrade da duyet chinh thuc/chot so lieu, xem la hoan tat, khong
+      // con ly do gi de huy nua (khop FAQ chinh thuc Accesstrade: "hoa hong duoc duyet" la so lieu
+      // cuoi cung dung de thanh toan). LedgerStore.reverseCommissionEntry() cung tu choi ngay o
+      // tang du lieu neu status khac "pending" (EntryNotPendingError) - day chi la an link o UI.
       const reverseLink =
-        e.status === "reversed" || e.withdrawalId !== null
-          ? ""
-          : `<a class="link" href="/admin/orders/${e.id}/reverse">Huỷ đơn</a>`;
+        e.status === "pending" ? `<a class="link" href="/admin/orders/${e.id}/reverse">Huỷ đơn</a>` : "";
       return `<tr>
   <td>
     <div>${escapeHtml(e.orderId)}</div>

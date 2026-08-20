@@ -136,8 +136,8 @@ function pageShell(title: string, body: string): string {
     padding: 1.25rem;
     margin-bottom: 1.25rem;
   }
-  .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
-  @media (max-width: 420px) { .totals { grid-template-columns: 1fr; } }
+  .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+  @media (max-width: 480px) { .totals { grid-template-columns: repeat(2, 1fr); } }
   .totals .stat { border-radius: 16px; padding: 1.25rem; }
   .stat .label {
     font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
@@ -145,6 +145,7 @@ function pageShell(title: string, body: string): string {
   }
   .stat .value { font-size: 1.625rem; font-weight: 700; color: var(--text); }
   .stat.accent .value { color: var(--accent); }
+  .stat.warning .value { color: var(--warning); }
   .order-list { display: flex; flex-direction: column; gap: 1rem; }
   .order-card { border-radius: 16px; padding: 1.25rem 1.375rem; }
   .order-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
@@ -331,14 +332,14 @@ export function renderDashboardPage(input: {
     : input.availableBalance >= input.thresholdVnd
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(`Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`)}>
   <div class="form-field">
-    <label for="bankName">Ngân hàng</label>
+    <label for="bankName">Ngân hàng / Ví điện tử</label>
     <select id="bankName" name="bankName" required>
-      <option value="" disabled selected>-- Chọn ngân hàng --</option>
+      <option value="" disabled selected>-- Chọn ngân hàng / ví điện tử --</option>
       ${bankOptions}
     </select>
   </div>
   <div class="form-field">
-    <label for="bankAccountNumber">Số tài khoản</label>
+    <label for="bankAccountNumber">Số tài khoản / Số điện thoại</label>
     <input type="text" id="bankAccountNumber" name="bankAccountNumber" required autocomplete="off">
   </div>
   <div class="form-field">
@@ -354,19 +355,30 @@ export function renderDashboardPage(input: {
     ? `👤 ${escapeHtml(input.displayName)} · ${platformLabel} · ID: ${escapeHtml(input.userId)}`
     : `👤 ${platformLabel} · ID: ${escapeHtml(input.userId)}`;
 
-  // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 5 (2026-08-20): canh bao TINH (khong logic
-  // moi, khong doi cach tinh so du) - chi hien khi user co it nhat 1 don "kha dung" hoac "da rut"
-  // (tuc la co lien quan tien that), khong hien voi dashboard hoan toan rong/toan don pending/huy.
-  const hasAvailableOrPaidEntry = input.entries.some((e) => e.status === "confirmed" || e.status === "paid");
-  const reversalWarning = hasAvailableOrPaidEntry
-    ? `<p class="warning-note">⚠️ Hoa hồng có thể bị thu hồi nếu đơn liên quan bị huỷ/hoàn sau khi đã ghi nhận.</p>`
+  // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 5 (2026-08-20, SUA LAI cung ngay sau khi chot
+  // lai voi user): canh bao chi con dung neu con dang "pending" - "confirmed"/"paid" gio la trang
+  // thai CUOI CUNG, khong con bi huy nguoc duoc nua (khop FAQ Accesstrade: "hoa hong duoc duyet"
+  // la so lieu dung de thanh toan, chi "hoa hong tam duyet" - tuong duong pending - moi con rui ro
+  // bi huy sau doi soat). reverseCommissionEntry() cung da tu choi huy don khong con "pending".
+  const hasPendingEntry = input.entries.some((e) => e.status === "pending");
+  const reversalWarning = hasPendingEntry
+    ? `<p class="warning-note">⚠️ Đơn đang "Chờ xác nhận" có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn.</p>`
     : "";
+
+  // 2026-08-20 (yeu cau truc tiep cua user): the rieng cho tong hoa hong cac don dang "pending"
+  // (Accesstrade con hold/chua chot, xem accesstradeSync.ts) - CHI de hien thi, KHONG cong vao
+  // availableBalance/pendingBalance nao ca, tranh nham lan voi "Dang cho rut" (tien da confirmed,
+  // dang bi giu boi 1 yeu cau rut tien).
+  const pendingConfirmationTotal = input.entries
+    .filter((e) => e.status === "pending")
+    .reduce((sum, e) => sum + e.userShareAmount, 0);
 
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
 <div class="totals">
   <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div></div>
+  <div class="stat warning"><div class="label">Chờ xác nhận</div><div class="value">${formatVnd(pendingConfirmationTotal)}</div></div>
   <div class="stat"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
   <div class="stat"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>

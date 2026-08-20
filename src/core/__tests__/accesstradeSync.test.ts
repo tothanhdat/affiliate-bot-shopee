@@ -133,7 +133,11 @@ test("syncAccesstradeTransactions: chay 2 lan cung 1 giao dich -> lan 2 tinh la 
   }
 });
 
-test("syncAccesstradeTransactions: status=2 (rejected) huy dung entry da confirmed truoc do", async () => {
+// 2026-08-20 (quyet dinh chot lai voi user, dua theo FAQ Accesstrade: "hoa hong duoc duyet" la so
+// lieu cuoi cung dung de thanh toan) - entry da "confirmed" la trang thai CUOI CUNG, KHONG con tu
+// dong huy duoc nua du Accesstrade sau do co bao status=2 (rejected) di nua. Khac voi truoc day
+// (khi con cho phep huy ca entry confirmed).
+test("syncAccesstradeTransactions: status=2 (rejected) KHONG huy entry da 'confirmed' truoc do - chi pending moi huy duoc", async () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   try {
@@ -166,8 +170,11 @@ test("syncAccesstradeTransactions: status=2 (rejected) huy dung entry da confirm
     const result = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
     restoreReject();
 
-    assert.equal(result.reversedCount, 1);
-    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0); // don bi huy, khong con tinh vao so du
+    assert.equal(result.reversedCount, 0);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 16_000); // van giu nguyen, khong bi huy nguoc
+    // 2026-08-20: admin phai duoc bao khi case hiem nay xay ra thay vi bi bo qua im lang hoan toan.
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /confirmed/);
   } finally {
     logStore.close();
     ledgerStore.close();
@@ -202,7 +209,7 @@ test("syncAccesstradeTransactions: status=2 nhung chua tung ghi nhan truoc do ->
   }
 });
 
-test("syncAccesstradeTransactions: status=0 (hold) hoac is_confirmed=0 bi bo qua hoan toan", async () => {
+test("syncAccesstradeTransactions: status=0 (hold) hoac is_confirmed=0 -> ghi nhan 'pending', khong tinh vao so du, khong bao user", async () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   const restore = mockFetchOnce([
@@ -216,13 +223,78 @@ test("syncAccesstradeTransactions: status=0 (hold) hoac is_confirmed=0 bi bo qua
       recordOrderConfig: ORDER_CONFIG,
     });
     assert.equal(result.transactionsScanned, 2);
+    assert.equal(result.pendingNew, 2);
     assert.equal(result.confirmedNew, 0);
     assert.equal(result.reversedCount, 0);
-    assert.equal(result.skippedNoSubId, 0);
-    assert.equal(result.skippedSubIdNotFound, 0);
-    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0);
+    assert.equal(result.confirmedByUser.length, 0); // khong bao user khi con pending
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0); // pending khong tinh vao so du
+
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries.length, 2);
+    assert.ok(entries.every((e) => e.status === "pending"));
   } finally {
     restore();
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("syncAccesstradeTransactions: don 'pending' sau do duoc Accesstrade duyet -> chuyen sang 'confirmed', khong tao trung, tinh dung so du", async () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+
+    const restoreHold = mockFetchOnce([
+      { status: 0, is_confirmed: 0, transaction_id: "TX-PROMOTE-001", transaction_value: 100_000, commission: 10_000, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    const first = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreHold();
+    assert.equal(first.pendingNew, 1);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0);
+
+    const restoreApproved = mockFetchOnce([
+      { status: 1, is_confirmed: 1, transaction_id: "TX-PROMOTE-001", transaction_value: 100_000, commission: 10_000, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    const second = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreApproved();
+
+    assert.equal(second.confirmedNew, 1);
+    assert.equal(second.pendingNew, 0);
+    assert.equal(second.confirmedByUser.length, 1); // gio da bao user duoc
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000); // 80% cua 10_000
+
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries.length, 1); // khong tao entry trung, chi 1 dong duy nhat cho TX-PROMOTE-001
+    assert.equal(entries[0].status, "confirmed");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("syncAccesstradeTransactions: don 'pending' bi Accesstrade tu choi -> chuyen sang 'reversed'", async () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+
+    const restoreHold = mockFetchOnce([
+      { status: 0, is_confirmed: 0, transaction_id: "TX-DENY-001", transaction_value: 100_000, commission: 10_000, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreHold();
+
+    const restoreRejected = mockFetchOnce([
+      { status: 2, is_confirmed: 0, transaction_id: "TX-DENY-001", transaction_value: 100_000, commission: 10_000, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    const result = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreRejected();
+
+    assert.equal(result.reversedCount, 1);
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries[0].status, "reversed");
+  } finally {
     logStore.close();
     ledgerStore.close();
   }

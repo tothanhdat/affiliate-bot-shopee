@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   DuplicateConversionError,
   EntryAlreadyWithdrawnError,
+  EntryNotPendingError,
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   InvalidPaymentAmountError,
@@ -281,6 +282,78 @@ export class LedgerStore {
       withdrawalId: null,
       note: input.note ?? null,
       proofImagePath: null,
+    };
+  }
+
+  /**
+   * Chuyen 1 entry dang "pending" (tao boi accesstradeSync.ts khi Accesstrade con hold/chua chot,
+   * 2026-08-20) sang "confirmed" khi Accesstrade sau do duyet that (status=1+is_confirmed=1) -
+   * UPDATE tai cho thay vi INSERT moi, vi INSERT se dung UNIQUE constraint (merchant, order_id)
+   * da co san tu luc con pending (DuplicateConversionError). Tinh lai thue/phi/userShare tu
+   * commissionAmount/orderAmount MOI NHAT Accesstrade tra ve luc duyet - co the khac nhe so voi
+   * luc con hold (hiem nhung co the xay ra), khong tin so lieu cu.
+   */
+  confirmPendingEntry(
+    entryId: string,
+    input: {
+      orderAmount: number;
+      commissionAmount: number;
+      productName?: string | null;
+      taxPercent: number;
+      platformFeePercent: number;
+      userSharePercent: number;
+      maxCommissionRatioPercent: number;
+    }
+  ): CommissionEntry {
+    const row = this.db.prepare(`SELECT * FROM commission_entries WHERE id = ?`).get(entryId);
+    if (!row) {
+      throw new Error(`Khong tim thay commission entry voi id "${entryId}"`);
+    }
+    const existing = rowToCommissionEntry(row);
+
+    const maxPlausibleCommission = (input.orderAmount * input.maxCommissionRatioPercent) / 100;
+    if (input.commissionAmount > maxPlausibleCommission) {
+      throw new ImplausibleCommissionAmountError(
+        input.commissionAmount,
+        input.orderAmount,
+        input.maxCommissionRatioPercent
+      );
+    }
+
+    const taxAmount = Math.round((input.commissionAmount * input.taxPercent) / 100);
+    const afterTaxOnly = input.commissionAmount - taxAmount;
+    const platformFeeAmount = Math.round((afterTaxOnly * input.platformFeePercent) / 100);
+    const afterTaxAmount = afterTaxOnly - platformFeeAmount;
+    const userShareAmount = Math.round((afterTaxAmount * input.userSharePercent) / 100);
+    const productName = input.productName ?? existing.productName;
+
+    this.db
+      .prepare(
+        `UPDATE commission_entries SET status = 'confirmed', order_amount = ?, commission_amount = ?,
+          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?, product_name = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.orderAmount,
+        input.commissionAmount,
+        taxAmount,
+        platformFeeAmount,
+        afterTaxAmount,
+        userShareAmount,
+        productName,
+        entryId
+      );
+
+    return {
+      ...existing,
+      status: "confirmed",
+      orderAmount: input.orderAmount,
+      commissionAmount: input.commissionAmount,
+      taxAmount,
+      platformFeeAmount,
+      afterTaxAmount,
+      userShareAmount,
+      productName,
     };
   }
 
@@ -647,20 +720,38 @@ export class LedgerStore {
   }
 
   /**
-   * Dung boi admin script/trang admin khi 1 don bi huy/hoan hang sau khi da ghi nhan. Chan huy 1 entry
-   * da gan vao 1 yeu cau rut tien (dang cho HOAC da tra) - khong chi vi da "paid" la khong sua duoc nua,
-   * ma vi neu huy luc dang "cho" (chua paid), markWithdrawalPaid() sau nay se UPDATE status = 'paid'
-   * cho MOI entry cung withdrawal_id (khong loc theo status hien tai) - ghi de mat dau vet vua huy.
+   * Dung boi admin trang/accesstradeSync.ts khi 1 don "pending" (Accesstrade con hold/chua chot)
+   * bi tu choi that su (status=2). Mac dinh CHI huy duoc entry dang "pending" (2026-08-20, quyet
+   * dinh chot lai voi user, dua theo FAQ chinh thuc cua Accesstrade: "hoa hong tam duyet" (~pending
+   * ben minh) co the bi huy neu doi soat khong dat, nhung "hoa hong duoc duyet" (~confirmed,
+   * is_confirmed=1) la so lieu CUOI CUNG dung de thanh toan, khong con thay doi nua) - goi khong co
+   * options se tu choi voi EntryNotPendingError cho moi trang thai khac "pending".
+   *
+   * `options.allowNonPending`: LOI THOAT rieng CHI cho `ledgerAdmin.ts reverse-entry` (CLI) dung -
+   * Shopee ghi tay qua record-conversion/CSV/admin web KHONG co giai doan "pending" (di thang len
+   * "confirmed" ngay, khong qua accesstradeSync.ts), nen day la cach DUY NHAT de sua loi nhap sai
+   * hoac xu ly don Shopee bi tra hang phat hien SAU KHI da ghi nhan. Ngay ca khi bat co nay, van
+   * CHAN neu entry da gan vao 1 yeu cau rut tien (EntryAlreadyWithdrawnError) - tien co the da chuyen
+   * that, khong the huy 1 chieu qua day duoc nua.
    */
-  reverseCommissionEntry(entryId: string, reason: string): CommissionEntry {
+  reverseCommissionEntry(
+    entryId: string,
+    reason: string,
+    options?: { allowNonPending?: boolean }
+  ): CommissionEntry {
     const row = this.db.prepare(`SELECT * FROM commission_entries WHERE id = ?`).get(entryId);
     if (!row) {
       throw new Error(`Khong tim thay commission entry voi id "${entryId}"`);
     }
 
     const existing = rowToCommissionEntry(row);
-    if (existing.withdrawalId !== null) {
-      throw new EntryAlreadyWithdrawnError();
+    if (existing.status !== "pending") {
+      if (!options?.allowNonPending) {
+        throw new EntryNotPendingError();
+      }
+      if (existing.withdrawalId !== null) {
+        throw new EntryAlreadyWithdrawnError();
+      }
     }
     const newNote = existing.note ? `${existing.note} | reversed: ${reason}` : `reversed: ${reason}`;
 

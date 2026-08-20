@@ -349,7 +349,7 @@ test("/admin/orders loc dung theo status va merchant", async () => {
   }
 });
 
-test("huy don (reverse) loai khoi so du kha dung", async () => {
+test("huy don (reverse) thanh cong voi don dang 'pending' (Cho xac nhan)", async () => {
   const { ledgerStore, baseUrl, cleanup } = setup();
   try {
     const entry = ledgerStore.recordConversion({
@@ -359,15 +359,18 @@ test("huy don (reverse) loai khoi so du kha dung", async () => {
       merchant: "shopee",
       orderId: "order-1",
       orderAmount: 500_000,
-      commissionAmount: 50_000, // userShare = 40_000
+      commissionAmount: 50_000,
       taxPercent: 0,
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      status: "pending",
     });
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 40_000);
 
     const cookie = await loginAndGetCookie(baseUrl);
+    const ordersHtml = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.match(ordersHtml, /Huỷ đơn/);
+
     const res = await fetch(`${baseUrl}/admin/orders/${entry.id}/reverse`, {
       method: "POST",
       headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
@@ -375,13 +378,15 @@ test("huy don (reverse) loai khoi so du kha dung", async () => {
       redirect: "manual",
     });
     assert.equal(res.status, 303);
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+    assert.equal(ledgerStore.getEntryById(entry.id)?.status, "reversed");
   } finally {
     cleanup();
   }
 });
 
-test("khong the huy don da nam trong yeu cau rut tien - an link, chan ca GET confirm va POST", async () => {
+// 2026-08-20 (quyet dinh chot lai voi user): "Kha dung" (confirmed) la trang thai CUOI CUNG, khong
+// con huy duoc nua - khac gi co gan vao yeu cau rut tien hay chua.
+test("khong the huy don da 'confirmed' (Kha dung) - an link, chan ca GET confirm va POST, du chua gan withdrawal", async () => {
   const { ledgerStore, baseUrl, cleanup } = setup();
   try {
     const entry = ledgerStore.recordConversion({
@@ -406,7 +411,7 @@ test("khong the huy don da nam trong yeu cau rut tien - an link, chan ca GET con
 
     const confirmRes = await fetch(`${baseUrl}/admin/orders/${entry.id}/reverse`, { headers: { cookie: cookie! } });
     const confirmHtml = await confirmRes.text();
-    assert.match(confirmHtml, /đã nằm trong 1 yêu cầu rút tiền/);
+    assert.match(confirmHtml, /Chỉ huỷ được đơn đang ở trạng thái/);
     assert.doesNotMatch(confirmHtml, /<textarea/);
 
     const postRes = await fetch(`${baseUrl}/admin/orders/${entry.id}/reverse`, {

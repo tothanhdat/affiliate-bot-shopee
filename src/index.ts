@@ -156,7 +156,7 @@ async function runAccesstradeSync(): Promise<void> {
     });
     console.log(
       `[accesstrade-sync] Xong: quet ${result.transactionsScanned} giao dich, ${result.confirmedNew} don moi, ` +
-        `${result.confirmedDuplicate} da co san, ${result.reversedCount} bi huy, ` +
+        `${result.confirmedDuplicate} da co san, ${result.pendingNew} dang cho duyet, ${result.reversedCount} bi huy, ` +
         `${result.skippedNoSubId + result.skippedSubIdNotFound} bo qua, ${result.errors.length} loi.`
     );
     if (result.errors.length > 0) {
@@ -170,9 +170,9 @@ async function runAccesstradeSync(): Promise<void> {
       );
     }
 
-    if (result.confirmedNew > 0 || result.reversedCount > 0 || result.errors.length > 0) {
+    if (result.confirmedNew > 0 || result.pendingNew > 0 || result.reversedCount > 0 || result.errors.length > 0) {
       notifyAdmin(
-        `🔄 Đối soát Accesstrade tự động: ${result.confirmedNew} đơn mới, ${result.reversedCount} đơn bị huỷ` +
+        `🔄 Đối soát Accesstrade tự động: ${result.confirmedNew} đơn mới, ${result.pendingNew} đơn chờ duyệt, ${result.reversedCount} đơn bị huỷ` +
           (result.errors.length > 0 ? `, ${result.errors.length} lỗi (xem log server)` : "")
       ).catch((err) => console.warn("[accesstrade-sync] gui thong bao admin that bai:", err));
     }
