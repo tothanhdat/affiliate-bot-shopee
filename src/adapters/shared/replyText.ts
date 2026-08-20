@@ -44,7 +44,7 @@ export function formatSuccessReply(
     `Mình gửi mã 🛒 ${displayName} nha: ${affiliateUrl}\n\n` +
     `${commissionLine}\n\n` +
     `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được. Bạn vui lòng nhắn với cú pháp "idid" riêng cho Admin nhé.\n\n` +
-    `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé.`
+    `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`
   );
 }
 
