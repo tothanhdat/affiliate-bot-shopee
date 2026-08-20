@@ -17,6 +17,11 @@
  *   list-pending-withdrawals
  *   record-accesstrade-payment --amount= [--note=]   (Accesstrade CHUYEN KHOAN THAT cho chu bot, doi chieu dong tien)
  *   reconciliation-summary                            (da nhan that vs da tra that cho user, canh bao neu am)
+ *   sync-accesstrade [--lookbackDays=30]              (T2.1, 2026-08-20: goi that GET /v1/transactions, tu ghi nhan
+ *     don da duoc Accesstrade duyet (status=1 + is_confirmed=1) va tu huy don bi tra ve rejected (status=2).
+ *     CHI ap dung merchant di qua Accesstrade (TikTok Shop/Lazada) - Shopee KHONG xuat hien o day, van
+ *     phai doi soat thu cong nhu cu. Server production tu chay lenh nay dinh ky (ACCESSTRADE_SYNC_ENABLED=true,
+ *     xem src/index.ts) - subcommand nay dung de chay tay/test thu, khong bat buoc dung thuong xuyen.)
  */
 import { parseArgs } from "node:util";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -26,7 +31,16 @@ import { parseCsv } from "../core/csv.js";
 import { AppError } from "../core/errors.js";
 import { LedgerStore } from "../core/ledgerStore.js";
 import { LogStore } from "../core/logStore.js";
-import { recordOrderFromAccesstrade, recordOrdersFromCsv, type RecordOrderConfig } from "../core/orderIngest.js";
+import { syncAccesstradeTransactions } from "../core/accesstradeSync.js";
+import {
+  recordOrderFromAccesstrade,
+  recordOrdersFromCsv,
+  summarizeOrderResultsByUser,
+  type RecordOrderConfig,
+  type UserOrderSummary,
+} from "../core/orderIngest.js";
+import type { Platform } from "../core/types.js";
+import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
 
 function fail(message: string): never {
   console.error(`Loi: ${message}`);
@@ -50,11 +64,53 @@ function requireNumberFlag(values: Record<string, string | boolean | undefined>,
   return n;
 }
 
+/**
+ * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc ghi nhan qua CLI.
+ * Chi ho tro Telegram (goi thang Telegram Bot API bang fetch - stateless, KHONG can Telegraf/long
+ * polling nen an toan chay song song voi bot dang chay tren server, khac voi Zalo). Zalo (zca-js)
+ * can 1 session dang nhap con song - dang nhap lai tu CLI co the day session cua bot dang chay
+ * tren server ra ngoai (CloseReason.DuplicateConnection, da gap that trong qua trinh trien khai
+ * Railway) nen KHONG tu dong gui, chi in nhac de admin tu nhan tay hoac dung /admin/record-orders
+ * tren web (chay trong cung process voi bot dang dang nhap, an toan).
+ */
+async function notifyUserFromCli(platform: Platform, userId: string, message: string): Promise<void> {
+  if (platform === "telegram") {
+    if (env.telegramBotToken === "") {
+      console.warn(`[user-notify] khong the gui (thieu TELEGRAM_BOT_TOKEN) toi ${platform}/${userId}`);
+      return;
+    }
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${env.telegramBotToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: userId, text: message }),
+      });
+      if (!res.ok) {
+        console.warn(`[user-notify] Telegram API loi (${res.status}) khi gui toi ${userId}:`, await res.text());
+      }
+    } catch (err) {
+      console.warn(`[user-notify] gui Telegram toi ${userId} that bai:`, (err as Error).message);
+    }
+    return;
+  }
+
+  if (platform === "zalo") {
+    console.log(
+      `[user-notify] User zalo/${userId} co don moi duoc xac nhan nhung CLI khong tu gui duoc qua Zalo ` +
+        `(tranh rui ro dang nhap trung lam gian doan bot dang chay). Dung /admin/record-orders tren web ` +
+        `de gui tu dong, hoac tu nhan tay cho user nay.`
+    );
+    return;
+  }
+
+  console.warn(`[user-notify] platform "${platform}" (${userId}) khong co kenh chat de gui thong bao.`);
+}
+
 async function main(): Promise<void> {
   const [subcommand, ...rest] = process.argv.slice(2);
   if (!subcommand) {
     fail(
-      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary"
+      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade"
     );
   }
 
@@ -72,6 +128,7 @@ async function main(): Promise<void> {
       file: { type: "string" },
       amount: { type: "string" },
       proofImagePath: { type: "string" },
+      lookbackDays: { type: "string" },
     },
     strict: true,
   });
@@ -104,6 +161,16 @@ async function main(): Promise<void> {
           note,
         });
         console.log(JSON.stringify(entry, null, 2));
+
+        const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+        await notifyUserFromCli(
+          entry.platform,
+          entry.userId,
+          formatOrdersConfirmedReply(
+            [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
+            `${env.dashboard.baseUrl}/d/${token}`
+          )
+        );
         break;
       }
 
@@ -129,6 +196,16 @@ async function main(): Promise<void> {
           console.log(`[dong ${r.line}] ${r.ok ? "OK" : "LOI"} - orderId=${r.orderId} subId=${r.subId} - ${r.detail}`);
         }
         console.log(`\nTong: ${results.length} dong, ${okCount} thanh cong, ${results.length - okCount} loi.`);
+
+        const summaries: UserOrderSummary[] = summarizeOrderResultsByUser(results);
+        for (const summary of summaries) {
+          const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          await notifyUserFromCli(
+            summary.platform,
+            summary.userId,
+            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+          );
+        }
         break;
       }
 
@@ -180,9 +257,39 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "sync-accesstrade": {
+        if (env.accesstrade.apiKey === "") {
+          fail("Thieu ACCESSTRADE_API_KEY - can co API key that de goi GET /v1/transactions.");
+        }
+        const lookbackDays =
+          typeof values.lookbackDays === "string" ? Number(values.lookbackDays) : env.accesstradeSync.lookbackDays;
+        if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+          fail(`--lookbackDays phai la so nguyen duong, nhan duoc "${values.lookbackDays}"`);
+        }
+
+        const result = await syncAccesstradeTransactions(logStore, ledgerStore, {
+          apiKey: env.accesstrade.apiKey,
+          apiBase: env.accesstrade.apiBase,
+          timeoutMs: env.accesstrade.timeoutMs,
+          lookbackDays,
+          recordOrderConfig: orderConfig,
+        });
+        console.log(JSON.stringify(result, null, 2));
+
+        for (const summary of result.confirmedByUser) {
+          const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          await notifyUserFromCli(
+            summary.platform,
+            summary.userId,
+            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+          );
+        }
+        break;
+      }
+
       default:
         fail(
-          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary`
+          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade`
         );
     }
   } catch (err) {

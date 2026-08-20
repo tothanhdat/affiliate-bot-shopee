@@ -20,8 +20,15 @@ import type { LedgerStore } from "../core/ledgerStore.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
 import type { LogStore } from "../core/logStore.js";
 import { MERCHANTS, type MerchantId } from "../core/merchants.js";
-import { recordOrderFromAccesstrade, recordOrdersFromCsv, type RecordOrderConfig } from "../core/orderIngest.js";
+import {
+  recordOrderFromAccesstrade,
+  recordOrdersFromCsv,
+  summarizeOrderResultsByUser,
+  type RecordOrderConfig,
+} from "../core/orderIngest.js";
+import type { RateLimiter } from "../core/rateLimiter.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
+import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
@@ -66,9 +73,16 @@ export function createServer(
   withdrawalThresholdVnd: number,
   adminSessionStore: AdminSessionStore,
   orderConfig: RecordOrderConfig,
-  withdrawalProofDir: string
+  withdrawalProofDir: string,
+  adminLoginRateLimiter: RateLimiter,
+  dashboardBaseUrl: string,
+  notifyUser: (platform: Platform, userId: string, message: string) => Promise<void>
 ) {
   const app = express();
+  // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
+  // sau 1 reverse proxy, khong bat cai nay thi req.ip luon la IP noi bo cua proxy, rate limit theo
+  // IP se vo nghia (moi client bi gop chung 1 "IP").
+  app.set("trust proxy", true);
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
@@ -208,7 +222,16 @@ export function createServer(
     }
 
     try {
-      const withdrawal = ledgerStore.requestWithdrawal(identity.platform, identity.userId, withdrawalThresholdVnd);
+      const bankName = typeof req.body?.bankName === "string" ? req.body.bankName : "";
+      const bankAccountNumber =
+        typeof req.body?.bankAccountNumber === "string" ? req.body.bankAccountNumber : "";
+      const bankAccountHolder =
+        typeof req.body?.bankAccountHolder === "string" ? req.body.bankAccountHolder : "";
+      const withdrawal = ledgerStore.requestWithdrawal(identity.platform, identity.userId, withdrawalThresholdVnd, {
+        bankName,
+        bankAccountNumber,
+        bankAccountHolder,
+      });
       // Best-effort: loi gui thong bao khong duoc lam fail response, yeu cau rut tien da luu DB roi.
       notifyAdmin(
         `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${withdrawal.amount.toLocaleString("vi-VN")}đ (id: ${withdrawal.id})`
@@ -244,7 +267,25 @@ export function createServer(
     res.type("html").send(renderAdminLoginPage());
   });
 
+  // Rui ro so 1 (rui-ro-can-giai-quyet.md): chan brute-force ADMIN_PASSWORD - toi da
+  // ADMIN_LOGIN_RATE_LIMIT_MAX_REQUESTS lan thu (mac dinh 5) MOI IP trong 1 khoang thoi gian (mac
+  // dinh 15 phut), tinh CA lan dung lan sai (don gian, khop voi RateLimiter san co - admin dang
+  // nhap that hiem khi can hon vai lan). Key theo req.ip (can "trust proxy" o tren de dung voi
+  // client that phia sau reverse proxy cua Railway).
   app.post("/admin/login", (req: Request, res: Response) => {
+    const rateCheck = adminLoginRateLimiter.checkAndRecord(req.ip ?? "unknown");
+    if (!rateCheck.allowed) {
+      res
+        .status(429)
+        .type("html")
+        .send(
+          renderAdminLoginPage(
+            `Thử sai quá nhiều lần, vui lòng đợi ${Math.ceil(rateCheck.retryAfterSeconds / 60)} phút rồi thử lại.`
+          )
+        );
+      return;
+    }
+
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const token = adminSessionStore.login(password);
     if (!token) {
@@ -477,6 +518,19 @@ export function createServer(
         commissionAmount,
         note,
       });
+      // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay, khong gop lot.
+      // Best-effort - loi gui khong duoc lam fail response, don da ghi vao ledger roi.
+      const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+      notifyUser(
+        entry.platform,
+        entry.userId,
+        formatOrdersConfirmedReply(
+          [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
+          `${dashboardBaseUrl}/d/${token}`
+        )
+      ).catch((notifyErr) => {
+        console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
+      });
       res.type("html").send(
         renderRecordOrdersPage({
           ok: true,
@@ -509,6 +563,18 @@ export function createServer(
       }
 
       const results = recordOrdersFromCsv(logStore, ledgerStore, orderConfig, rows);
+      // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B): gop thong bao theo user cho
+      // ca lot CSV thay vi gui tung don rieng - best-effort, khong lam hong ket qua da tra ve trang.
+      for (const summary of summarizeOrderResultsByUser(results)) {
+        const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+        notifyUser(
+          summary.platform,
+          summary.userId,
+          formatOrdersConfirmedReply(summary.items, `${dashboardBaseUrl}/d/${token}`)
+        ).catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao gop don moi that bai:", notifyErr);
+        });
+      }
       res.type("html").send(renderRecordOrdersPage(null, results));
     }
   );

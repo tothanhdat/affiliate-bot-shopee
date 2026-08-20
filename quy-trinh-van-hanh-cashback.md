@@ -23,16 +23,16 @@ User gửi link sản phẩm
 [5] (Vài ngày - vài tuần sau) Đơn được xác nhận trên Accesstrade
         │
         ▼
-[6] Admin xem đơn thật, chạy ledgerAdmin.ts ghi vào hệ thống    ──► lưu vào ledger.db
-        │
+[6] Admin xem đơn thật, chạy ledgerAdmin.ts ghi vào hệ thống    ──► lưu vào ledger.db,
+        │                                                          tự động báo user (Telegram/Zalo)
         ▼
-[7] User nhắn "idid" lấy link dashboard cá nhân                ──► lưu token vào ledger.db
+[7] (không bắt buộc) User nhắn "idid" lấy lại link dashboard    ──► lưu token vào ledger.db
         │
         ▼
 [8] User mở dashboard xem chi tiết hoa hồng từng đơn + tổng
         │
         ▼
-[9] Đủ 50.000đ, user bấm "Yêu cầu rút tiền"                    ──► lưu yêu cầu vào ledger.db
+[9] Đủ 20.000đ, user bấm "Yêu cầu rút tiền"                    ──► lưu yêu cầu vào ledger.db
         │
         ▼
 [10] Admin chuyển khoản tay, đánh dấu đã trả                   ──► cập nhật ledger.db
@@ -86,11 +86,11 @@ Diễn ra hoàn toàn bên ngoài hệ thống của bot — trên app/web Shope
 
 *Hệ thống bot không biết gì về bước này cho tới khi admin chủ động kiểm tra (bước 5-6).*
 
-### Bước 5 — Đơn được xác nhận trên Accesstrade (định kỳ hàng tuần)
+### Bước 5 — Đơn được xác nhận trên Accesstrade (định kỳ hàng tuần cho Shopee, TỰ ĐỘNG hàng ngày cho TikTok Shop/Lazada)
 
-**Quyết định vận hành (chốt 2026-08-18): mỗi thứ 5 hàng tuần**, admin vào dashboard Accesstrade xem báo cáo đơn hàng/giao dịch trong tuần đó, lọc ra các đơn đã thành công, đối chiếu `subId` (`sub1` cho TikTok Shop, `utm_content` cho Shopee/Lazada) của từng đơn.
+**Cập nhật 2026-08-20 — TikTok Shop/Lazada giờ ĐÃ TỰ ĐỘNG (T2.1 DONE)**: nếu bật `ACCESSTRADE_SYNC_ENABLED=true` trong `.env`, hệ thống tự gọi `GET /v1/transactions` của Accesstrade 1 lần/ngày (`ACCESSTRADE_SYNC_HOUR`, mặc định 8h sáng) — tự ghi nhận đơn đã duyệt (`status=1` + `is_confirmed=1`) và tự huỷ đơn bị Accesstrade từ chối sau đó (`status=2`), không cần admin thao tác gì cho 2 merchant này nữa. Chạy tay để test: `npx tsx src/scripts/ledgerAdmin.ts sync-accesstrade`.
 
-**Đây là bước THỦ CÔNG hiện tại** (T2.1 trong spec) — chưa có cơ chế tự động poll API báo cáo chuyển đổi. Cố định thành lịch hàng tuần để không bị quên/dồn việc.
+**Shopee VẪN THỦ CÔNG** (không có cách nào khác — Shopee đi thẳng qua `an_redir`, không qua Accesstrade, và không có API báo cáo riêng nào cho tài khoản KOC cá nhân): **Quyết định vận hành (chốt 2026-08-18): mỗi thứ 5 hàng tuần**, admin vào dashboard Accesstrade xem báo cáo đơn hàng/giao dịch trong tuần đó, lọc ra các đơn Shopee đã thành công, đối chiếu `utm_content` (subId) của từng đơn — bước này giữ nguyên như cũ.
 
 ### Bước 6 — Admin ghi nhận đơn vào ledger (nhập hàng loạt bằng CSV)
 
@@ -126,11 +126,15 @@ Ví dụ với `commissionAmount = 15.000đ`: thuế 1.500đ → sau thuế 13.5
 
 3. Chặn ghi trùng: nếu `orderId` đã tồn tại cho đúng `merchant` đó, báo lỗi thay vì cộng 2 lần.
 
+4. **(Thêm 2026-08-20, phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md mục 1)** Sau khi xử lý xong toàn bộ file, script gộp các dòng thành công theo `(platform, userId)` và tự động gửi 1 tin nhắn tổng hợp cho mỗi user có đơn mới trong lượt đó (vd "Bạn có 3 đơn mới được xác nhận, tổng cộng 45.000đ, xem chi tiết: <link dashboard>") — tự tạo token dashboard nếu user chưa từng nhắn "idid". Ghi 1 đơn lẻ (`record-conversion`) gửi ngay 1 tin sau khi ghi thành công, không gộp. Gửi tin thất bại chỉ log cảnh báo, không ảnh hưởng dữ liệu đã ghi vào ledger. **Giới hạn của CLI**: chỉ tự gửi được cho user Telegram (gọi thẳng Telegram Bot API, không cần bot đang chạy) — user Zalo sẽ được CLI in ra dòng nhắc "chưa gửi được", vì đăng nhập lại Zalo (`zca-js`) từ 1 tiến trình CLI riêng có rủi ro đá phiên đăng nhập của bot đang chạy thật trên server (`CloseReason.DuplicateConnection`, rủi ro đã ghi trong `CLAUDE.md`). Dùng menu web **"Ghi nhận đơn hàng"** (`/admin/record-orders`, xem mục 5.3 dưới đây) nếu cần tự động gửi cho cả user Zalo — route đó chạy chung tiến trình với bot đang đăng nhập nên an toàn.
+
 **Dữ liệu lưu (bảng `commission_entries` trong `ledger.db`)** — xem mục 3.
 
-### Bước 7 — User nhắn "idid" lấy link cá nhân
+### Bước 7 — User nhắn "idid" lấy link cá nhân (không bắt buộc nếu đã nhận thông báo Bước 6)
 
-Lần đầu tiên user nhắn `"idid"`, bot tạo 1 token ngẫu nhiên dài (không đoán được, không phải userId thật) gắn với `(platform, userId)` đó — **chỉ tạo 1 lần, các lần nhắn `"idid"` sau trả về đúng token cũ** (không tạo token mới mỗi lần).
+Từ 2026-08-20, user có đơn mới thường đã nhận được link dashboard qua thông báo tự động ở Bước 6, không cần chủ động nhắn "idid" nữa — bước này giờ chỉ cần khi user muốn lấy lại link (quên/xoá tin nhắn cũ) hoặc mở dashboard trước khi có đơn nào.
+
+Lần đầu tiên user nhắn `"idid"`, bot tạo 1 token ngẫu nhiên dài (không đoán được, không phải userId thật) gắn với `(platform, userId)` đó — **chỉ tạo 1 lần, các lần nhắn `"idid"` sau (hoặc tự tạo lúc gửi thông báo Bước 6) trả về đúng token cũ** (không tạo token mới mỗi lần).
 
 **Dữ liệu lưu (bảng `dashboard_tokens` trong `ledger.db`)**.
 
@@ -142,16 +146,18 @@ Mở link `https://<domain>/d/<token>` → thấy toàn bộ đơn đã ghi nh�
 
 ### Bước 9 — User yêu cầu rút tiền
 
-Khi "Khả dụng" ≥ 50.000đ, dashboard hiện nút "Yêu cầu rút [toàn bộ số dư]" (không rút một phần). Bấm vào:
-1. Hệ thống kiểm tra: có đang chờ 1 yêu cầu khác chưa xử lý không (nếu có → từ chối, báo lỗi).
-2. Tạo 1 yêu cầu rút tiền mới, **khoá lại** toàn bộ các đơn đang "khả dụng" của user đó (đánh dấu đã gắn vào yêu cầu rút này — để không bị tính trùng nếu user bấm rút 2 lần liên tiếp).
-3. Gửi thông báo Telegram cho admin (nếu đã cấu hình `ADMIN_TELEGRAM_CHAT_ID`).
+Khi "Khả dụng" ≥ 20.000đ, dashboard hiện form "Yêu cầu rút [toàn bộ số dư]" (không rút một phần), **kèm 3 trường bắt buộc: ngân hàng (chọn từ danh sách), số tài khoản, tên chủ tài khoản** (thêm 2026-08-20, phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md mục 9 — trước đó form không thu thông tin này, admin phải tự nhắn hỏi sau, gây chậm trễ). Bấm submit:
+1. Hệ thống kiểm tra đủ 3 trường ngân hàng (thiếu bất kỳ trường nào → từ chối, báo lỗi).
+2. Kiểm tra: có đang chờ 1 yêu cầu khác chưa xử lý không (nếu có → từ chối, báo lỗi).
+3. Tạo 1 yêu cầu rút tiền mới (kèm 3 trường ngân hàng vừa nhập), **khoá lại** toàn bộ các đơn đang "khả dụng" của user đó (đánh dấu đã gắn vào yêu cầu rút này — để không bị tính trùng nếu user bấm rút 2 lần liên tiếp).
+4. Gửi thông báo Telegram cho admin (nếu đã cấu hình `ADMIN_TELEGRAM_CHAT_ID`).
+5. Dashboard hiện lại thông báo: "Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn." — admin vẫn tự nhắn riêng xác nhận lại với user trước khi chuyển khoản thật (hệ thống **không tự động xác thực** số tài khoản có đúng/hợp lệ hay không).
 
-**Dữ liệu lưu (bảng `withdrawal_requests` trong `ledger.db`)** + cập nhật cột `withdrawal_id` trên các dòng `commission_entries` liên quan.
+**Dữ liệu lưu (bảng `withdrawal_requests` trong `ledger.db`, gồm cả `bank_name`/`bank_account_number`/`bank_account_holder`)** + cập nhật cột `withdrawal_id` trên các dòng `commission_entries` liên quan.
 
 ### Bước 10 — Admin trả tiền
 
-Admin xem thông báo (hoặc chạy `ledgerAdmin.ts list-pending-withdrawals` nếu không có thông báo Telegram), tự nhắn hỏi user số tài khoản ngân hàng (**không thu sẵn trong form**, đây là quyết định có chủ đích), chuyển khoản tay, rồi chạy:
+Admin xem thông báo (hoặc mở `/admin/withdrawals` trên web, hoặc chạy `ledgerAdmin.ts list-pending-withdrawals` nếu không có thông báo Telegram) — thông tin ngân hàng user đã điền hiện sẵn ở đây, admin tự nhắn riêng xác nhận lại với user (không còn phải hỏi lại từ đầu như trước 2026-08-20), chuyển khoản tay, rồi chạy:
 
 ```bash
 npx tsx src/scripts/ledgerAdmin.ts mark-withdrawal-paid --id=<id yêu cầu rút>
@@ -246,7 +252,7 @@ Giả định: group Zalo "Săn Sale ABC" có 100 thành viên dùng bot trong t
 | TT2608014 | 9.000đ | 900đ | 81đ | **7.217đ** |
 | **Tổng** | | | | **19.246đ** |
 
-→ Chưa đạt 50.000đ, dashboard hiện "Tích luỹ thêm 30.754đ nữa để đủ điều kiện rút". User này chỉ dùng bot xem tiến độ, chưa rút được.
+→ Chưa đạt 20.000đ, dashboard hiện "Tích luỹ thêm 754đ nữa để đủ điều kiện rút". User này chỉ dùng bot xem tiến độ, chưa rút được.
 
 **User "Thành Đạt" (Telegram, userId `900001`)** — 2 đơn Shopee:
 
@@ -256,7 +262,7 @@ Giả định: group Zalo "Săn Sale ABC" có 100 thành viên dùng bot trong t
 | SP2608022 | 30.000đ | 3.000đ | 270đ | **24.057đ** |
 | **Tổng** | | | | **60.143đ** |
 
-→ Vượt 50.000đ! User nhắn `"idid"`, vào dashboard, bấm "Yêu cầu rút 60.143đ" → cả 2 dòng trên bị khoá (`withdrawal_id` được gán). Admin nhận thông báo Telegram, nhắn hỏi STK, chuyển khoản, chạy `mark-withdrawal-paid` → cả 2 dòng chuyển "đã nhận", user không rút trùng được nữa cho tới khi có đơn mới tích luỹ tiếp.
+→ Vượt 20.000đ! User nhắn `"idid"`, vào dashboard, bấm "Yêu cầu rút 60.143đ" → cả 2 dòng trên bị khoá (`withdrawal_id` được gán). Admin nhận thông báo Telegram, nhắn hỏi STK, chuyển khoản, chạy `mark-withdrawal-paid` → cả 2 dòng chuyển "đã nhận", user không rút trùng được nữa cho tới khi có đơn mới tích luỹ tiếp.
 
 **User "Hồng Anh" (Zalo, userId `700002`)** — 1 đơn Lazada 20.000đ hoa hồng gốc, đã ghi nhận (`user nhận` ước tính ~16.038đ) — nhưng 2 tuần sau khách trả hàng, admin phát hiện qua Accesstrade, chạy `reverse-entry`. Dòng này chuyển "đã huỷ", **không tính vào số dư của Hồng Anh nữa** — nếu Hồng Anh đã trót rút tiền trước đó (giả sử có đơn khác đủ ngưỡng), phần 16.038đ này là khoản admin phải tự bù, không đòi lại được từ user.
 

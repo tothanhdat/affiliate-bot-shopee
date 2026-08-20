@@ -13,10 +13,13 @@ import { RateLimiter } from "../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
 
 const THRESHOLD_VND = 50_000;
+const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
 const ADMIN_PASSWORD = "test-admin-password";
 const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000 };
 
-function setup() {
+// Mac dinh rong rai de cac test dang nhap nhieu lan (nhieu it() lien tiep) khong vo tinh dinh
+// rate limit login - test rieng ve rate limit tu tao 1 RateLimiter gioi han thap cua rieng no.
+function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   const rateLimiter = new RateLimiter(1000, 60_000);
@@ -25,6 +28,10 @@ function setup() {
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
 
   const notifyAdmin = async (): Promise<void> => {};
+  const notifyUserCalls: Array<{ platform: string; userId: string; message: string }> = [];
+  const notifyUser = async (platform: string, userId: string, message: string): Promise<void> => {
+    notifyUserCalls.push({ platform, userId, message });
+  };
 
   const app = createServer(
     resolver,
@@ -34,7 +41,10 @@ function setup() {
     THRESHOLD_VND,
     adminSessionStore,
     ORDER_CONFIG,
-    withdrawalProofDir
+    withdrawalProofDir,
+    adminLoginRateLimiter,
+    "http://localhost:3002",
+    notifyUser
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -43,12 +53,13 @@ function setup() {
   function cleanup() {
     httpServer.close();
     rateLimiter.stop();
+    adminLoginRateLimiter.stop();
     logStore.close();
     ledgerStore.close();
     rmSync(withdrawalProofDir, { recursive: true, force: true });
   }
 
-  return { logStore, ledgerStore, baseUrl, withdrawalProofDir, cleanup };
+  return { logStore, ledgerStore, baseUrl, withdrawalProofDir, notifyUserCalls, cleanup };
 }
 
 /** FormData multipart 1 anh "chuyen khoan" gia lap, dung chung cho cac test mark-paid. */
@@ -118,6 +129,36 @@ test("login sai mat khau -> 401 kem loi, khong tao duoc session hop le", async (
   }
 });
 
+test("POST /admin/login bi chan sau qua so lan thu cho phep (rui ro so 1 - brute-force)", async () => {
+  // Gioi han thap (2 lan) rieng cho test nay, khong dung limiter mac dinh 1000 cua setup().
+  const { baseUrl, cleanup } = setup(new RateLimiter(2, 60_000));
+  try {
+    for (let i = 0; i < 2; i++) {
+      const res = await fetch(`${baseUrl}/admin/login`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "password=sai-mat-khau",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 401, `lan thu ${i + 1} phai la 401 (sai mat khau, chua bi chan)`);
+    }
+
+    // Lan thu thu 3 (vuot qua gioi han 2) - bi chan du go DUNG mat khau.
+    const blockedRes = await fetch(`${baseUrl}/admin/login`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `password=${encodeURIComponent(ADMIN_PASSWORD)}`,
+      redirect: "manual",
+    });
+    assert.equal(blockedRes.status, 429);
+    const html = await blockedRes.text();
+    assert.match(html, /Thử sai quá nhiều lần/);
+    assert.equal(blockedRes.headers.get("set-cookie"), null, "khong duoc tao session du go dung mat khau luc bi chan");
+  } finally {
+    cleanup();
+  }
+});
+
 test("login dung -> vao duoc /admin/withdrawals; dang xuat -> quay lai yeu cau login", async () => {
   const { baseUrl, cleanup } = setup();
   try {
@@ -163,7 +204,7 @@ test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, lu
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     });
-    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND);
+    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
     const cookie = await loginAndGetCookie(baseUrl);
     const res = await fetch(`${baseUrl}/admin/withdrawals/${withdrawal.id}/mark-paid`, {
@@ -205,7 +246,7 @@ test("POST /admin/withdrawals/:id/mark-paid khong dinh kem anh -> 422, khong chu
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     });
-    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND);
+    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
     const cookie = await loginAndGetCookie(baseUrl);
     const res = await fetch(`${baseUrl}/admin/withdrawals/${withdrawal.id}/mark-paid`, {
@@ -356,7 +397,7 @@ test("khong the huy don da nam trong yeu cau rut tien - an link, chan ca GET con
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     });
-    ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND);
+    ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
     const cookie = await loginAndGetCookie(baseUrl);
 
@@ -463,7 +504,7 @@ test("card doi chieu canh bao khi so du chu bot am", async () => {
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     });
-    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND);
+    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
     ledgerStore.markWithdrawalPaid(withdrawal.id, "proof-1.png"); // da tra 80_000, chua ghi nhan da nhan gi tu Accesstrade -> am
 
     const cookie = await loginAndGetCookie(baseUrl);
@@ -489,7 +530,7 @@ test("GET /admin/record-orders hien du 2 form (ghi 1 don le + import CSV)", asyn
 });
 
 test("POST /admin/record-orders/single ghi dung don khi subId hop le", async () => {
-  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
   try {
     seedRequestLog(logStore, "telegram-user-a-abc123-def");
 
@@ -504,6 +545,14 @@ test("POST /admin/record-orders/single ghi dung don khi subId hop le", async () 
     assert.match(html, /Đã ghi nhận đơn/);
     assert.match(html, /WEB-ORDER-001/);
     assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000); // 80% cua 20_000
+
+    // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay cho dung user,
+    // kem ten don (fallback "Đơn <orderId>" vi test khong dien productName) + so tien nhan duoc.
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].platform, "telegram");
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+    assert.match(notifyUserCalls[0].message, /Đơn WEB-ORDER-001/);
+    assert.match(notifyUserCalls[0].message, /16.000đ/);
   } finally {
     cleanup();
   }
@@ -527,7 +576,7 @@ test("POST /admin/record-orders/single bao loi ro khi subId khong ton tai", asyn
 });
 
 test("POST /admin/record-orders/csv import file that (multipart), 1 dong OK + 1 dong LOI", async () => {
-  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
   try {
     seedRequestLog(logStore, "telegram-user-a-abc123-def");
 
@@ -550,6 +599,13 @@ test("POST /admin/record-orders/csv import file that (multipart), 1 dong OK + 1 
     assert.match(html, /CSV-ORDER-001/);
     assert.match(html, /CSV-ORDER-002/);
     assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000);
+
+    // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B): 1 tin gop cho user-a (dong loi
+    // khong thuoc ve user nao nen khong tao ra thong bao rieng).
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].platform, "telegram");
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+    assert.match(notifyUserCalls[0].message, /Đơn CSV-ORDER-001/);
   } finally {
     cleanup();
   }

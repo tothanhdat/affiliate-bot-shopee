@@ -13,6 +13,7 @@ import { RateLimiter } from "../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
 
 const THRESHOLD_VND = 50_000;
+const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
 
 function setup() {
   const logStore = new LogStore(":memory:");
@@ -27,6 +28,7 @@ function setup() {
   };
 
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
+  const adminLoginRateLimiter = new RateLimiter(1000, 60_000);
   const app = createServer(
     resolver,
     logStore,
@@ -40,7 +42,10 @@ function setup() {
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     },
-    withdrawalProofDir
+    withdrawalProofDir,
+    adminLoginRateLimiter,
+    "http://localhost:3002",
+    async (): Promise<void> => {}
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -49,6 +54,7 @@ function setup() {
   function cleanup() {
     httpServer.close();
     rateLimiter.stop();
+    adminLoginRateLimiter.stop();
     logStore.close();
     ledgerStore.close();
     rmSync(withdrawalProofDir, { recursive: true, force: true });
@@ -117,12 +123,26 @@ test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdm
     const dashboardHtml = await (await fetch(`${baseUrl}/d/${token}`)).text();
     assert.match(dashboardHtml, /Yêu cầu rút/);
 
-    const firstPost = await fetch(`${baseUrl}/d/${token}/withdraw`, { method: "POST", redirect: "manual" });
+    const bankInfoBody = new URLSearchParams({
+      bankName: "Vietcombank",
+      bankAccountNumber: "0123456789",
+      bankAccountHolder: "Nguyen Van A",
+    });
+    const firstPost = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: bankInfoBody,
+    });
     assert.equal(firstPost.status, 303);
     assert.equal(notifyCalls.length, 1);
     assert.match(notifyCalls[0], /telegram\/user-a/);
 
-    const secondPost = await fetch(`${baseUrl}/d/${token}/withdraw`, { method: "POST" });
+    const secondPost = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: bankInfoBody,
+    });
     assert.equal(secondPost.status, 422);
     const html = await secondPost.text();
     assert.match(html, /đang chờ xử lý/);
@@ -149,7 +169,7 @@ test("don da rut hien link xem anh bang chung; user khac khong xem duoc anh cua 
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
     });
-    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND);
+    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
     writeFileSync(`${withdrawalProofDir}/proof-a.png`, "fake-image-bytes");
     ledgerStore.markWithdrawalPaid(withdrawal.id, "proof-a.png");
 

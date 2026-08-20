@@ -23,6 +23,15 @@ export interface AccesstradeProviderConfig {
   promotionsCacheTtlMs: number;
   /** config rieng tung merchant - merchant khong co trong map se bi tu choi voi loi ro rang */
   merchants: Partial<Record<MerchantId, AccesstradeMerchantConfig>>;
+  /**
+   * Rut gon affiliateUrl tra ve tu Accesstrade qua route rieng GET /s/:code (server.ts) - dong bo
+   * VOI CUNG 1 co che ShopeeAffiliateProvider dang dung (T3.2), thay vi de nguyen domain rut gon
+   * cua Accesstrade (vd shorten.asia cho TikTok Shop) - phan hoi truc tiep cua user (2026-08-20):
+   * domain la thay doi tuy merchant "hoi ky", nen dong nhat tat ca ve 1 domain cua bot.
+   */
+  createShortLink: (targetUrl: string) => string;
+  /** Base URL cong khai de build link rut gon, vi du "https://bot.example.com" (khong co dau / cuoi). */
+  shortLinkBaseUrl: string;
 }
 
 /**
@@ -118,12 +127,17 @@ export class AccesstradeProvider implements AffiliateProvider {
       throw new AffiliateApiError("response khong phai JSON hop le", err);
     }
 
-    const affiliateUrl = extractAffiliateUrl(json);
-    if (!affiliateUrl) {
+    const rawAffiliateUrl = extractAffiliateUrl(json);
+    if (!rawAffiliateUrl) {
       throw new AffiliateApiError(
         `khong tim thay short link trong response: ${JSON.stringify(json).slice(0, 300)}`
       );
     }
+
+    // Dong nhat domain link tra ve cho user voi ShopeeAffiliateProvider (2026-08-20) - khong de
+    // nguyen domain rut gon rieng cua Accesstrade (vd shorten.asia cho TikTok Shop).
+    const shortCode = this.config.createShortLink(rawAffiliateUrl);
+    const affiliateUrl = `${this.config.shortLinkBaseUrl}/s/${shortCode}`;
 
     if (input.merchant === "tiktokshop") {
       const commissionEstimate = await this.fetchTikTokShopCommissionEstimate(input.itemId as string);

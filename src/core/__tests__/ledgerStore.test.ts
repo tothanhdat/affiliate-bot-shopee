@@ -7,9 +7,12 @@ import {
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   InvalidPaymentAmountError,
+  MissingBankInfoError,
   MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
 } from "../errors.js";
+
+const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
 
 // taxPercent/platformFeePercent mac dinh 0 trong helper nay de cac test co san (viet truoc khi co
 // buoc tru thue/phi) khong phai tinh lai so - test rieng ve thue/phi o duoi dung gia tri khac 0.
@@ -204,9 +207,42 @@ test("LedgerStore: requestWithdrawal nem InsufficientBalanceError khi duoi nguon
   try {
     recordSample(store, { commissionAmount: 10_000 }); // userShare = 8_000
     assert.throws(
-      () => store.requestWithdrawal("telegram", "user-a", 50_000),
+      () => store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO),
       InsufficientBalanceError
     );
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: requestWithdrawal nem MissingBankInfoError khi thieu bat ky truong ngan hang nao", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordSample(store, { commissionAmount: 100_000 });
+    assert.throws(
+      () => store.requestWithdrawal("telegram", "user-a", 50_000, { ...BANK_INFO, bankAccountNumber: "  " }),
+      MissingBankInfoError
+    );
+    assert.throws(
+      () => store.requestWithdrawal("telegram", "user-a", 50_000, { ...BANK_INFO, bankName: "" }),
+      MissingBankInfoError
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: requestWithdrawal luu dung thong tin ngan hang", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordSample(store, { commissionAmount: 100_000 });
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
+    assert.equal(withdrawal.bankName, BANK_INFO.bankName);
+    assert.equal(withdrawal.bankAccountNumber, BANK_INFO.bankAccountNumber);
+    assert.equal(withdrawal.bankAccountHolder, BANK_INFO.bankAccountHolder);
+
+    const pending = store.getPendingWithdrawal("telegram", "user-a");
+    assert.equal(pending?.bankAccountHolder, BANK_INFO.bankAccountHolder);
   } finally {
     store.close();
   }
@@ -217,7 +253,7 @@ test("LedgerStore: requestWithdrawal thanh cong va khoa cac entry lien quan - go
   try {
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000 }); // userShare = 80_000
 
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
     assert.equal(withdrawal.amount, 80_000);
     assert.equal(withdrawal.status, "requested");
 
@@ -225,7 +261,7 @@ test("LedgerStore: requestWithdrawal thanh cong va khoa cac entry lien quan - go
     assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
 
     assert.throws(
-      () => store.requestWithdrawal("telegram", "user-a", 50_000),
+      () => store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO),
       WithdrawalAlreadyPendingError
     );
   } finally {
@@ -237,7 +273,7 @@ test("LedgerStore: markWithdrawalPaid chuyen dung trang thai withdrawal va cac e
   const store = new LedgerStore(":memory:");
   try {
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
 
     const paid = store.markWithdrawalPaid(withdrawal.id, "proof-1.png");
     assert.equal(paid.status, "paid");
@@ -273,7 +309,7 @@ test("LedgerStore: reverseCommissionEntry nem EntryAlreadyWithdrawnError khi ent
   const store = new LedgerStore(":memory:");
   try {
     const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    store.requestWithdrawal("telegram", "user-a", 50_000); // gan withdrawal_id cho entry nay
+    store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO); // gan withdrawal_id cho entry nay
 
     assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryAlreadyWithdrawnError);
   } finally {
@@ -285,7 +321,7 @@ test("LedgerStore: reverseCommissionEntry nem EntryAlreadyWithdrawnError khi ent
   const store = new LedgerStore(":memory:");
   try {
     const entry = recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
     store.markWithdrawalPaid(withdrawal.id, "proof-1.png");
 
     assert.throws(() => store.reverseCommissionEntry(entry.id, "khach hoan hang"), EntryAlreadyWithdrawnError);
@@ -300,8 +336,8 @@ test("LedgerStore: listPendingWithdrawals chi tra ve cac yeu cau dang cho", () =
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000, userId: "user-a" });
     recordSample(store, { orderId: "order-2", commissionAmount: 100_000, userId: "user-b" });
 
-    const w1 = store.requestWithdrawal("telegram", "user-a", 50_000);
-    store.requestWithdrawal("telegram", "user-b", 50_000);
+    const w1 = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
+    store.requestWithdrawal("telegram", "user-b", 50_000, BANK_INFO);
     store.markWithdrawalPaid(w1.id, "proof-1.png");
 
     const pending = store.listPendingWithdrawals();
@@ -316,7 +352,7 @@ test("LedgerStore: getUserSummary tra ve proofImagePath cho entry paid, null cho
   const store = new LedgerStore(":memory:");
   try {
     const entry1 = recordSample(store, { orderId: "order-1", commissionAmount: 100_000, userId: "user-a" });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
     store.markWithdrawalPaid(withdrawal.id, "proof-a.png");
 
     const entry2 = recordSample(store, { orderId: "order-2", commissionAmount: 100_000, userId: "user-a" });
@@ -337,7 +373,7 @@ test("LedgerStore: markWithdrawalPaid nem MissingWithdrawalProofError neu thieu 
   const store = new LedgerStore(":memory:");
   try {
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
 
     assert.throws(() => store.markWithdrawalPaid(withdrawal.id, ""), MissingWithdrawalProofError);
     assert.throws(() => store.markWithdrawalPaid(withdrawal.id, "   "), MissingWithdrawalProofError);
@@ -353,8 +389,8 @@ test("LedgerStore: listPaidWithdrawals tra ve theo thu tu moi nhat truoc, kem pr
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000, userId: "user-a" });
     recordSample(store, { orderId: "order-2", commissionAmount: 100_000, userId: "user-b" });
 
-    const w1 = store.requestWithdrawal("telegram", "user-a", 50_000);
-    const w2 = store.requestWithdrawal("telegram", "user-b", 50_000);
+    const w1 = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
+    const w2 = store.requestWithdrawal("telegram", "user-b", 50_000, BANK_INFO);
     store.markWithdrawalPaid(w1.id, "proof-a.png");
     store.markWithdrawalPaid(w2.id, "proof-b.png");
 
@@ -381,6 +417,21 @@ test("LedgerStore: upsertUserProfile ghi/cap nhat ten, bo qua chuoi rong", () =>
     assert.equal(store.getDisplayNamesMap().get("telegram:user-a"), "Nguyễn Văn A (đổi tên)");
 
     assert.equal(store.getDisplayNamesMap().get("telegram:user-khong-ton-tai"), undefined);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: tryClaimWelcomeMessage chi tra true lan dau, false tu lan 2, doc lap theo platform/user", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    assert.equal(store.tryClaimWelcomeMessage("zalo", "user-a"), true);
+    assert.equal(store.tryClaimWelcomeMessage("zalo", "user-a"), false);
+    assert.equal(store.tryClaimWelcomeMessage("zalo", "user-a"), false);
+
+    // User khac hoac platform khac khong bi anh huong boi user-a da claim.
+    assert.equal(store.tryClaimWelcomeMessage("zalo", "user-b"), true);
+    assert.equal(store.tryClaimWelcomeMessage("telegram", "user-a"), true);
   } finally {
     store.close();
   }
@@ -433,7 +484,7 @@ test("LedgerStore: getReconciliationSummary - da tra chi tinh withdrawal status 
     store.recordAccesstradePayment({ amountVnd: 1_000_000 });
 
     recordSample(store, { orderId: "order-1", commissionAmount: 1_500_000 });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000);
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
 
     // Dang cho, chua "paid" -> khong tinh vao da tra.
     let summary = store.getReconciliationSummary();

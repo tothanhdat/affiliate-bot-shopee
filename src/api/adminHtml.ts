@@ -211,6 +211,7 @@ export function renderWithdrawalsPage(
   <td>${escapeHtml(w.userId)}</td>
   <td>${nameCell(displayNames.get(nameKey(w.platform, w.userId)))}</td>
   <td>${formatVnd(w.amount)}</td>
+  <td>${escapeHtml(w.bankName)}<br>${escapeHtml(w.bankAccountNumber)}<br>${escapeHtml(w.bankAccountHolder)}</td>
   <td>
     <form method="POST" action="/admin/withdrawals/${w.id}/mark-paid" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit(confirmMsg)}>
       <div>
@@ -230,7 +231,7 @@ ${errorBlock}
 ${
   pending.length > 0
     ? `<div class="table-scroll"><table>
-<thead><tr><th>Thời gian</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Số tiền</th><th>Xác nhận đã trả (bắt buộc đính kèm ảnh)</th></tr></thead>
+<thead><tr><th>Thời gian</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Số tiền</th><th>Ngân hàng</th><th>Xác nhận đã trả (bắt buộc đính kèm ảnh)</th></tr></thead>
 <tbody>${rows}</tbody>
 </table></div>`
     : `<p class="empty">Không có yêu cầu nào đang chờ.</p>`

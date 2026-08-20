@@ -8,6 +8,7 @@ import {
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   InvalidPaymentAmountError,
+  MissingBankInfoError,
   MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
 } from "./errors.js";
@@ -100,7 +101,10 @@ export class LedgerStore {
         user_id TEXT NOT NULL,
         amount INTEGER NOT NULL,
         status TEXT NOT NULL,
-        proof_image_path TEXT
+        proof_image_path TEXT,
+        bank_name TEXT NOT NULL DEFAULT '',
+        bank_account_number TEXT NOT NULL DEFAULT '',
+        bank_account_holder TEXT NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_user ON withdrawal_requests(platform, user_id);
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_status ON withdrawal_requests(status);
@@ -127,9 +131,18 @@ export class LedgerStore {
         amount INTEGER NOT NULL,
         note TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS welcome_messages (
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        PRIMARY KEY (platform, user_id)
+      );
     `);
     // DB tao truoc khi co yeu cau dinh kem bang chung chuyen khoan (2026-08-19) se thieu cot nay.
     this.migrateAddWithdrawalProofColumn();
+    // DB tao truoc khi co form ngan hang bat buoc (2026-08-20) se thieu 3 cot nay.
+    this.migrateAddBankInfoColumns();
   }
 
   /** DB tao truoc 2026-08-19 (truoc khi bat buoc dinh kem anh chuyen khoan) se thieu cot nay. */
@@ -139,6 +152,27 @@ export class LedgerStore {
     }>;
     if (!columns.some((col) => col.name === "proof_image_path")) {
       this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN proof_image_path TEXT");
+    }
+  }
+
+  /**
+   * DB tao truoc 2026-08-20 (truoc khi bat buoc form ngan hang luc gui yeu cau rut, xem
+   * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9) se thieu 3 cot nay. Dung DEFAULT '' cho du
+   * lieu cu (cac yeu cau rut da ghi truoc do khong co thong tin ngan hang that).
+   */
+  private migrateAddBankInfoColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(withdrawal_requests)").all() as Array<{
+      name: string;
+    }>;
+    const hasColumn = (name: string) => columns.some((col) => col.name === name);
+    if (!hasColumn("bank_name")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN bank_name TEXT NOT NULL DEFAULT ''");
+    }
+    if (!hasColumn("bank_account_number")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN bank_account_number TEXT NOT NULL DEFAULT ''");
+    }
+    if (!hasColumn("bank_account_holder")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN bank_account_holder TEXT NOT NULL DEFAULT ''");
     }
   }
 
@@ -316,6 +350,27 @@ export class LedgerStore {
       .run(platform, userId, trimmed, updatedAt);
   }
 
+  /**
+   * "Claim" gui DM chao mung cho 1 user LAN DAU tien (2026-08-20, yeu cau truc tiep cua user) -
+   * dung INSERT (khong phai SELECT roi INSERT rieng) de tranh race neu 2 tin nhan dau tien cua
+   * cung 1 user den gan nhau cung luc (Zalo adapter khong await tuan tu tung handler, xem ghi
+   * chu trong zalo/bot.ts). Tra ve true CHI o lan goi DAU TIEN (INSERT thanh cong) - goi lai voi
+   * cung (platform,userId) tra ve false (UNIQUE constraint) va KHONG duoc gui DM nua.
+   */
+  tryClaimWelcomeMessage(platform: Platform, userId: string): boolean {
+    try {
+      this.db
+        .prepare(`INSERT INTO welcome_messages (platform, user_id, sent_at) VALUES (?, ?, ?)`)
+        .run(platform, userId, new Date().toISOString());
+      return true;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
   /** Dung boi dashboard ca nhan (GET /d/:token) de hien ten hien thi + userId - tra 1 user, khong can load ca bang nhu getDisplayNamesMap(). */
   getDisplayName(platform: Platform, userId: string): string | null {
     const row = this.db
@@ -420,6 +475,18 @@ export class LedgerStore {
     return row ? rowToCommissionEntry(row) : null;
   }
 
+  /**
+   * Tra 1 entry theo (merchant, orderId) - khop dung unique index idx_commission_entries_order.
+   * Dung boi accesstradeSync.ts de tim entry can reverse khi Accesstrade tra ve status=rejected
+   * cho 1 don da tung ghi nhan "confirmed" truoc do (khong biet truoc id noi bo, chi co orderId).
+   */
+  getEntryByOrderId(merchant: MerchantId, orderId: string): CommissionEntry | null {
+    const row = this.db
+      .prepare(`SELECT * FROM commission_entries WHERE merchant = ? AND order_id = ?`)
+      .get(merchant, orderId);
+    return row ? rowToCommissionEntry(row) : null;
+  }
+
   /** Tra ve token da co neu da tung tao, hoac tao moi neu day la lan dau (idempotent theo platform+userId). */
   findOrCreateDashboardToken(platform: Platform, userId: string): DashboardToken {
     const existing = this.db
@@ -450,7 +517,19 @@ export class LedgerStore {
    * await xen giua) - DatabaseSync dong bo + Node don luong nen khong co race condition o tang JS.
    * BEGIN/COMMIT o day la de an toan khi crash giua chung, khong phai de chong concurrency.
    */
-  requestWithdrawal(platform: Platform, userId: string, thresholdVnd: number): WithdrawalRequest {
+  requestWithdrawal(
+    platform: Platform,
+    userId: string,
+    thresholdVnd: number,
+    bankInfo: { bankName: string; bankAccountNumber: string; bankAccountHolder: string }
+  ): WithdrawalRequest {
+    const bankName = bankInfo.bankName.trim();
+    const bankAccountNumber = bankInfo.bankAccountNumber.trim();
+    const bankAccountHolder = bankInfo.bankAccountHolder.trim();
+    if (bankName === "" || bankAccountNumber === "" || bankAccountHolder === "") {
+      throw new MissingBankInfoError();
+    }
+
     const pending = this.getPendingWithdrawal(platform, userId);
     if (pending) {
       throw new WithdrawalAlreadyPendingError();
@@ -468,10 +547,11 @@ export class LedgerStore {
     try {
       this.db
         .prepare(
-          `INSERT INTO withdrawal_requests (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path)
-           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL)`
+          `INSERT INTO withdrawal_requests
+            (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder)
+           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?)`
         )
-        .run(id, createdAt, platform, userId, balance);
+        .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder);
 
       this.db
         .prepare(
@@ -495,6 +575,9 @@ export class LedgerStore {
       amount: balance,
       status: "requested",
       proofImagePath: null,
+      bankName,
+      bankAccountNumber,
+      bankAccountHolder,
     };
   }
 
@@ -675,6 +758,9 @@ function rowToWithdrawalRequest(row: unknown): WithdrawalRequest {
     amount: r.amount as number,
     status: r.status as WithdrawalRequest["status"],
     proofImagePath: (r.proof_image_path as string | null) ?? null,
+    bankName: (r.bank_name as string | null) ?? "",
+    bankAccountNumber: (r.bank_account_number as string | null) ?? "",
+    bankAccountHolder: (r.bank_account_holder as string | null) ?? "",
   };
 }
 

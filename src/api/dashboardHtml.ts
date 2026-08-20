@@ -1,5 +1,6 @@
 import { getMerchantConfig } from "../core/merchants.js";
 import type { CommissionEntry, Platform, WithdrawalRequest } from "../core/types.js";
+import { VIETNAM_BANKS } from "../core/vietnamBanks.js";
 import { confirmOnSubmit, copyButton, escapeHtml, formatDateTime, formatVnd, statusBadge } from "./htmlHelpers.js";
 
 /**
@@ -169,7 +170,22 @@ function pageShell(title: string, body: string): string {
   .copy-btn:hover { filter: brightness(1.3); }
   .proof-link { color: var(--accent); font-weight: 600; text-decoration: none; }
   .proof-link:hover { text-decoration: underline; }
-  .withdraw-form { display: flex; justify-content: flex-end; margin-bottom: 1.25rem; }
+  .withdraw-form {
+    display: flex; flex-direction: column; gap: 0.875rem; align-items: stretch;
+    background: var(--card-bg); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border: 1px solid var(--card-border); box-shadow: var(--card-shadow);
+    border-radius: 16px; padding: 1.25rem; margin-bottom: 1.25rem;
+  }
+  .form-field { display: flex; flex-direction: column; gap: 0.375rem; }
+  .form-field label {
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; color: var(--text-dim);
+  }
+  .form-field input, .form-field select {
+    background: oklch(0.21 0.02 280 / 0.6); color: var(--text); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 0.625rem 0.75rem; font-size: 0.9375rem; font-family: inherit;
+  }
+  .form-field input:focus, .form-field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .withdraw-form button { align-self: flex-end; }
   .muted { color: var(--text-dim); font-size: 0.8125rem; margin-top: 0.25rem; }
   .amount-positive { color: var(--amount-positive); }
   .amount-warning { color: var(--amount-warning); }
@@ -200,6 +216,7 @@ function pageShell(title: string, body: string): string {
     background: oklch(0.24 0.04 70 / 0.18); color: oklch(0.85 0.05 70); border: 1px solid oklch(0.6 0.1 70 / 0.3);
     border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 1.75rem; font-size: 0.875rem;
   }
+  .warning-note { color: var(--text-dim); font-size: 0.8125rem; margin: 0 0 1.25rem; }
   .empty { color: var(--text-dim); font-size: 0.9375rem; padding: 1rem 0; text-align: center; }
   button {
     background: var(--accent);
@@ -299,14 +316,35 @@ export function renderDashboardPage(input: {
   const table =
     input.entries.length > 0
       ? `<div class="order-list">${cards}</div>`
-      : `<div class="card"><p class="empty">Chưa có đơn hàng nào được ghi nhận. Đơn hàng của bạn sẽ hiển thị khi được đánh dấu trạng thái là "Đã nhận hàng"</p></div>`;
+      : `<div class="card"><p class="empty">Bạn chưa có đơn hàng nào ở trạng thái hoàn thành.<br>Khi có đơn hoàn thành, Admin sẽ chủ động nhắn tin cho bạn để xem hoa hồng nhé ^^</p></div>`;
 
   const errorBlock = input.errorMessage ? `<div class="error">${escapeHtml(input.errorMessage)}</div>` : "";
 
+  // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9 (2026-08-20): bat buoc nhap thong tin
+  // ngan hang ngay luc gui yeu cau rut (thay vi admin tu lien he hoi sau) - admin van tu doi
+  // chieu/xac nhan lai qua tin nhan rieng truoc khi chuyen khoan that, KHONG tu dong xac thuc.
+  const bankOptions = VIETNAM_BANKS.map((b) => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join(
+    "\n"
+  );
   const withdrawBlock = input.pendingWithdrawal
-    ? `<div class="pending-notice">💸 Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}). Admin sẽ liên hệ để chuyển khoản.</div>`
+    ? `<div class="pending-notice">💸 Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.</div>`
     : input.availableBalance >= input.thresholdVnd
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(`Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`)}>
+  <div class="form-field">
+    <label for="bankName">Ngân hàng</label>
+    <select id="bankName" name="bankName" required>
+      <option value="" disabled selected>-- Chọn ngân hàng --</option>
+      ${bankOptions}
+    </select>
+  </div>
+  <div class="form-field">
+    <label for="bankAccountNumber">Số tài khoản</label>
+    <input type="text" id="bankAccountNumber" name="bankAccountNumber" required autocomplete="off">
+  </div>
+  <div class="form-field">
+    <label for="bankAccountHolder">Tên chủ tài khoản</label>
+    <input type="text" id="bankAccountHolder" name="bankAccountHolder" required autocomplete="off">
+  </div>
   <button type="submit">Yêu cầu rút ${formatVnd(input.availableBalance)}</button>
 </form>`
       : `<p class="progress-hint">Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - input.availableBalance))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).</p>`;
@@ -316,6 +354,14 @@ export function renderDashboardPage(input: {
     ? `👤 ${escapeHtml(input.displayName)} · ${platformLabel} · ID: ${escapeHtml(input.userId)}`
     : `👤 ${platformLabel} · ID: ${escapeHtml(input.userId)}`;
 
+  // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 5 (2026-08-20): canh bao TINH (khong logic
+  // moi, khong doi cach tinh so du) - chi hien khi user co it nhat 1 don "kha dung" hoac "da rut"
+  // (tuc la co lien quan tien that), khong hien voi dashboard hoan toan rong/toan don pending/huy.
+  const hasAvailableOrPaidEntry = input.entries.some((e) => e.status === "confirmed" || e.status === "paid");
+  const reversalWarning = hasAvailableOrPaidEntry
+    ? `<p class="warning-note">⚠️ Hoa hồng có thể bị thu hồi nếu đơn liên quan bị huỷ/hoàn sau khi đã ghi nhận.</p>`
+    : "";
+
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
@@ -324,6 +370,7 @@ ${errorBlock}
   <div class="stat"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
   <div class="stat"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>
+${reversalWarning}
 ${withdrawBlock}
 ${table}`;
 

@@ -102,6 +102,14 @@ export interface WithdrawalRequest {
   status: WithdrawalStatus;
   /** Ten file anh chup man hinh chuyen khoan thanh cong, luu trong WITHDRAWAL_PROOF_DIR - null cho tới khi markWithdrawalPaid(). */
   proofImagePath: string | null;
+  /**
+   * Thong tin ngan hang user tu dien luc gui yeu cau rut (bat buoc, xem
+   * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9) - admin tu doi chieu/xac nhan lai qua tin
+   * nhan rieng truoc khi chuyen khoan, KHONG tu dong xac thuc so tai khoan co hop le hay khong.
+   */
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
 }
 
 export interface DashboardToken {

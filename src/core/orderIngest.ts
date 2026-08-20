@@ -1,7 +1,7 @@
 import { AppError, SubIdNotFoundError } from "./errors.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
-import type { CommissionEntry } from "./types.js";
+import type { CommissionEntry, Platform } from "./types.js";
 
 /**
  * Logic ghi nhan 1 don hang tu Accesstrade dung CHUNG boi ledgerAdmin.ts (CLI) va trang admin web
@@ -58,6 +58,11 @@ export interface OrderRowResult {
   orderId: string;
   ok: boolean;
   detail: string;
+  /** Chi co gia tri khi ok=true - dung de gom nhom thong bao theo user (xem summarizeOrderResultsByUser). */
+  platform?: Platform;
+  userId?: string;
+  userShareAmount?: number;
+  productName?: string | null;
 }
 
 /**
@@ -99,10 +104,59 @@ export function recordOrdersFromCsv(
         commissionAmount,
         note,
       });
-      return { line, subId, orderId, ok: true, detail: `user_share=${entry.userShareAmount}d` };
+      return {
+        line,
+        subId,
+        orderId,
+        ok: true,
+        detail: `user_share=${entry.userShareAmount}d`,
+        platform: entry.platform,
+        userId: entry.userId,
+        userShareAmount: entry.userShareAmount,
+        productName: entry.productName,
+      };
     } catch (err) {
       const detail = err instanceof AppError ? err.userMessage : (err as Error).message;
       return { line, subId, orderId, ok: false, detail };
     }
   });
+}
+
+/** 1 don da xac nhan - dung boi formatOrdersConfirmedReply() de hien ten san pham + so tien nhan duoc. */
+export interface ConfirmedOrderItem {
+  orderId: string;
+  productName: string | null;
+  userShareAmount: number;
+}
+
+export interface UserOrderSummary {
+  platform: Platform;
+  userId: string;
+  items: ConfirmedOrderItem[];
+}
+
+/**
+ * Gom cac dong OK trong 1 lot record-conversions-csv theo (platform, userId) - dung de gui 1 tin
+ * nhan thong bao gop cho moi user thay vi N tin cho N don (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md
+ * muc 1, Option B). Bo qua cac dong loi (ok=false). Giu lai productName tung don (2026-08-20, yeu
+ * cau truc tiep cua user) de formatOrdersConfirmedReply liet ke ro tung don thay vi chi tong so tien.
+ */
+export function summarizeOrderResultsByUser(results: OrderRowResult[]): UserOrderSummary[] {
+  const map = new Map<string, UserOrderSummary>();
+  for (const r of results) {
+    if (!r.ok || !r.platform || !r.userId || r.userShareAmount === undefined) continue;
+    const key = `${r.platform}:${r.userId}`;
+    const item: ConfirmedOrderItem = {
+      orderId: r.orderId,
+      productName: r.productName ?? null,
+      userShareAmount: r.userShareAmount,
+    };
+    const existing = map.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      map.set(key, { platform: r.platform, userId: r.userId, items: [item] });
+    }
+  }
+  return [...map.values()];
 }

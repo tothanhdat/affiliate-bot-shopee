@@ -1,9 +1,21 @@
 import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
 import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
+import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
 export const USAGE_TEXT =
-  "👋 Gửi cho mình link sản phẩm Shopee hoặc Lazada (ví dụ: https://shopee.vn/...-i.123.456), " +
+  "👋 Gửi cho mình link sản phẩm Shopee hoặc TikTok Shop (ví dụ: https://vn.shp.ee/xxxxxxx), " +
   "mình sẽ trả về link áp mã cho bạn.";
+
+/**
+ * Zalo DM voi noi dung khong khop lenh "idid" - truoc day IM LANG hoan toan (quyet dinh 2026-08-17,
+ * tranh lo link dashboard neu lo tra loi nham trong group), nhung lam nguoi lan dau dung tuong bot loi.
+ * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 10 (2026-08-20): tra loi 1 cau huong dan co dinh,
+ * KHONG lo bat ky thong tin ca nhan/link dashboard nao. Dat o day (dung chung style cac template
+ * khac) du hien chi Zalo DM dung, de neu sau can dung lai cho noi khac thi co san.
+ */
+export const ZALO_DM_HELP_TEXT =
+  "Mình chỉ hỗ trợ lệnh \"idid\" trong tin nhắn riêng để lấy link theo dõi hoa hồng. " +
+  "Muốn gửi link sản phẩm, vui lòng gửi trong group nhé.";
 
 function formatVnd(amount: number): string {
   return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
@@ -18,22 +30,21 @@ export function formatSuccessReply(
   // commissionEstimate chi co khi provider lay duoc du lieu CHINH THUC (khong phai scrape/doan) -
   // hien chi TikTok Shop qua Accesstrade (xem accesstradeProvider.ts). Khong co thi bo qua dong nay,
   // KHONG tu bia so - giu dung nguyen tac da thong nhat.
-  // 2026-08-18: rut gon theo lua chon "Vua phai" cua user (3 phuong an), bo dong du phong
-  // "gui admin neu cho lau" de tin nhan ngan hon.
-  // 2026-08-20: them lai canh bao so nay chi la uoc tinh SNAPSHOT tai thoi diem tao link (ty le +
-  // gia san pham co the doi truoc luc don duoc xac nhan that su ben Accesstrade) - da bi bo khi rut
-  // gon text truoc do, phat hien lai qua so sanh thuc te bot tra vs bao cao Accesstrade lech nhau.
+  // 2026-08-20 (viet lai theo gop y truc tiep cua user sau khi xem tin nhan that): cau "mình sẽ chủ
+  // dong nhan tin cho ban" thay cho "nhan 'idid' de theo doi" o dong nay - vi tu 2026-08-20 da co
+  // thong bao tu dong khi don duoc xac nhan (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1), noi
+  // "cho minh chu dong bao" khong con la loi hua suong nua. Dong "idid" van giu o duoi cho case user
+  // muon tu tra cuu truoc khi co thong bao.
   const commissionLine = commissionEstimate
-    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.\n\n`
-    : "";
-  // 2026-08-19: rut gon thanh 1 cau duy nhat (bo phan biet co/khong co estimate) theo yeu cau user -
-  // cau moi khong con nhac "so tien" nen khong con ly do phai tach nhanh de tranh mau thuan nhu truoc.
-  const pendingLine = `Nhắn "idid" riêng cho Admin để xem hoa hồng của bạn nhé.`;
+    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.`
+    : merchant === "shopee"
+      ? `Vì sàn Shopee không cho phép hiển thị hoa hồng ước tính khi đơn chưa hoàn tất, nên bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
+      : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
   return (
-    `🛒 ${displayName}: ${affiliateUrl}\n\n` +
-    commissionLine +
-    `⚠️ Mở đúng link và đặt hàng ngay trong phiên đó để được ghi nhận.\n\n` +
-    pendingLine
+    `Mình gửi mã 🛒 ${displayName} nha: ${affiliateUrl}\n\n` +
+    `${commissionLine}\n\n` +
+    `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được. Bạn vui lòng nhắn với cú pháp "idid" riêng cho Admin nhé.\n\n` +
+    `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé.`
   );
 }
 
@@ -62,5 +73,59 @@ export function formatDashboardLinkReply(dashboardUrl: string, userId: string): 
   return (
     `🆔 ID của bạn là: ${userId}\n\n` +
     `🎁 Đây là link theo dõi hoa hồng của bạn: ${dashboardUrl}`
+  );
+}
+
+/**
+ * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B, 2026-08-20): thong bao gop theo
+ * lot ghi nhan don (record-conversion/record-conversions-csv), khong gui real-time tung don rieng.
+ * 1 phan tu trong items dung chung cho ca 2 case (ghi 1 don le cung goi ham nay voi items co 1 phan tu).
+ * 2026-08-20 (yeu cau truc tiep cua user sau khi test that): liet ke ten san pham + so tien tung don
+ * thay vi chi tong so tien, tone gan gui/de thuong hon. productName null (admin bo trong luc ghi
+ * nhan) fallback ve "Đơn <orderId>" de khong hien "null" tho trong tin nhan.
+ */
+export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboardUrl: string): string {
+  const total = items.reduce((sum, item) => sum + item.userShareAmount, 0);
+  const label = (item: ConfirmedOrderItem) => (item.productName ? item.productName : `Đơn ${item.orderId}`);
+
+  if (items.length === 1) {
+    const [item] = items;
+    return (
+      `🎉 Yay, đơn "${label(item)}" của bạn đã được xác nhận rồi nè! Bạn nhận được ${formatVnd(item.userShareAmount)} hoa hồng 💰\n\n` +
+      `Xem chi tiết: ${dashboardUrl}`
+    );
+  }
+
+  const lines = items.map((item) => `- ${label(item)}: ${formatVnd(item.userShareAmount)}`).join("\n");
+  return (
+    `🎉 Yay, bạn có ${items.length} đơn mới được xác nhận rồi nè!\n` +
+    `${lines}\n\n` +
+    `💰 Tổng cộng bạn nhận được: ${formatVnd(total)}\n\n` +
+    `Xem chi tiết: ${dashboardUrl}`
+  );
+}
+
+/**
+ * 2026-08-20 (yeu cau truc tiep cua user, viet lai toan bo noi dung lan 2 cung ngay): DM chao
+ * mung gui 1 LAN DUY NHAT toi user vua gui link san pham DAU TIEN trong group (xem
+ * LedgerStore.tryClaimWelcomeMessage - dam bao khong gui lai lan 2). userSharePercent/
+ * withdrawalThresholdVnd truyen vao thay vi hard-code - dong bo voi COMMISSION_USER_SHARE_PERCENT/
+ * WITHDRAWAL_THRESHOLD_VND trong .env, tranh phai sua tay text nay moi lan doi ty le/nguong.
+ * CHI dung boi Zalo (zca-js DM duoc bat ky user nao) - Telegram Bot API chan DM toi user chua tung
+ * tu nhan tin cho bot truoc (loi "Forbidden: bot can't initiate conversation"), nen khong ap dung
+ * cho Telegram (quyet dinh 2026-08-20, xem zalo/bot.ts).
+ */
+export function formatWelcomeReply(userSharePercent: number, withdrawalThresholdVnd: number): string {
+  const botSharePercent = 100 - userSharePercent;
+  return (
+    `Chào bạn, rất vui vì bạn đã tham gia group nha! 🎉\n\n` +
+    `Mình là bot hỗ trợ săn sale hoàn tiền (cashback) khi mua hàng qua Shopee, TikTok Shop. Trước khi dùng, gửi bạn vài thông tin quan trọng để dùng cho thuận tiện nhé:\n\n` +
+    `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng kèm ưu đãi — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
+    `💰 Hoa hồng: Bạn nhận ${userSharePercent}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại ${botSharePercent}% để duy trì vận hành.\n\n` +
+    `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
+    `📊 Theo dõi hoa hồng: Nhắn "idid" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
+    `💵 Rút tiền: Khi số dư đạt từ ${formatVnd(withdrawalThresholdVnd)}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
+    `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Hoa hồng cũng có thể bị thu hồi nếu đơn liên quan bị huỷ/hoàn sau khi đã ghi nhận.\n\n` +
+    `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`
   );
 }

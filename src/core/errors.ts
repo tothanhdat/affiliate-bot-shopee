@@ -14,7 +14,8 @@ export type ErrorCode =
   | "ENTRY_ALREADY_WITHDRAWN"
   | "IMPLAUSIBLE_COMMISSION_AMOUNT"
   | "INVALID_PAYMENT_AMOUNT"
-  | "MISSING_WITHDRAWAL_PROOF";
+  | "MISSING_WITHDRAWAL_PROOF"
+  | "MISSING_BANK_INFO";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -149,6 +150,12 @@ export class MissingWithdrawalProofError extends AppError {
       "MISSING_WITHDRAWAL_PROOF",
       "Cần đính kèm ảnh chụp màn hình đã chuyển khoản thành công trước khi đánh dấu đã trả."
     );
+  }
+}
+
+export class MissingBankInfoError extends AppError {
+  constructor() {
+    super("MISSING_BANK_INFO", "Vui lòng điền đầy đủ số tài khoản, tên chủ tài khoản và ngân hàng.");
   }
 }
 

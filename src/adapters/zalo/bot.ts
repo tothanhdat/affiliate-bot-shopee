@@ -7,11 +7,13 @@ import type { MerchantId } from "../../core/merchants.js";
 import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
 import {
   USAGE_TEXT,
+  ZALO_DM_HELP_TEXT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
   formatPromotionsReply,
   formatDashboardLinkReply,
+  formatWelcomeReply,
 } from "../shared/replyText.js";
 
 export interface ZaloGroupBotOptions {
@@ -21,6 +23,10 @@ export interface ZaloGroupBotOptions {
   promotionsLimit: number;
   ledgerStore: LedgerStore;
   dashboardBaseUrl: string;
+  /** Dung de dien vao DM chao mung user moi (formatWelcomeReply) - dong bo voi COMMISSION_USER_SHARE_PERCENT. */
+  commissionUserSharePercent: number;
+  /** Dung de dien vao DM chao mung user moi (formatWelcomeReply) - dong bo voi WITHDRAWAL_THRESHOLD_VND. */
+  withdrawalThresholdVnd: number;
 }
 
 /**
@@ -143,19 +149,28 @@ export class ZaloGroupBot {
           message.threadId,
           message.type
         );
+      } else {
+        // Tin nhan rieng (DM) voi noi dung khac "idid" (vd link san pham, cau hoi...): KHONG tu
+        // dong xu ly link/tra loi chi tiet - van la quyet dinh co chu dich (2026-08-17), tranh lo
+        // link dashboard neu lo tra loi nham trong group. Nhung tu 2026-08-20 (phan-hoi-cai-thien-
+        // trai-nghiem-nguoi-dung.md muc 10) tra loi 1 cau huong dan co dinh thay vi im lang hoan
+        // toan - lan dau dung de tuong bot loi. Khong lo thong tin ca nhan/link dashboard nao o day.
+        await api.sendMessage(ZALO_DM_HELP_TEXT, message.threadId, message.type);
       }
-      // Tin nhan rieng (DM) voi noi dung khac "idid" (vd link san pham, cau hoi...): bot CHU Y
-      // IM LANG, khong tu dong xu ly hay tra loi gi - de admin tu vao tra loi thu cong. Day la
-      // quyet dinh co chu dich (2026-08-17), khac voi group (van xu ly link nhu binh thuong ben duoi).
       return;
     }
 
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
-      await api.sendMessage(USAGE_TEXT, message.threadId, message.type);
+      await this.sendGroupReply(api, message, USAGE_TEXT);
       return;
     }
+
+    // 2026-08-20 (yeu cau truc tiep cua user): DM chao mung LAN DAU user gui link san pham trong
+    // group - best-effort, khong duoc lam gian doan viec xu ly link nghiep vu chinh du DM that bai
+    // (vd user chan tin nhan tu nguoi la).
+    await this.maybeSendWelcomeMessage(api, userId);
 
     const linksToProcess = links.slice(0, this.options.maxLinksPerMessage);
     const skippedCount = links.length - linksToProcess.length;
@@ -165,24 +180,20 @@ export class ZaloGroupBot {
       try {
         const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId });
         successMerchants.add(result.merchant);
-        await api.sendMessage(
-          formatSuccessReply(result.merchant, result.affiliateUrl, result.commissionEstimate),
-          message.threadId,
-          message.type
+        await this.sendGroupReply(
+          api,
+          message,
+          formatSuccessReply(result.merchant, result.affiliateUrl, result.commissionEstimate)
         );
       } catch (err) {
         const userMessage =
           err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
-        await api.sendMessage(formatErrorReply(userMessage), message.threadId, message.type);
+        await this.sendGroupReply(api, message, formatErrorReply(userMessage));
       }
     }
 
     if (skippedCount > 0) {
-      await api.sendMessage(
-        formatSkippedReply(linksToProcess.length, skippedCount),
-        message.threadId,
-        message.type
-      );
+      await this.sendGroupReply(api, message, formatSkippedReply(linksToProcess.length, skippedCount));
     }
 
     if (this.options.promotionsLimit > 0) {
@@ -190,13 +201,71 @@ export class ZaloGroupBot {
         try {
           const promotions = await this.resolver.getPromotions(merchant, this.options.promotionsLimit);
           if (promotions.length > 0) {
-            await api.sendMessage(formatPromotionsReply(merchant, promotions), message.threadId, message.type);
+            await this.sendGroupReply(api, message, formatPromotionsReply(merchant, promotions));
           }
         } catch (err) {
           console.warn(`[zalo] khong lay duoc danh sach khuyen mai (${merchant}):`, (err as Error).message);
         }
       }
     }
+  }
+
+  /**
+   * Gui reply trong GROUP kem tag @dName nguoi gui o dau tin nhan - phan-hoi truc tiep cua user
+   * (2026-08-20): nhieu nguoi gui link cung luc trong group thi khong biet bot dang tra loi ai.
+   * Dung Mention cua zca-js (tappable, khong phai chi la text "@ten") thay vi ghep chuoi thuong.
+   * Fallback ve gui van ban thuong (khong mention) neu Zalo profile khong co dName (hiem, tranh
+   * hien thi "@ " truoc noi dung).
+   */
+  private async sendGroupReply(api: API, message: Message, body: string): Promise<void> {
+    const dName = message.data.dName?.trim();
+    if (!dName) {
+      await api.sendMessage(body, message.threadId, message.type);
+      return;
+    }
+    const mentionLabel = `@${dName} `;
+    await api.sendMessage(
+      {
+        msg: `${mentionLabel}${body}`,
+        mentions: [{ pos: 0, uid: message.data.uidFrom, len: mentionLabel.length - 1 }],
+      },
+      message.threadId,
+      message.type
+    );
+  }
+
+  /**
+   * DM chao mung 1 LAN DUY NHAT toi user vua gui link san pham DAU TIEN trong group (2026-08-20,
+   * yeu cau truc tiep cua user). LedgerStore.tryClaimWelcomeMessage() dam bao chi lan goi DAU
+   * TIEN moi thuc su gui (INSERT unique, an toan voi race) - cac lan sau (userId da co trong bang
+   * welcome_messages) khong lam gi ca, khong gui lai. Best-effort: loi gui (vd user chan tin nhan
+   * tu nguoi la) chi log canh bao, KHONG throw len tren de khong lam gian doan xu ly link chinh.
+   */
+  private async maybeSendWelcomeMessage(api: API, userId: string): Promise<void> {
+    const isFirstTime = this.options.ledgerStore.tryClaimWelcomeMessage("zalo", userId);
+    if (!isFirstTime) return;
+
+    try {
+      await api.sendMessage(
+        formatWelcomeReply(this.options.commissionUserSharePercent, this.options.withdrawalThresholdVnd),
+        userId,
+        ThreadType.User
+      );
+    } catch (err) {
+      console.warn(`[zalo] gui DM chao mung toi ${userId} that bai:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Gui tin nhan DM chu dong toi 1 userId (khong phai tra loi 1 message nhan duoc) - dung boi
+   * notifyUser trong index.ts de bao user khi don duoc admin ghi nhan (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md
+   * muc 1). Nem loi neu chua dang nhap (this.api null) - goi noi dung tu bat try/catch.
+   */
+  async sendDirectMessage(userId: string, message: string): Promise<void> {
+    if (!this.api) {
+      throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
+    }
+    await this.api.sendMessage(message, userId, ThreadType.User);
   }
 
   stop(): void {

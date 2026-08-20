@@ -6,7 +6,7 @@ import { CompositeAffiliateProvider } from "./compositeProvider.js";
 import { MockAffiliateProvider } from "./mockProvider.js";
 import { ShopeeAffiliateProvider } from "./shopeeAffiliateProvider.js";
 
-function buildAccesstradeConfig(): AccesstradeProviderConfig {
+function buildAccesstradeConfig(logStore: LogStore): AccesstradeProviderConfig {
   return {
     apiKey: env.accesstrade.apiKey,
     apiBase: env.accesstrade.apiBase,
@@ -14,6 +14,10 @@ function buildAccesstradeConfig(): AccesstradeProviderConfig {
     timeoutMs: env.accesstrade.timeoutMs,
     promotionsCacheTtlMs: env.accesstrade.promotionsCacheTtlMs,
     merchants: env.accesstrade.merchants,
+    createShortLink: (targetUrl) => logStore.createShortLink(targetUrl),
+    // DASHBOARD_BASE_URL nguoi dung dien co the co dau "/" cuoi - bo di de khong tao URL
+    // dang "https://bot.example.com//s/abc123".
+    shortLinkBaseUrl: env.dashboard.baseUrl.replace(/\/$/, ""),
   };
 }
 
@@ -26,13 +30,13 @@ export function createAffiliateProvider(logStore: LogStore): AffiliateProvider {
   assertAffiliateProviderConfigured();
 
   if (env.affiliateProvider === "accesstrade") {
-    return new AccesstradeProvider(buildAccesstradeConfig());
+    return new AccesstradeProvider(buildAccesstradeConfig(logStore));
   }
 
   if (env.affiliateProvider === "shopee_direct") {
     // Shopee di thang qua co che an_redir (khong qua Accesstrade) - Lazada/TikTok Shop van
     // dung chung 1 instance AccesstradeProvider nhu truoc (xem T3.1, spec muc 5).
-    const accesstradeProvider = new AccesstradeProvider(buildAccesstradeConfig());
+    const accesstradeProvider = new AccesstradeProvider(buildAccesstradeConfig(logStore));
     return new CompositeAffiliateProvider({
       shopee: new ShopeeAffiliateProvider({
         affiliateId: env.shopeeDirect.affiliateId,

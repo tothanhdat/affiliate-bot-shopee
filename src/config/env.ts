@@ -79,6 +79,20 @@ export const env = {
     merchants: resolveAccesstradeMerchants(),
   },
 
+  /**
+   * T2.1 tu dong hoa (2026-08-20, xem rui-ro-can-giai-quyet.md muc 8): job dinh ky goi
+   * GET /v1/transactions cua Accesstrade. CHI ap dung cho merchant di qua Accesstrade (TikTok
+   * Shop/Lazada) - Shopee di thang qua an_redir (ShopeeAffiliateProvider), KHONG qua Accesstrade,
+   * nen se KHONG BAO GIO xuat hien trong ket qua sync nay, van can doi soat thu cong rieng.
+   */
+  accesstradeSync: {
+    enabled: optionalBool("ACCESSTRADE_SYNC_ENABLED", false),
+    /** Gio chay hang ngay (0-23, gio server). Mac dinh 8h sang. */
+    hour: optionalInt("ACCESSTRADE_SYNC_HOUR", 8),
+    /** So ngay nhin lai moi lan chay - du dai de bat duoc don duyet tre, khong chi "hom qua". */
+    lookbackDays: optionalInt("ACCESSTRADE_SYNC_LOOKBACK_DAYS", 30),
+  },
+
   /** Chi dung khi AFFILIATE_PROVIDER=shopee_direct (xem ShopeeAffiliateProvider). */
   shopeeDirect: {
     /** affiliate_id co dinh cua tai khoan, lay tai affiliate.shopee.vn/account_setting. */
@@ -98,6 +112,11 @@ export const env = {
   rateLimit: {
     maxRequests: optionalInt("RATE_LIMIT_MAX_REQUESTS", 10),
     windowMs: optionalInt("RATE_LIMIT_WINDOW_MS", 5 * 60 * 1000),
+  },
+  /** Rieng cho POST /admin/login - chan brute-force mat khau (rui ro so 1 trong rui-ro-can-giai-quyet.md). */
+  adminLoginRateLimit: {
+    maxRequests: optionalInt("ADMIN_LOGIN_RATE_LIMIT_MAX_REQUESTS", 5),
+    windowMs: optionalInt("ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS", 15 * 60 * 1000),
   },
   maxLinksPerMessage: optionalInt("MAX_LINKS_PER_MESSAGE", 5),
   // Mac dinh 0 (tat) tu 2026-08-17 - tap trung hoan toan vao cashback, khong con hien
@@ -129,7 +148,8 @@ export const env = {
 
   withdrawal: {
     /** So du kha dung toi thieu (VND) de duoc gui yeu cau rut tien. */
-    thresholdVnd: optionalInt("WITHDRAWAL_THRESHOLD_VND", 50_000),
+    // Mac dinh 20.000d - ha tu 50.000d ngay 2026-08-20 theo phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 2.
+    thresholdVnd: optionalInt("WITHDRAWAL_THRESHOLD_VND", 20_000),
     /** Thu muc luu anh chup man hinh bang chung da chuyen khoan (bat buoc khi "Danh dau da tra"). */
     proofDir: optional("WITHDRAWAL_PROOF_DIR", "./data/withdrawal-proofs"),
   },
