@@ -75,6 +75,53 @@ function extractSubId(tx: AccesstradeTransactionRaw): string | null {
   return null;
 }
 
+/**
+ * Gop cac dong RAW cung chung transaction_id (2026-08-21, phat hien qua bao cao thuc te don TikTok
+ * Shop): Accesstrade tra ve "hoa hong bonus" (`is_brand_bonus: true`, `product_category: "bonus"`)
+ * la 1 DONG RIENG BIET, cung transaction_id voi dong san pham goc, thay vi cong san vao 1 dong duy
+ * nhat - UI cua chinh Accesstrade GOP 2 dong nay lai thanh 1 "Ma don" khi hien thi (transaction_value
+ * + commission cong don). Neu khong gop truoc, dong xu ly sau (bonus) se GHI DE bang gia tri RIENG
+ * cua no (vd order value nho hon han dong goc) thay vi tong dung - de tao ratio hoa hong/gia tri don
+ * gia bi sai lech, co the vuot nguong an toan (ImplausibleCommissionAmountError) mot cach oan uong.
+ * Trang thai gop: rejected (status=2) o BAT KY dong nao -> ca nhom rejected; CA NHOM phai
+ * status=1+is_confirmed=1 moi tinh la confirmed; con lai la pending - dung nguyen tac "chua chac
+ * chan het thi van la pending" thay vi lac quan qua som.
+ */
+function groupTransactionsByOrderId(transactions: AccesstradeTransactionRaw[]): AccesstradeTransactionRaw[] {
+  const grouped = new Map<string, AccesstradeTransactionRaw>();
+
+  for (const tx of transactions) {
+    const existing = grouped.get(tx.transaction_id);
+    if (!existing) {
+      grouped.set(tx.transaction_id, { ...tx });
+      continue;
+    }
+
+    existing.transaction_value += tx.transaction_value;
+    existing.commission += tx.commission;
+    if (!existing.product_name?.trim() && tx.product_name?.trim()) existing.product_name = tx.product_name;
+    if (!existing.utm_content?.trim() && tx.utm_content?.trim()) existing.utm_content = tx.utm_content;
+    const existingSub1 = existing._extra?.sub_params?.sub1?.trim();
+    const txSub1 = tx._extra?.sub_params?.sub1?.trim();
+    if (!existingSub1 && txSub1) {
+      existing._extra = { sub_params: { sub1: txSub1 } };
+    }
+
+    if (existing.status === 2 || tx.status === 2) {
+      existing.status = 2;
+      existing.is_confirmed = 0;
+    } else if (existing.status === 1 && existing.is_confirmed === 1 && tx.status === 1 && tx.is_confirmed === 1) {
+      existing.status = 1;
+      existing.is_confirmed = 1;
+    } else {
+      existing.status = 0;
+      existing.is_confirmed = 0;
+    }
+  }
+
+  return [...grouped.values()];
+}
+
 async function fetchAllTransactions(
   config: AccesstradeSyncConfig,
   since: string,
@@ -132,7 +179,8 @@ export async function syncAccesstradeTransactions(
   const since = sinceDate.toISOString();
   const until = untilDate.toISOString();
 
-  const transactions = await fetchAllTransactions(config, since, until);
+  const rawTransactions = await fetchAllTransactions(config, since, until);
+  const transactions = groupTransactionsByOrderId(rawTransactions);
 
   const result: AccesstradeSyncResult = {
     windowSince: since,

@@ -338,6 +338,57 @@ test("syncAccesstradeTransactions: don 'pending' bi Accesstrade tu choi -> chuye
   }
 });
 
+// 2026-08-21 (phat hien tu bao cao thuc te): Accesstrade tra "hoa hong bonus" la 1 dong RIENG cung
+// chung transaction_id voi dong san pham goc (is_brand_bonus=true, product_category="bonus") - phai
+// cong don value/commission ca 2 dong lai (giong cach UI Accesstrade gop thanh 1 "Ma don" khi hien
+// thi), khong duoc de dong sau ghi de rieng le len dong truoc (se ra sai so, co the vuot nguong an
+// toan mot cach oan uong).
+test("syncAccesstradeTransactions: gop dong 'bonus' cung transaction_id voi dong san pham goc thanh 1 entry, cong don gia tri/hoa hong", async () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  const restore = mockFetchOnce([
+    {
+      status: 0,
+      is_confirmed: 0,
+      transaction_id: "TX-BONUS-001",
+      transaction_value: 254_150,
+      commission: 0,
+      product_name: "San pham goc",
+      _extra: { sub_params: { sub1: "zalo-user-a-abc-def" } },
+    },
+    {
+      status: 0,
+      is_confirmed: 0,
+      transaction_id: "TX-BONUS-001",
+      transaction_value: 12_707,
+      commission: 8_154,
+      product_name: "",
+      _extra: { sub_params: { sub1: "zalo-user-a-abc-def" } },
+    },
+  ]);
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const result = await syncAccesstradeTransactions(logStore, ledgerStore, {
+      ...SYNC_CONFIG_BASE,
+      recordOrderConfig: ORDER_CONFIG,
+    });
+
+    assert.equal(result.transactionsScanned, 1); // 2 dong RAW gop thanh 1 order
+    assert.equal(result.pendingNew, 1);
+    assert.equal(result.errors.length, 0);
+
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].orderAmount, 266_857); // 254_150 + 12_707
+    assert.equal(entries[0].commissionAmount, 8_154); // 0 + 8_154
+    assert.equal(entries[0].productName, "San pham goc"); // giu ten tu dong khong rong
+  } finally {
+    restore();
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
 test("syncAccesstradeTransactions: subId khong khop request nao -> skippedSubIdNotFound", async () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
