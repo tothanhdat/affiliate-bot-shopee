@@ -593,8 +593,13 @@ ${csvResultsBlock}
   return adminShell("record-orders", "Ghi nhận đơn hàng", `${singleCard}\n${csvCard}`);
 }
 
-export function renderSettingsPage(currentValues: Record<string, string>, errorMessage?: string | null): string {
+export function renderSettingsPage(
+  currentValues: Record<string, string>,
+  errorMessage?: string | null,
+  successMessage?: string | null
+): string {
   const errorBlock = errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : "";
+  const successBlock = successMessage ? `<div class="success">${escapeHtml(successMessage)}</div>` : "";
 
   const fields = SETTINGS_REGISTRY.map((entry) => {
     const value = currentValues[entry.key] ?? entry.default;
@@ -615,7 +620,8 @@ export function renderSettingsPage(currentValues: Record<string, string>, errorM
   const body = `<div class="card">
 <h2>5 giá trị chỉnh được qua form này</h2>
 ${errorBlock}
-<form method="POST" action="/admin/settings" class="settings-form">
+${successBlock}
+<form method="POST" action="/admin/settings" class="settings-form" ${confirmOnSubmit("Xác nhận lưu thay đổi cấu hình này? Áp dụng ngay lập tức, không cần khởi động lại bot.")}>
 ${fields}
 <div class="actions"><button type="submit" class="primary">Lưu thay đổi</button></div>
 </form>

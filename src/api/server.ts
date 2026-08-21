@@ -591,12 +591,13 @@ export function createServer(
     }
   );
 
-  app.get("/admin/settings", requireAdminAuth, (_req: Request, res: Response) => {
+  app.get("/admin/settings", requireAdminAuth, (req: Request, res: Response) => {
     const currentValues: Record<string, string> = {};
     for (const entry of SETTINGS_REGISTRY) {
       currentValues[entry.key] = ledgerStore.getSetting(entry.key, entry.default);
     }
-    res.type("html").send(renderSettingsPage(currentValues));
+    const successMessage = req.query.saved === "1" ? "Đã lưu thay đổi cấu hình thành công." : null;
+    res.type("html").send(renderSettingsPage(currentValues, null, successMessage));
   });
 
   app.post("/admin/settings", requireAdminAuth, (req: Request, res: Response) => {
@@ -644,7 +645,7 @@ export function createServer(
     for (const entry of SETTINGS_REGISTRY) {
       ledgerStore.setSetting(entry.key, submitted[entry.key]);
     }
-    res.redirect(303, "/admin/settings");
+    res.redirect(303, "/admin/settings?saved=1");
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
