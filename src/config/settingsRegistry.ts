@@ -36,7 +36,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     default: String(env.commission.userSharePercent),
     min: 0,
     max: 100,
-    helpText: "Phần trăm user nhận trên hoa hồng sau khi trừ thuế/phí sàn (0-100). Phần còn lại thuộc về chủ bot.",
+    helpText: "Phần trăm user nhận trên hoa hồng sau khi trừ thuế/phí sàn (0-100). Phần còn lại thuộc về chủ bot. Lưu ý: đổi số này cũng áp dụng NGƯỢC cho các đơn đang \"Chờ xác nhận\" (pending) ở lần đối soát kế tiếp — accesstradeSync tính lại userShareAmount theo % mới nhất mỗi lần sync, không giữ % lúc đơn được tạo. Chỉ đơn đã \"Khả dụng\"/\"Đã rút\" (confirmed/paid) mới giữ nguyên, không bị ảnh hưởng.",
   },
   {
     key: SETTINGS_KEYS.withdrawalThresholdVnd,

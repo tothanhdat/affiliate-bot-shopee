@@ -699,6 +699,18 @@ test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri mo
     assert.equal(ledgerStore.getSetting("commission_user_share_percent", ""), "70");
     assert.equal(ledgerStore.getSetting("withdrawal_threshold_vnd", ""), "99000");
     assert.equal(ledgerStore.getSetting("usage_text", ""), "usage moi");
+
+    // Kiem tra GET thuc su tra ve HTML phan anh gia tri VUA LUU (khong chi doc thang tu DB) -
+    // xac nhan renderSettingsPage doc dung tu ledgerStore.getSetting(...) thay vi luon fallback ve
+    // default cua SETTINGS_REGISTRY.
+    const getRes = await fetch(`${baseUrl}/admin/settings`, {
+      headers: { cookie: cookie ?? "" },
+    });
+    assert.equal(getRes.status, 200);
+    const html = await getRes.text();
+    assert.match(html, /value="70"/);
+    assert.match(html, /value="99000"/);
+    assert.match(html, /usage moi/);
   } finally {
     cleanup();
   }

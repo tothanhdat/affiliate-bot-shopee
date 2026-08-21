@@ -20,7 +20,7 @@ Hiện tại 3 nhóm giá trị sau chỉ đổi được qua sửa `.env` + red
 - Chỉ 3 nhóm giá trị nêu trên. `taxPercent`/`platformFeePercent`/`maxRatioPercent` (commission) **không** đổi động — vẫn tĩnh từ `.env` như hiện tại, ngoài phạm vi yêu cầu.
 - Tin nhắn bot: chỉ 3 tin nhắn tĩnh, không phụ thuộc logic dữ liệu phức tạp — `USAGE_TEXT`, `formatWelcomeReply`, `formatSuccessReply`. Các tin nhắn khác (lỗi, khuyến mãi, xác nhận đơn hàng...) giữ nguyên hard-code trong `replyText.ts`.
 - Không cần lịch sử thay đổi (audit trail) cho setting — chỉ lưu giá trị hiện tại, đúng tinh thần YAGNI của dự án.
-- Thay đổi setting chỉ ảnh hưởng **từ thời điểm lưu trở đi** — các `commission_entries` đã ghi nhận trước đó giữ nguyên `userShareAmount` đã chốt (không có gì thay đổi ở đây, hành vi này vốn đã đúng vì số được chốt tại thời điểm ghi entry).
+- Thay đổi setting áp dụng ngay cho các entry ghi mới **và** áp dụng NGƯỢC cho bất kỳ `commission_entries` nào đang ở trạng thái `pending` — lần chạy `accesstradeSync` kế tiếp sẽ gọi `updatePendingEntry`/`confirmPendingEntry` với `userSharePercent` mới nhất đọc từ `settings`, tính lại `userShareAmount` của các entry đó (đây là hành vi `updatePendingEntry`/`confirmPendingEntry` vốn đã có TRƯỚC tính năng này, không phải lỗi mới sinh ra — tính năng này chỉ khiến việc đổi `%` dễ xảy ra hơn hẳn, từ "sửa `.env` + redeploy" thành 1 cú click, nên tác dụng phụ vốn có này dễ khiến ai đó bất ngờ hơn trước). Chỉ entry đã `confirmed`/`paid` mới thực sự "chốt" và không đổi nữa. *(Sửa 2026-08-21 sau final review — câu gốc ở trên khẳng định sai rằng thay đổi không ảnh hưởng gì tới entry đã ghi nhận; điều đó chỉ đúng với `confirmed`/`paid`, không đúng với `pending`.)*
 
 ## Lưu trữ
 
