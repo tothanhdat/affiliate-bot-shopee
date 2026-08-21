@@ -14,6 +14,7 @@ import {
   WithdrawalAlreadyPendingError,
 } from "./errors.js";
 import type { MerchantId } from "./merchants.js";
+import { SETTINGS_KEYS } from "./settingsKeys.js";
 import type {
   AccesstradePayment,
   CommissionEntry,
@@ -138,6 +139,12 @@ export class LedgerStore {
         user_id TEXT NOT NULL,
         sent_at TEXT NOT NULL,
         PRIMARY KEY (platform, user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
       );
     `);
     // DB tao truoc khi co yeu cau dinh kem bang chung chuyen khoan (2026-08-19) se thieu cot nay.
@@ -877,6 +884,58 @@ export class LedgerStore {
       totalPaidToUsersVnd: paidRow.total,
       remainingVnd: receivedRow.total - paidRow.total,
     };
+  }
+
+  /**
+   * Doc 1 setting tu bang `settings` - tra defaultValue neu chua tung duoc admin luu qua
+   * /admin/settings (xem SETTINGS_KEYS + src/config/settingsRegistry.ts). Khong cache - moi lan
+   * goi query lai SQLite truc tiep (chi phi khong dang ke, nhat quan voi cac method khac).
+   */
+  getSetting(key: string, defaultValue: string): string {
+    const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
+      | { value: string }
+      | undefined;
+    return row ? row.value : defaultValue;
+  }
+
+  getSettingInt(key: string, defaultValue: number): number {
+    const raw = this.getSetting(key, String(defaultValue));
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isNaN(parsed) ? defaultValue : parsed;
+  }
+
+  /** Upsert - ghi de neu key da ton tai, khong throw neu chua co (khac cac insert khac trong file nay). */
+  setSetting(key: string, value: string): void {
+    const updatedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updatedAt) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`
+      )
+      .run(key, value, updatedAt);
+  }
+
+  // Typed wrapper tien dung cho code nghiep vu (telegram/bot.ts, zalo/bot.ts, server.ts, index.ts,
+  // ledgerAdmin.ts) - nhan defaultValue tu call site, khong hard-code default o day (giu core khong
+  // phu thuoc env, giong cach recordConversion() nhan taxPercent v.v qua input).
+  getUserSharePercent(defaultValue: number): number {
+    return this.getSettingInt(SETTINGS_KEYS.userSharePercent, defaultValue);
+  }
+
+  getWithdrawalThresholdVnd(defaultValue: number): number {
+    return this.getSettingInt(SETTINGS_KEYS.withdrawalThresholdVnd, defaultValue);
+  }
+
+  getUsageText(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.usageText, defaultValue);
+  }
+
+  getWelcomeMessageTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.welcomeMessageTemplate, defaultValue);
+  }
+
+  getSuccessReplyTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.successReplyTemplate, defaultValue);
   }
 
   close(): void {

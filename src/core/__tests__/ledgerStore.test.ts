@@ -627,3 +627,49 @@ test("LedgerStore: getReconciliationSummary - da tra chi tinh withdrawal status 
     store.close();
   }
 });
+
+test("LedgerStore: getSetting tra default khi chua co override, tra gia tri moi sau setSetting", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getSetting("some_key", "default-value"), "default-value");
+  store.setSetting("some_key", "new-value");
+  assert.equal(store.getSetting("some_key", "default-value"), "new-value");
+  store.close();
+});
+
+test("LedgerStore: setSetting goi lai voi cung key se ghi de (upsert), khong tao 2 dong", () => {
+  const store = new LedgerStore(":memory:");
+  store.setSetting("k", "v1");
+  store.setSetting("k", "v2");
+  assert.equal(store.getSetting("k", "fallback"), "v2");
+  store.close();
+});
+
+test("LedgerStore: getSettingInt parse so nguyen, tra default neu chua set hoac gia tri khong phai so", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getSettingInt("threshold", 20_000), 20_000);
+  store.setSetting("threshold", "30000");
+  assert.equal(store.getSettingInt("threshold", 20_000), 30_000);
+  store.close();
+});
+
+test("LedgerStore: typed getters (userSharePercent/withdrawalThresholdVnd/usageText/welcomeMessageTemplate/successReplyTemplate) doc dung key rieng va fallback dung default truyen vao", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getUserSharePercent(90), 90);
+  assert.equal(store.getWithdrawalThresholdVnd(20_000), 20_000);
+  assert.equal(store.getUsageText("default usage"), "default usage");
+  assert.equal(store.getWelcomeMessageTemplate("default welcome"), "default welcome");
+  assert.equal(store.getSuccessReplyTemplate("default success"), "default success");
+
+  store.setSetting("commission_user_share_percent", "85");
+  store.setSetting("withdrawal_threshold_vnd", "50000");
+  store.setSetting("usage_text", "custom usage");
+  store.setSetting("welcome_message_template", "custom welcome");
+  store.setSetting("success_reply_template", "custom success");
+
+  assert.equal(store.getUserSharePercent(90), 85);
+  assert.equal(store.getWithdrawalThresholdVnd(20_000), 50_000);
+  assert.equal(store.getUsageText("default usage"), "custom usage");
+  assert.equal(store.getWelcomeMessageTemplate("default welcome"), "custom welcome");
+  assert.equal(store.getSuccessReplyTemplate("default success"), "custom success");
+  store.close();
+});
