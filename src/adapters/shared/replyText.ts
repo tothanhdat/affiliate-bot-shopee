@@ -23,7 +23,6 @@ export function formatSuccessReply(
   affiliateUrl: string,
   commissionEstimate?: CommissionEstimate | null
 ): string {
-  const displayName = getMerchantConfig(merchant).displayName;
   // commissionEstimate chi co khi provider lay duoc du lieu CHINH THUC (khong phai scrape/doan) -
   // hien chi TikTok Shop qua Accesstrade (xem accesstradeProvider.ts). Khong co thi bo qua dong nay,
   // KHONG tu bia so - giu dung nguyen tac da thong nhat.
@@ -38,7 +37,7 @@ export function formatSuccessReply(
       ? `Vì sàn Shopee không cho phép mình xem giá sản phẩm nên tạm thời mình chưa tính được hoa hồng thực tế. Bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
       : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
   return (
-    `Mình gửi mã 🛒 ${displayName} nha: ${affiliateUrl}\n\n` +
+    `Link đây ạ: ${affiliateUrl}\n\n` +
     `${commissionLine}\n\n` +
     `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được, bạn vui lòng nhắn với cú pháp "xemhh" riêng cho Admin nhé.\n\n` +
     `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`
