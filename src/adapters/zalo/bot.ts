@@ -7,6 +7,8 @@ import type { MerchantId } from "../../core/merchants.js";
 import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
 import {
   USAGE_TEXT,
+  SUCCESS_REPLY_TEMPLATE_DEFAULT,
+  WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
@@ -159,7 +161,7 @@ export class ZaloGroupBot {
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
-      await this.sendGroupReply(api, message, USAGE_TEXT);
+      await this.sendGroupReply(api, message, this.options.ledgerStore.getUsageText(USAGE_TEXT));
       return;
     }
 
@@ -176,10 +178,11 @@ export class ZaloGroupBot {
       try {
         const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId });
         successMerchants.add(result.merchant);
+        const successTemplate = this.options.ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         await this.sendGroupReply(
           api,
           message,
-          formatSuccessReply(result.merchant, result.affiliateUrl, result.commissionEstimate)
+          formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate)
         );
       } catch (err) {
         const userMessage =
@@ -242,8 +245,13 @@ export class ZaloGroupBot {
     if (!isFirstTime) return;
 
     try {
+      const welcomeTemplate = this.options.ledgerStore.getWelcomeMessageTemplate(WELCOME_MESSAGE_TEMPLATE_DEFAULT);
+      const userSharePercent = this.options.ledgerStore.getUserSharePercent(this.options.commissionUserSharePercent);
+      const withdrawalThresholdVnd = this.options.ledgerStore.getWithdrawalThresholdVnd(
+        this.options.withdrawalThresholdVnd
+      );
       await api.sendMessage(
-        formatWelcomeReply(this.options.commissionUserSharePercent, this.options.withdrawalThresholdVnd),
+        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd),
         userId,
         ThreadType.User
       );
