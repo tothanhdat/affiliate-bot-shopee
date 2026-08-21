@@ -25,13 +25,13 @@ import {
  * (2026-08-18) nhung mau sac/noi dung rieng cua du an - KHONG clone CSS/asset thuong mai.
  */
 
-const NAV_ITEMS: Array<{ key: string; href: string; label: string }> = [
-  { key: "withdrawals", href: "/admin/withdrawals", label: "Yêu cầu rút tiền" },
-  { key: "users", href: "/admin/users", label: "Người dùng" },
-  { key: "orders", href: "/admin/orders", label: "Đơn hàng" },
-  { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng" },
-  { key: "accesstrade-payments", href: "/admin/accesstrade-payments", label: "Đối chiếu Accesstrade" },
-  { key: "settings", href: "/admin/settings", label: "Cấu hình" },
+const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: string }> = [
+  { key: "withdrawals", href: "/admin/withdrawals", label: "Yêu cầu rút tiền", icon: "💸" },
+  { key: "users", href: "/admin/users", label: "Người dùng", icon: "👥" },
+  { key: "orders", href: "/admin/orders", label: "Đơn hàng", icon: "📦" },
+  { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng", icon: "📝" },
+  { key: "accesstrade-payments", href: "/admin/accesstrade-payments", label: "Đối chiếu Accesstrade", icon: "🔄" },
+  { key: "settings", href: "/admin/settings", label: "Cấu hình", icon: "⚙️" },
 ];
 
 function shellStyles(): string {
@@ -58,24 +58,32 @@ function shellStyles(): string {
   body { margin: 0; font-family: -apple-system, "Inter", system-ui, sans-serif; background: var(--content-bg); color: var(--text); }
   .layout { display: flex; min-height: 100vh; }
   .sidebar { width: 230px; flex-shrink: 0; background: var(--sidebar-bg); padding: 1.5rem 0; }
-  .sidebar .brand { color: #fff; font-weight: 700; font-size: 1.05rem; padding: 0 1.25rem 1.5rem; }
+  .sidebar .brand { color: #fff; font-weight: 700; font-size: 1.05rem; padding: 0 1.25rem 1.5rem; white-space: nowrap; overflow: hidden; }
   .sidebar nav a {
-    display: block; padding: 0.65rem 1.25rem; color: var(--sidebar-text); text-decoration: none;
-    font-size: 0.9rem; border-radius: 8px; margin: 0.15rem 0.75rem;
+    display: flex; align-items: center; gap: 0.7rem; padding: 0.65rem 1.25rem; color: var(--sidebar-text);
+    text-decoration: none; font-size: 0.9rem; border-radius: 8px; margin: 0.15rem 0.75rem; white-space: nowrap;
   }
+  .sidebar nav a .icon { flex-shrink: 0; font-size: 1.05rem; line-height: 1; }
   .sidebar nav a.active { background: var(--sidebar-active-bg); color: var(--sidebar-text-active); font-weight: 600; }
   .main { flex: 1; min-width: 0; }
   .topbar {
     background: #fff; border-bottom: 1px solid var(--card-border); padding: 1rem 1.75rem;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
   }
   .topbar h1 { font-size: 1.1rem; margin: 0; }
+  .topbar .topbar-left { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
   .topbar form { margin: 0; }
   .topbar button.logout {
     background: none; border: 1px solid var(--card-border); color: var(--text-muted);
     border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.82rem; cursor: pointer;
   }
   .topbar button.logout:hover { background: var(--content-bg); }
+  /* Cong tac an/hien menu tren mobile (checkbox hack thuan CSS, khong them JS) - #sidebar-toggle
+     nam truoc .sidebar trong markup de :checked ~ .sidebar/.sidebar-backdrop hoat dong duoc. An
+     hoan toan tren desktop, chi hien trong @media ben duoi. */
+  .sidebar-toggle-input { display: none; }
+  .sidebar-toggle-btn { display: none; }
+  .sidebar-backdrop { display: none; }
   .content { padding: 1.75rem; }
   .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.25rem; }
   .card h2 { font-size: 0.95rem; margin: 0 0 1rem; }
@@ -137,15 +145,66 @@ function shellStyles(): string {
   .settings-form textarea { min-height: 130px; line-height: 1.55; margin-bottom: 0.5rem; }
   .settings-form .help { font-size: 0.78rem; color: var(--text-muted); margin: 0.4rem 0 0; line-height: 1.5; }
   .settings-form .actions { padding-top: 1.35rem; }
+
+  /* Responsive (2026-08-21, phan hoi truc tiep cua user sau khi test tren mobile that - ban dau
+     tung doi sidebar thanh thanh nav ngang o tren, nhung user muon menu VAN nam ben trai, chi thu
+     gon con icon mac dinh + co nut bam de mo/dong, khong phai chuyen len tren). Duoi 768px: sidebar
+     mac dinh thu gon con 1 "rail" chi hien icon (khong chiem nhieu cho ngang man hinh hep). Nut
+     hamburger trong topbar (label cho #sidebar-toggle) mo rong sidebar thanh drawer de len tren noi
+     dung (position: fixed) kem lop nen mo (.sidebar-backdrop, cung la 1 label) - bam ra ngoai drawer
+     se tu dong dong lai. Thuan CSS (checkbox hack), khong can JS - trang nay von khong dung JS phia
+     client ngoai vai onclick/onsubmit inline co san (confirmOnSubmit, copyButton). */
+  @media (max-width: 768px) {
+    .sidebar-toggle-btn {
+      display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem;
+      border: 1px solid var(--card-border); border-radius: 8px; font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+    }
+    .sidebar-toggle-btn:hover { background: var(--content-bg); }
+    .topbar { padding: 0.75rem 0.85rem; gap: 0.5rem; }
+    .topbar-left { flex: 1; min-width: 0; }
+    .topbar h1 { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .topbar > form { flex-shrink: 0; min-width: 0; }
+    .topbar button.logout { flex-shrink: 0; white-space: nowrap; padding: 0.35rem 0.6rem; font-size: 0.75rem; }
+    .content { padding: 1rem; }
+
+    .sidebar { width: 56px; overflow: hidden; transition: width 0.18s ease; }
+    .sidebar .brand { padding: 0 0 1.25rem; text-align: center; }
+    .sidebar .brand .brand-text { display: none; }
+    .sidebar nav a { justify-content: center; padding: 0.65rem 0; margin: 0.15rem 0.5rem; }
+    .sidebar nav a .label { display: none; }
+
+    .sidebar-toggle-input:checked ~ .layout .sidebar {
+      width: 230px; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.28); overflow-y: auto;
+    }
+    .sidebar-toggle-input:checked ~ .layout .sidebar .brand { text-align: left; padding: 0 1.25rem 1.5rem; }
+    .sidebar-toggle-input:checked ~ .layout .sidebar .brand .brand-text { display: inline; }
+    .sidebar-toggle-input:checked ~ .layout .sidebar nav a { justify-content: flex-start; padding: 0.65rem 1.25rem; margin: 0.15rem 0.75rem; }
+    .sidebar-toggle-input:checked ~ .layout .sidebar nav a .label { display: inline; }
+    .sidebar-toggle-input:checked ~ .sidebar-backdrop {
+      display: block; position: fixed; inset: 0; background: rgba(15, 17, 28, 0.45); z-index: 45; cursor: pointer;
+    }
+
+    .payment-form, .filters { flex-direction: column; align-items: stretch; }
+    .payment-form > div, .filters > div { width: 100%; }
+    .payment-form input[type="text"], .payment-form select,
+    .filters input[type="text"], .filters select { width: 100%; min-width: 0; }
+    .settings-form { max-width: 100%; }
+    .settings-form input[type="number"] { width: 100%; }
+    .totals .stat { flex: 1 1 100%; }
+  }
 </style>`;
 }
 
 function adminShell(activeNav: string, pageTitle: string, bodyHtml: string): string {
   const navLinks = NAV_ITEMS.map(
     (item) =>
-      `<a href="${item.href}" class="${item.key === activeNav ? "active" : ""}">${item.label}</a>`
+      `<a href="${item.href}" class="${item.key === activeNav ? "active" : ""}"><span class="icon">${item.icon}</span><span class="label">${item.label}</span></a>`
   ).join("\n");
 
+  // #sidebar-toggle + .sidebar-backdrop nam TRUOC .layout, cung cap voi no trong <body> - can thiet
+  // de CSS ":checked ~ .layout .sidebar" va ":checked ~ .sidebar-backdrop" trong shellStyles() hoat
+  // dong (checkbox hack thuan CSS cho menu mobile, xem chi tiet trong khoi @media cua shellStyles()).
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -155,14 +214,19 @@ function adminShell(activeNav: string, pageTitle: string, bodyHtml: string): str
 ${shellStyles()}
 </head>
 <body>
+<input type="checkbox" id="sidebar-toggle" class="sidebar-toggle-input">
+<label for="sidebar-toggle" class="sidebar-backdrop" aria-hidden="true"></label>
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand">🛒 Bot Admin</div>
+    <div class="brand">🛒<span class="brand-text"> Bot Admin</span></div>
     <nav>${navLinks}</nav>
   </aside>
   <div class="main">
     <div class="topbar">
-      <h1>${pageTitle}</h1>
+      <div class="topbar-left">
+        <label for="sidebar-toggle" class="sidebar-toggle-btn" aria-label="Mở/đóng menu">☰</label>
+        <h1>${pageTitle}</h1>
+      </div>
       <form method="POST" action="/admin/logout"><button type="submit" class="logout">Đăng xuất</button></form>
     </div>
     <div class="content">${bodyHtml}</div>
