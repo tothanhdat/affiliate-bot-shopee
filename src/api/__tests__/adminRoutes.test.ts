@@ -661,3 +661,92 @@ test("POST /admin/record-orders/single dung userSharePercent MOI NHAT tu ledgerS
     cleanup();
   }
 });
+
+test("GET /admin/settings tra ve form voi gia tri mac dinh khi chua tung luu setting nao", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, { headers: { cookie: cookie ?? "" } });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /name="commission_user_share_percent"/);
+    assert.match(html, /name="withdrawal_threshold_vnd"/);
+    assert.match(html, /name="usage_text"/);
+    assert.match(html, /name="welcome_message_template"/);
+    assert.match(html, /name="success_reply_template"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri moi", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        commission_user_share_percent: "70",
+        withdrawal_threshold_vnd: "99000",
+        usage_text: "usage moi",
+        welcome_message_template: "welcome moi {{userSharePercent}}",
+        success_reply_template: "success moi {{link}}",
+      }).toString(),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getSetting("commission_user_share_percent", ""), "70");
+    assert.equal(ledgerStore.getSetting("withdrawal_threshold_vnd", ""), "99000");
+    assert.equal(ledgerStore.getSetting("usage_text", ""), "usage moi");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings voi % ngoai khoang 0-100 -> 422, khong luu gi ca", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        commission_user_share_percent: "150",
+        withdrawal_threshold_vnd: "99000",
+        usage_text: "usage moi",
+        welcome_message_template: "welcome moi",
+        success_reply_template: "success moi",
+      }).toString(),
+    });
+    assert.equal(res.status, 422);
+    const html = await res.text();
+    assert.match(html, /class="error"/);
+    // Khong co gia tri nao duoc luu - kiem tra field khong lien quan (usage_text) cung KHONG duoc
+    // luu, xac nhan hanh vi "tat ca hoac khong gi" (atomic) thay vi luu rieng le tung field hop le.
+    assert.equal(ledgerStore.getSetting("usage_text", "__default__"), "__default__");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings voi text rong -> 422", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        commission_user_share_percent: "80",
+        withdrawal_threshold_vnd: "20000",
+        usage_text: "   ",
+        welcome_message_template: "welcome moi",
+        success_reply_template: "success moi",
+      }).toString(),
+    });
+    assert.equal(res.status, 422);
+  } finally {
+    cleanup();
+  }
+});

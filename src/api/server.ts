@@ -8,6 +8,7 @@ import {
   renderOrdersPage,
   renderRecordOrdersPage,
   renderReverseConfirmPage,
+  renderSettingsPage,
   renderUsersPage,
   renderWithdrawalsPage,
   type OrdersFilters,
@@ -29,6 +30,7 @@ import {
 import type { RateLimiter } from "../core/rateLimiter.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
 import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
+import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
@@ -588,6 +590,62 @@ export function createServer(
       res.type("html").send(renderRecordOrdersPage(null, results));
     }
   );
+
+  app.get("/admin/settings", requireAdminAuth, (_req: Request, res: Response) => {
+    const currentValues: Record<string, string> = {};
+    for (const entry of SETTINGS_REGISTRY) {
+      currentValues[entry.key] = ledgerStore.getSetting(entry.key, entry.default);
+    }
+    res.type("html").send(renderSettingsPage(currentValues));
+  });
+
+  app.post("/admin/settings", requireAdminAuth, (req: Request, res: Response) => {
+    const submitted: Record<string, string> = {};
+    const errors: string[] = [];
+
+    for (const entry of SETTINGS_REGISTRY) {
+      const raw = typeof req.body?.[entry.key] === "string" ? req.body[entry.key] : "";
+      const trimmed = raw.trim();
+
+      if (entry.type === "number") {
+        const num = Number(trimmed);
+        const outOfRange =
+          (entry.min !== undefined && num < entry.min) || (entry.max !== undefined && num > entry.max);
+        if (trimmed === "" || !Number.isFinite(num) || outOfRange) {
+          const rangeHint =
+            entry.min !== undefined && entry.max !== undefined
+              ? ` (${entry.min}-${entry.max})`
+              : entry.min !== undefined
+                ? ` (>= ${entry.min})`
+                : "";
+          errors.push(`"${entry.label}" phải là số hợp lệ${rangeHint}.`);
+        } else {
+          submitted[entry.key] = String(Math.round(num));
+        }
+      } else {
+        if (trimmed === "") {
+          errors.push(`"${entry.label}" không được để trống.`);
+        } else {
+          submitted[entry.key] = trimmed;
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      const previewValues: Record<string, string> = {};
+      for (const entry of SETTINGS_REGISTRY) {
+        const raw = typeof req.body?.[entry.key] === "string" ? req.body[entry.key] : "";
+        previewValues[entry.key] = submitted[entry.key] ?? raw;
+      }
+      res.status(422).type("html").send(renderSettingsPage(previewValues, errors.join(" ")));
+      return;
+    }
+
+    for (const entry of SETTINGS_REGISTRY) {
+      ledgerStore.setSetting(entry.key, submitted[entry.key]);
+    }
+    res.redirect(303, "/admin/settings");
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
