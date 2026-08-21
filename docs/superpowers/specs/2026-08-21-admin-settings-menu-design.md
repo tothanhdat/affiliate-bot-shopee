@@ -13,6 +13,8 @@ Hiện tại 3 nhóm giá trị sau chỉ đổi được qua sửa `.env` + red
 
 `src/index.ts` đọc các giá trị này từ `env` **một lần lúc khởi động** rồi truyền tay (as static values) xuống `server.ts`, `zalo/bot.ts`, và closure `runAccesstradeSync`. Admin muốn tự đổi các giá trị này qua UI, không cần chạm code/redeploy.
 
+**Định hướng sản phẩm (2026-08-21, bổ sung theo yêu cầu trực tiếp của user)**: source này có khả năng được triển khai/cho thuê lại cho các bên khác (mỗi bên có `%` hoa hồng, ngưỡng rút tiền, văn phong tin nhắn riêng) — nếu mỗi lần khách thuê cần đổi 1 giá trị lại phải chủ bot tự sửa code + redeploy hộ thì rất mất thời gian. Vì vậy cơ chế `settings` xây ở đây phải **thiết kế để mở rộng rẻ**: thêm 1 setting mới sau này chỉ nên là thêm 1 key + 1 field trên form + 1 chỗ gọi getter thay vì phải thiết kế lại. Đợt này **vẫn chỉ build đúng 5 setting đã chốt** (không tự ý đoán thêm setting khác khách thuê có thể cần) — xem nguyên tắc mở rộng ở cuối spec.
+
 ## Phạm vi
 
 - Chỉ 3 nhóm giá trị nêu trên. `taxPercent`/`platformFeePercent`/`maxRatioPercent` (commission) **không** đổi động — vẫn tĩnh từ `.env` như hiện tại, ngoài phạm vi yêu cầu.
@@ -61,6 +63,8 @@ setSuccessReplyTemplate(v: string): void
 
 Default value cho từng typed getter lấy từ `env.commission.userSharePercent` / `env.withdrawal.thresholdVnd` / literal hiện tại của 3 tin nhắn — các default này được truyền vào từ **call site** (không hard-code default bên trong `LedgerStore`, giữ core không phụ thuộc `env`), giống cách `LedgerStore` hiện đã nhận config qua tham số ở các method khác (`recordConversion` nhận `taxPercent` v.v. qua input, không tự đọc `env`).
 
+Để default không bị khai 2 nơi lệch nhau (1 chỗ cho typed getter, 1 chỗ cho field-config của trang `/admin/settings` — xem mục Admin UI), khai báo **1 danh sách hằng số duy nhất** `SETTINGS_REGISTRY` (đặt ở `src/config/settingsRegistry.ts`, biết cả `env` lẫn shape UI nên không đặt trong `src/core`) liệt kê đủ 5 setting: `{key, label, type, default, helpText?}`. Cả route `/admin/settings` (build field list) lẫn các call site cần default (`index.ts`, `server.ts`, `telegram/bot.ts`, `zalo/bot.ts`, `ledgerAdmin.ts`) đều import từ đây — không còn nơi nào tự gõ lại con số/chuỗi default.
+
 ## Placeholder cho 2 template có nội dung động
 
 `replyText.ts` thêm hàm `renderTemplate(template: string, vars: Record<string, string>): string` thay mọi `{{key}}` bằng giá trị tương ứng (không tìm thấy key → để nguyên placeholder, không throw — tránh crash nếu admin gõ sai tên biến).
@@ -96,6 +100,8 @@ Thêm mục "Cấu hình" vào sidebar (`adminShell` trong `adminHtml.ts`), rout
 - Nút Lưu, POST tới `/admin/settings`. Validate cơ bản (số trong khoảng hợp lệ, text không rỗng) — sai thì redisplay form kèm banner lỗi (pattern giống `renderRecordOrdersPage`). Đúng thì lưu qua các setter của `ledgerStore` và hiện banner thành công.
 - Không cần xác nhận 2 lần (`confirmOnSubmit`) — đây không phải hành động phá huỷ, sửa lại được ngay.
 
+**Render form từ 1 danh sách khai báo field, không viết tay markup từng field** (phục vụ nguyên tắc mở rộng rẻ bên dưới): `renderSettingsPage` lặp qua 1 mảng `SettingFieldConfig[]` (`{key, label, type: "number" | "text" | "textarea", helpText?}`) để sinh `<div><label>...<input/textarea>...</div>` — thêm 1 setting mới về sau chỉ cần thêm 1 phần tử vào mảng này, không phải viết thêm HTML tay. Route handler `POST /admin/settings` đọc/validate/lưu cũng lặp qua cùng danh sách này (đọc `req.body[key]`, validate theo `type`, gọi `ledgerStore.setSetting(key, value)`) thay vì if/else riêng từng field.
+
 ## Testing
 
 - Unit test `LedgerStore`: `getSetting`/`setSetting` (chưa có override → trả default; đã set → trả giá trị mới; upsert ghi đè đúng), các typed getter/setter tương ứng.
@@ -103,6 +109,18 @@ Thêm mục "Cấu hình" vào sidebar (`adminShell` trong `adminHtml.ts`), rout
 - Unit test `formatWelcomeReply`/`formatSuccessReply` sau khi đổi chữ ký (nhận `template` làm tham số) — vẫn ra đúng nội dung khi dùng template mặc định (không regress test cũ), và ra đúng khi dùng template tuỳ chỉnh có placeholder.
 - Test route `/admin/settings` (nếu `server.ts` đã có test harness sẵn — theo dõi pattern test hiện có cho các route admin khác trong `__tests__`).
 - Kiểm tra thủ công qua trình duyệt: đổi `%`/ngưỡng/text trên `/admin/settings`, gửi link demo qua bot (hoặc gọi `POST /api/v1/resolve`) và xác nhận tin nhắn phản ánh đúng giá trị mới — không cần restart server.
+
+## Nguyên tắc mở rộng cho tương lai (thêm setting mới sau này)
+
+Không build thêm setting nào ngoài 5 cái đã chốt ở đợt này, nhưng cơ chế phải để việc **thêm 1 setting mới sau này** (khi có khách thuê yêu cầu cụ thể) chỉ gồm các bước nhỏ, không cần thiết kế lại:
+
+1. Thêm 1 entry vào `SETTINGS_REGISTRY` (key, label, type, default, helpText).
+2. Nếu cần typed getter riêng cho code nghiệp vụ (không bắt buộc — có thể dùng thẳng `ledgerStore.getSetting(key, default)`/`getSettingInt(...)` generic): thêm 1 hàm 2 dòng trong `LedgerStore`.
+3. Thay chỗ đang đọc `env.xxx` cứng bằng lời gọi getter tương ứng tại đúng call site đang dùng giá trị đó.
+
+Trang `/admin/settings` **tự động** hiện field mới vì render từ `SETTINGS_REGISTRY` (không phải sửa `adminHtml.ts` thủ công cho từng field). Đây là lý do chọn "1 bảng key-value generic + 1 registry khai báo" thay vì mỗi setting là 1 cột riêng trong bảng SQL hay 1 route/form riêng — phương án sau tuy tường minh hơn nhưng mỗi setting mới lại phải sửa schema + route + admin UI, đúng thứ user muốn tránh.
+
+**Không làm ở đợt này (out of scope, chỉ ghi nhận định hướng)**: multi-tenant thật sự (nhiều khách thuê dùng chung 1 lần deploy, mỗi khách 1 bộ setting/DB riêng) sẽ cần thêm khái niệm "tenant_id" vào mọi bảng — đây là thay đổi kiến trúc lớn hơn hẳn, chưa có tín hiệu nhu cầu cụ thể để thiết kế ngay. Hiện tại mô hình vẫn là **1 lần deploy = 1 khách** (mỗi khách thuê có deploy/`.env`/DB riêng), "cấu hình qua admin" ở đây chỉ giải quyết việc khách thuê (hoặc chủ bot thay mặt họ) tự đổi được giá trị mà không cần sửa code — không phải chạy chung hạ tầng nhiều khách.
 
 ## Rủi ro / lưu ý
 
