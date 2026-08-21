@@ -14,10 +14,6 @@ export const USAGE_TEXT =
  * khac) du hien chi Zalo DM dung, de neu sau can dung lai cho noi khac thi co san.
  * Cu phap doi tu "idid" sang "xemhh" ngay 2026-08-20 (yeu cau truc tiep cua user, de nghia hon).
  */
-export const ZALO_DM_HELP_TEXT =
-  "Mình chỉ hỗ trợ lệnh \"xemhh\" trong tin nhắn riêng để lấy link theo dõi hoa hồng. " +
-  "Muốn gửi link sản phẩm, vui lòng gửi trong group nhé.";
-
 function formatVnd(amount: number): string {
   return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
 }

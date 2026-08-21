@@ -7,7 +7,6 @@ import type { MerchantId } from "../../core/merchants.js";
 import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
 import {
   USAGE_TEXT,
-  ZALO_DM_HELP_TEXT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
@@ -149,14 +148,11 @@ export class ZaloGroupBot {
           message.threadId,
           message.type
         );
-      } else {
-        // Tin nhan rieng (DM) voi noi dung khac "xemhh" (vd link san pham, cau hoi...): KHONG tu
-        // dong xu ly link/tra loi chi tiet - van la quyet dinh co chu dich (2026-08-17), tranh lo
-        // link dashboard neu lo tra loi nham trong group. Nhung tu 2026-08-20 (phan-hoi-cai-thien-
-        // trai-nghiem-nguoi-dung.md muc 10) tra loi 1 cau huong dan co dinh thay vi im lang hoan
-        // toan - lan dau dung de tuong bot loi. Khong lo thong tin ca nhan/link dashboard nao o day.
-        await api.sendMessage(ZALO_DM_HELP_TEXT, message.threadId, message.type);
       }
+      // Tin nhan rieng (DM) voi noi dung khac "xemhh" (vd "hi", link san pham, cau hoi...): IM LANG
+      // hoan toan, khong tra loi gi ca - quyet dinh goc 2026-08-17, tranh lo link dashboard neu lo
+      // tra loi nham trong group. (2026-08-20 tung doi sang tra loi 1 cau huong dan co dinh de tranh
+      // user tuong bot loi, nhung 2026-08-21 user yeu cau doi lai ve im lang hoan toan.)
       return;
     }
 
