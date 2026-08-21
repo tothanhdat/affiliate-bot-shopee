@@ -213,3 +213,16 @@ test("GET /s/:code voi code khong ton tai -> 404", async () => {
     cleanup();
   }
 });
+
+test("GET /d/:token hien dung nguong rut tien MOI NHAT tu setting, khong phai gia tri tinh luc khoi tao server", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.setSetting("withdrawal_threshold_vnd", "123456");
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-threshold-test");
+    const res = await fetch(`${baseUrl}/d/${token}`);
+    const html = await res.text();
+    assert.match(html, /123\.456/);
+  } finally {
+    cleanup();
+  }
+});

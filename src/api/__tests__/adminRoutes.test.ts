@@ -633,3 +633,31 @@ test("POST /admin/record-orders/csv khong co file -> 422 kem loi ro rang", async
     cleanup();
   }
 });
+
+test("POST /admin/record-orders/single dung userSharePercent MOI NHAT tu ledgerStore.setUserSharePercent thay vi gia tri tinh luc khoi tao", async () => {
+  const { ledgerStore, logStore, baseUrl, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "sub-dynamic-percent");
+    ledgerStore.setSetting("commission_user_share_percent", "50");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        subId: "sub-dynamic-percent",
+        orderId: "order-dynamic-percent",
+        orderAmount: "1000000",
+        commissionAmount: "100000",
+      }).toString(),
+    });
+    assert.equal(res.status, 200);
+    const entries = ledgerStore.listCommissionEntries({});
+    const entry = entries.find((e) => e.orderId === "order-dynamic-percent");
+    assert.ok(entry);
+    // ORDER_CONFIG mac dinh trong setup() la userSharePercent=80 - neu con dung gia tri tinh nay
+    // thi userShareAmount se la 80% cua 100_000 (=80_000) thay vi 50% (=50_000) nhu setting moi.
+    assert.equal(entry!.userShareAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});

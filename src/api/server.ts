@@ -182,7 +182,7 @@ export function createServer(
       renderDashboardPage({
         ...summary,
         pendingWithdrawal,
-        thresholdVnd: withdrawalThresholdVnd,
+        thresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
         token: req.params.token,
         platform: identity.platform,
         userId: identity.userId,
@@ -227,7 +227,8 @@ export function createServer(
         typeof req.body?.bankAccountNumber === "string" ? req.body.bankAccountNumber : "";
       const bankAccountHolder =
         typeof req.body?.bankAccountHolder === "string" ? req.body.bankAccountHolder : "";
-      const withdrawal = ledgerStore.requestWithdrawal(identity.platform, identity.userId, withdrawalThresholdVnd, {
+      const currentThresholdVnd = ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd);
+      const withdrawal = ledgerStore.requestWithdrawal(identity.platform, identity.userId, currentThresholdVnd, {
         bankName,
         bankAccountNumber,
         bankAccountHolder,
@@ -248,7 +249,7 @@ export function createServer(
         renderDashboardPage({
           ...summary,
           pendingWithdrawal,
-          thresholdVnd: withdrawalThresholdVnd,
+          thresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
           token: req.params.token,
           platform: identity.platform,
           userId: identity.userId,
@@ -511,7 +512,11 @@ export function createServer(
     }
 
     try {
-      const entry = recordOrderFromAccesstrade(logStore, ledgerStore, orderConfig, {
+      const requestOrderConfig = {
+        ...orderConfig,
+        userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+      };
+      const entry = recordOrderFromAccesstrade(logStore, ledgerStore, requestOrderConfig, {
         subId,
         orderId,
         productName,
@@ -563,7 +568,11 @@ export function createServer(
         return;
       }
 
-      const results = recordOrdersFromCsv(logStore, ledgerStore, orderConfig, rows);
+      const requestOrderConfig = {
+        ...orderConfig,
+        userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+      };
+      const results = recordOrdersFromCsv(logStore, ledgerStore, requestOrderConfig, rows);
       // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B): gop thong bao theo user cho
       // ca lot CSV thay vi gui tung don rieng - best-effort, khong lam hong ket qua da tra ve trang.
       for (const summary of summarizeOrderResultsByUser(results)) {
