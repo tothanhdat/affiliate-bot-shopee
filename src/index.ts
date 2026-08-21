@@ -150,7 +150,7 @@ async function runAccesstradeSync(): Promise<void> {
       recordOrderConfig: {
         taxPercent: env.commission.taxPercent,
         platformFeePercent: env.commission.platformFeePercent,
-        userSharePercent: env.commission.userSharePercent,
+        userSharePercent: ledgerStore.getUserSharePercent(env.commission.userSharePercent),
         maxCommissionRatioPercent: env.commission.maxRatioPercent,
       },
     });
