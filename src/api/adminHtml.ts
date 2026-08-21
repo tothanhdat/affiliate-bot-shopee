@@ -427,6 +427,7 @@ export function renderOrdersPage(
   <td>${getMerchantConfig(e.merchant).displayName}</td>
   <td>${product}</td>
   <td>${formatVnd(e.userShareAmount)}</td>
+  <td>${formatVnd(e.afterTaxAmount - e.userShareAmount)}</td>
   <td><span class="badge badge-${badge.tone}">${badge.label}</span></td>
   <td>${reverseLink}</td>
 </tr>`;
@@ -460,7 +461,7 @@ ${filterForm}
 ${
   entries.length > 0
     ? `<div class="table-scroll"><table>
-<thead><tr><th>Mã đơn</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Merchant</th><th>Sản phẩm</th><th>Bạn nhận</th><th>Trạng thái</th><th></th></tr></thead>
+<thead><tr><th>Mã đơn</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Merchant</th><th>Sản phẩm</th><th>Khách nhận</th><th>Admin nhận</th><th>Trạng thái</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table></div>`
     : `<p class="empty">Không có đơn hàng nào khớp bộ lọc.</p>`
