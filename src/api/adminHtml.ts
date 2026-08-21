@@ -1,5 +1,6 @@
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import type { OrderRowResult } from "../core/orderIngest.js";
+import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import type {
   AccesstradePayment,
   CommissionEntry,
@@ -30,6 +31,7 @@ const NAV_ITEMS: Array<{ key: string; href: string; label: string }> = [
   { key: "orders", href: "/admin/orders", label: "Đơn hàng" },
   { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng" },
   { key: "accesstrade-payments", href: "/admin/accesstrade-payments", label: "Đối chiếu Accesstrade" },
+  { key: "settings", href: "/admin/settings", label: "Cấu hình" },
 ];
 
 function shellStyles(): string {
@@ -124,6 +126,14 @@ function shellStyles(): string {
     width: 100%; min-height: 90px; padding: 0.6rem 0.75rem; border: 1px solid var(--card-border);
     border-radius: 8px; font-size: 0.88rem; font-family: inherit; margin-bottom: 1rem; resize: vertical;
   }
+  .settings-form { display: flex; flex-direction: column; gap: 0.25rem; max-width: 680px; }
+  .settings-form .field { margin-bottom: 0.75rem; }
+  .settings-form label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .settings-form input[type="number"] {
+    width: 200px; padding: 0.45rem 0.6rem; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.85rem;
+  }
+  .settings-form textarea { min-height: 140px; margin-bottom: 0.35rem; }
+  .settings-form .help { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
 </style>`;
 }
 
@@ -578,4 +588,35 @@ ${csvResultsBlock}
 </div>`;
 
   return adminShell("record-orders", "Ghi nhận đơn hàng", `${singleCard}\n${csvCard}`);
+}
+
+export function renderSettingsPage(currentValues: Record<string, string>, errorMessage?: string | null): string {
+  const errorBlock = errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : "";
+
+  const fields = SETTINGS_REGISTRY.map((entry) => {
+    const value = currentValues[entry.key] ?? entry.default;
+    const helpBlock = entry.helpText ? `<p class="help">${escapeHtml(entry.helpText)}</p>` : "";
+    const control =
+      entry.type === "number"
+        ? `<input type="number" id="${entry.key}" name="${entry.key}" value="${escapeHtml(value)}"${
+            entry.min !== undefined ? ` min="${entry.min}"` : ""
+          }${entry.max !== undefined ? ` max="${entry.max}"` : ""} required>`
+        : `<textarea id="${entry.key}" name="${entry.key}" required>${escapeHtml(value)}</textarea>`;
+    return `<div class="field">
+  <label for="${entry.key}">${escapeHtml(entry.label)}</label>
+  ${control}
+  ${helpBlock}
+</div>`;
+  }).join("\n");
+
+  const body = `<div class="card">
+<h2>Cấu hình</h2>
+${errorBlock}
+<form method="POST" action="/admin/settings" class="settings-form">
+${fields}
+<div><button type="submit" class="primary">Lưu thay đổi</button></div>
+</form>
+</div>`;
+
+  return adminShell("settings", "Cấu hình", body);
 }
