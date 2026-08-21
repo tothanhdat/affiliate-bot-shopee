@@ -126,14 +126,17 @@ function shellStyles(): string {
     width: 100%; min-height: 90px; padding: 0.6rem 0.75rem; border: 1px solid var(--card-border);
     border-radius: 8px; font-size: 0.88rem; font-family: inherit; margin-bottom: 1rem; resize: vertical;
   }
-  .settings-form { display: flex; flex-direction: column; gap: 0.25rem; max-width: 680px; }
-  .settings-form .field { margin-bottom: 0.75rem; }
-  .settings-form label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .settings-form { display: flex; flex-direction: column; max-width: 720px; }
+  .settings-form .field { padding: 1.15rem 0; }
+  .settings-form .field:first-child { padding-top: 0; }
+  .settings-form .field + .field { border-top: 1px solid var(--card-border); }
+  .settings-form label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.55rem; }
   .settings-form input[type="number"] {
-    width: 200px; padding: 0.45rem 0.6rem; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.85rem;
+    width: 220px; padding: 0.55rem 0.7rem; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.9rem;
   }
-  .settings-form textarea { min-height: 140px; margin-bottom: 0.35rem; }
-  .settings-form .help { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
+  .settings-form textarea { min-height: 130px; line-height: 1.55; margin-bottom: 0.5rem; }
+  .settings-form .help { font-size: 0.78rem; color: var(--text-muted); margin: 0.4rem 0 0; line-height: 1.5; }
+  .settings-form .actions { padding-top: 1.35rem; }
 </style>`;
 }
 
@@ -610,11 +613,11 @@ export function renderSettingsPage(currentValues: Record<string, string>, errorM
   }).join("\n");
 
   const body = `<div class="card">
-<h2>Cấu hình</h2>
+<h2>5 giá trị chỉnh được qua form này</h2>
 ${errorBlock}
 <form method="POST" action="/admin/settings" class="settings-form">
 ${fields}
-<div><button type="submit" class="primary">Lưu thay đổi</button></div>
+<div class="actions"><button type="submit" class="primary">Lưu thay đổi</button></div>
 </form>
 </div>`;
 
