@@ -7,6 +7,7 @@ import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
 import {
   USAGE_TEXT,
+  SUCCESS_REPLY_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
@@ -26,8 +27,8 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
   const { token, maxLinksPerMessage, promotionsLimit, ledgerStore, dashboardBaseUrl } = options;
   const bot = new Telegraf(token);
 
-  bot.start((ctx) => ctx.reply(USAGE_TEXT));
-  bot.help((ctx) => ctx.reply(USAGE_TEXT));
+  bot.start((ctx) => ctx.reply(ledgerStore.getUsageText(USAGE_TEXT)));
+  bot.help((ctx) => ctx.reply(ledgerStore.getUsageText(USAGE_TEXT)));
 
   bot.on(message("text"), async (ctx) => {
     const text = ctx.message.text;
@@ -48,7 +49,7 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
-      await ctx.reply(USAGE_TEXT);
+      await ctx.reply(ledgerStore.getUsageText(USAGE_TEXT));
       return;
     }
 
@@ -60,9 +61,11 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
       try {
         const result = await resolver.resolve({ url: rawUrl, platform: "telegram", userId });
         successMerchants.add(result.merchant);
-        await ctx.reply(formatSuccessReply(result.merchant, result.affiliateUrl, result.commissionEstimate), {
-          reply_parameters: { message_id: ctx.message.message_id },
-        });
+        const successTemplate = ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
+        await ctx.reply(
+          formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate),
+          { reply_parameters: { message_id: ctx.message.message_id } }
+        );
       } catch (err) {
         const userMessage =
           err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
