@@ -18,7 +18,23 @@ function formatVnd(amount: number): string {
   return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
 }
 
+/**
+ * Thay moi `{{key}}` trong template bang vars[key] tuong ung - key khong khop (vd admin go sai
+ * ten placeholder) thi GIU NGUYEN placeholder, khong throw, tranh crash luc gui tin that.
+ */
+export function renderTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => (key in vars ? vars[key] : match));
+}
+
+/** Default cho setting "success_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const SUCCESS_REPLY_TEMPLATE_DEFAULT =
+  `Link đây ạ: {{link}}\n\n` +
+  `{{commissionLine}}\n\n` +
+  `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được, bạn vui lòng nhắn với cú pháp "xemhh" riêng cho Admin nhé.\n\n` +
+  `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`;
+
 export function formatSuccessReply(
+  template: string,
   merchant: MerchantId,
   affiliateUrl: string,
   commissionEstimate?: CommissionEstimate | null
@@ -36,12 +52,7 @@ export function formatSuccessReply(
     : merchant === "shopee"
       ? `Vì sàn Shopee không cho phép mình xem giá sản phẩm nên tạm thời mình chưa tính được hoa hồng thực tế. Bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
       : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
-  return (
-    `Link đây ạ: ${affiliateUrl}\n\n` +
-    `${commissionLine}\n\n` +
-    `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được, bạn vui lòng nhắn với cú pháp "xemhh" riêng cho Admin nhé.\n\n` +
-    `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`
-  );
+  return renderTemplate(template, { link: affiliateUrl, commissionLine });
 }
 
 export function formatErrorReply(userMessage: string): string {
@@ -111,18 +122,24 @@ export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboar
  * tu nhan tin cho bot truoc (loi "Forbidden: bot can't initiate conversation"), nen khong ap dung
  * cho Telegram (quyet dinh 2026-08-20, xem zalo/bot.ts).
  */
-export function formatWelcomeReply(userSharePercent: number, withdrawalThresholdVnd: number): string {
+/** Default cho setting "welcome_message_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
+  `Chào bạn, rất vui vì bạn đã tham gia group nha! 🎉\n\n` +
+  `Mình là bot hỗ trợ săn sale hoàn tiền (cashback) khi mua hàng qua Shopee, TikTok Shop. Trước khi dùng, gửi bạn vài thông tin quan trọng để dùng cho thuận tiện nhé:\n\n` +
+  `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
+  `💰 Hoa hồng: Bạn nhận {{userSharePercent}}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại {{botSharePercent}}% để duy trì vận hành.\n\n` +
+  `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
+  `📊 Theo dõi hoa hồng: Nhắn "xemhh" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
+  `💵 Rút tiền: Khi số dư đạt từ {{withdrawalThreshold}}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
+  `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
+  `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/edit?tab=t.0\n\n` +
+  `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`;
+
+export function formatWelcomeReply(template: string, userSharePercent: number, withdrawalThresholdVnd: number): string {
   const botSharePercent = 100 - userSharePercent;
-  return (
-    `Chào bạn, rất vui vì bạn đã tham gia group nha! 🎉\n\n` +
-    `Mình là bot hỗ trợ săn sale hoàn tiền (cashback) khi mua hàng qua Shopee, TikTok Shop. Trước khi dùng, gửi bạn vài thông tin quan trọng để dùng cho thuận tiện nhé:\n\n` +
-    `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
-    `💰 Hoa hồng: Bạn nhận ${userSharePercent}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại ${botSharePercent}% để duy trì vận hành.\n\n` +
-    `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
-    `📊 Theo dõi hoa hồng: Nhắn "xemhh" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
-    `💵 Rút tiền: Khi số dư đạt từ ${formatVnd(withdrawalThresholdVnd)}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
-    `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
-    `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/edit?tab=t.0\n\n` +
-    `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`
-  );
+  return renderTemplate(template, {
+    userSharePercent: String(userSharePercent),
+    botSharePercent: String(botSharePercent),
+    withdrawalThreshold: formatVnd(withdrawalThresholdVnd),
+  });
 }
