@@ -634,6 +634,91 @@ test("POST /admin/record-orders/csv khong co file -> 422 kem loi ro rang", async
   }
 });
 
+test("POST /admin/record-orders/single voi status=pending -> ghi entry pending, KHONG tinh vao so du kha dung, KHONG gui thong bao", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "subId=telegram-user-a-abc123-def&orderId=WEB-ORDER-PENDING&orderAmount=200000&commissionAmount=20000&status=pending",
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Chờ xác nhận/);
+    assert.match(html, /dự kiến user nhận/);
+
+    const entry = ledgerStore.listCommissionEntries({}).find((e) => e.orderId === "WEB-ORDER-PENDING");
+    assert.equal(entry?.status, "pending");
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+    assert.equal(notifyUserCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/record-orders/csv voi cot status: dong pending khong gui thong bao, dong confirmed van gui", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+    seedRequestLog(logStore, "telegram-user-b-abc123-def", { userId: "user-b" });
+
+    const csvContent =
+      "subId,orderId,orderAmount,commissionAmount,status\n" +
+      "telegram-user-a-abc123-def,CSV-PENDING-001,200000,20000,pending\n" +
+      "telegram-user-b-abc123-def,CSV-CONFIRMED-001,200000,20000,confirmed\n";
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "weekly.csv");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Tổng: 2 dòng, 2 thành công, 0 lỗi/);
+
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0); // pending, chua tinh
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-b"), 16_000); // confirmed
+
+    // Chi user-b (dong confirmed) nhan thong bao - dong nhat voi accesstradeSync.ts.
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].userId, "user-b");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/record-orders/csv voi cot status khong hop le -> dong do bi bao loi, khong ghi", async () => {
+  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+
+    const csvContent =
+      "subId,orderId,orderAmount,commissionAmount,status\n" +
+      "telegram-user-a-abc123-def,CSV-BADSTATUS-001,200000,20000,paid\n";
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "weekly.csv");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Tổng: 1 dòng, 0 thành công, 1 lỗi/);
+    assert.equal(ledgerStore.listCommissionEntries({}).length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
 test("POST /admin/record-orders/single dung userSharePercent MOI NHAT tu ledgerStore.setUserSharePercent thay vi gia tri tinh luc khoi tao", async () => {
   const { ledgerStore, logStore, baseUrl, cleanup } = setup();
   try {

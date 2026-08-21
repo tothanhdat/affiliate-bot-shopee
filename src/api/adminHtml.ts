@@ -87,7 +87,7 @@ function shellStyles(): string {
   .stat.danger .value { color: var(--danger); }
   .payment-form { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
   .payment-form label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
-  .payment-form input[type="text"] {
+  .payment-form input[type="text"], .payment-form select {
     padding: 0.45rem 0.6rem; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.85rem;
   }
   .table-scroll { overflow-x: auto; }
@@ -550,6 +550,13 @@ ${singleBlock}
     <label for="single-note">Ghi chú (tuỳ chọn)</label>
     <input type="text" id="single-note" name="note">
   </div>
+  <div>
+    <label for="status">Trạng thái</label>
+    <select id="status" name="status">
+      <option value="confirmed" selected>Khả dụng</option>
+      <option value="pending">Chờ xác nhận</option>
+    </select>
+  </div>
   <div><button type="submit" class="primary">Ghi nhận</button></div>
 </form>
 </div>`;
@@ -578,7 +585,7 @@ ${singleBlock}
 
   const csvCard = `<div class="card">
 <h2>Import file CSV (nhiều đơn cùng lúc)</h2>
-<p class="muted">Cột bắt buộc: subId, orderId, orderAmount, commissionAmount. Tuỳ chọn: productName, note. File mẫu: src/scripts/templates/weekly-conversions.example.csv</p>
+<p class="muted">Cột bắt buộc: subId, orderId, orderAmount, commissionAmount. Tuỳ chọn: productName, note, status ("pending" hoặc "confirmed", mặc định "confirmed" nếu để trống). File mẫu: src/scripts/templates/weekly-conversions.example.csv</p>
 ${csvErrorBlock}
 <form method="POST" action="/admin/record-orders/csv" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit("Xác nhận import file CSV này? Sẽ ghi nhận nhiều đơn hàng cùng lúc vào hệ thống.")}>
   <div>

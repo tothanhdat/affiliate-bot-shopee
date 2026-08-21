@@ -26,6 +26,7 @@ import {
   recordOrdersFromCsv,
   summarizeOrderResultsByUser,
   type RecordOrderConfig,
+  type RecordableOrderStatus,
 } from "../core/orderIngest.js";
 import type { RateLimiter } from "../core/rateLimiter.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
@@ -502,6 +503,7 @@ export function createServer(
         ? req.body.productName.trim()
         : undefined;
     const note = typeof req.body?.note === "string" && req.body.note.trim() !== "" ? req.body.note.trim() : undefined;
+    const status: RecordableOrderStatus = req.body?.status === "pending" ? "pending" : "confirmed";
 
     if (!subId || !orderId || !Number.isFinite(orderAmount) || !Number.isFinite(commissionAmount)) {
       res.status(422).type("html").send(
@@ -525,24 +527,34 @@ export function createServer(
         orderAmount,
         commissionAmount,
         note,
+        status,
       });
       // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay, khong gop lot.
-      // Best-effort - loi gui khong duoc lam fail response, don da ghi vao ledger roi.
-      const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
-      notifyUser(
-        entry.platform,
-        entry.userId,
-        formatOrdersConfirmedReply(
-          [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
-          `${dashboardBaseUrl}/d/${token}`
-        )
-      ).catch((notifyErr) => {
-        console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
-      });
+      // CHI bao khi da "confirmed" (Kha dung) - don "pending" (Cho xac nhan) chua chac chan, dong
+      // nhat voi accesstradeSync.ts (khong DM cho entry pending). Best-effort - loi gui khong duoc
+      // lam fail response, don da ghi vao ledger roi.
+      if (entry.status === "confirmed") {
+        const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+        notifyUser(
+          entry.platform,
+          entry.userId,
+          formatOrdersConfirmedReply(
+            [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
+            `${dashboardBaseUrl}/d/${token}`
+          )
+        ).catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
+        });
+      }
+      const statusLabel = entry.status === "pending" ? "Chờ xác nhận" : "Khả dụng";
+      const amountHint =
+        entry.status === "pending"
+          ? `dự kiến user nhận ~${entry.userShareAmount.toLocaleString("vi-VN")}đ khi được xác nhận`
+          : `user nhận ${entry.userShareAmount.toLocaleString("vi-VN")}đ`;
       res.type("html").send(
         renderRecordOrdersPage({
           ok: true,
-          message: `Đã ghi nhận đơn "${entry.orderId}" - user nhận ${entry.userShareAmount.toLocaleString("vi-VN")}đ.`,
+          message: `Đã ghi nhận đơn "${entry.orderId}" (${statusLabel}) - ${amountHint}.`,
         })
       );
     } catch (err) {
