@@ -38,6 +38,8 @@ export interface AccesstradeSyncResult {
   confirmedNew: number;
   confirmedDuplicate: number;
   pendingNew: number;
+  /** So entry "pending" da co san duoc cap nhat lai so lieu (khong doi status) - xem updatePendingEntry. */
+  pendingUpdated: number;
   reversedCount: number;
   /** Giao dich khong tach duoc subId tu ca utm_content lan _extra.sub_params.sub1. */
   skippedNoSubId: number;
@@ -139,6 +141,7 @@ export async function syncAccesstradeTransactions(
     confirmedNew: 0,
     confirmedDuplicate: 0,
     pendingNew: 0,
+    pendingUpdated: 0,
     reversedCount: 0,
     skippedNoSubId: 0,
     skippedSubIdNotFound: 0,
@@ -267,10 +270,31 @@ export async function syncAccesstradeTransactions(
       continue;
     }
 
-    // isPending: chi tao moi neu CHUA co entry nao (moi trang thai khac deu da "vuot qua" pending
+    // isPending: neu da co entry va VAN dang "pending", cap nhat lai so lieu (Accesstrade thuong
+    // dien dan uoc tinh hoa hong that trong luc con hold, khac 0 luc lan sync dau tien tao entry -
+    // xem updatePendingEntry). Cac trang thai khac (confirmed/reversed/paid) da "vuot qua" pending
     // roi, khong lui lai - vd don da confirmed truoc do ma lan quet nay Accesstrade tra ve du lieu
-    // hold cu do phan trang/cache thi cung khong duoc ghi de nguoc ve pending).
-    if (existing) continue;
+    // hold cu do phan trang/cache thi cung khong duoc ghi de nguoc ve pending.
+    if (existing) {
+      if (existing.status === "pending") {
+        try {
+          ledgerStore.updatePendingEntry(existing.id, {
+            orderAmount: tx.transaction_value,
+            commissionAmount: tx.commission,
+            productName: tx.product_name,
+            taxPercent: recordOrderConfig.taxPercent,
+            platformFeePercent: recordOrderConfig.platformFeePercent,
+            userSharePercent: recordOrderConfig.userSharePercent,
+            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+          });
+          result.pendingUpdated += 1;
+        } catch (err) {
+          const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+          result.errors.push(`[pending-update ${tx.transaction_id}] ${msg}`);
+        }
+      }
+      continue;
+    }
     try {
       ledgerStore.recordConversion({
         subId,

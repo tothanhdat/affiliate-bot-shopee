@@ -239,6 +239,44 @@ test("syncAccesstradeTransactions: status=0 (hold) hoac is_confirmed=0 -> ghi nh
   }
 });
 
+// 2026-08-21 (phat hien tu bao cao thuc te): Accesstrade thuong tra commission=0 luc giao dich con
+// hold, roi dien so uoc tinh that VAN LUC CON HOLD (chua duyet) - can cap nhat lai entry 'pending'
+// da co san thay vi dong bang mai o so lieu luc tao (xem updatePendingEntry).
+test("syncAccesstradeTransactions: don 'pending' da co san duoc cap nhat lai commission/orderAmount khi Accesstrade tra so moi, van giu status 'pending'", async () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+
+    const restoreHold = mockFetchOnce([
+      { status: 0, is_confirmed: 0, transaction_id: "TX-REFRESH-001", transaction_value: 100_000, commission: 0, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    const first = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreHold();
+    assert.equal(first.pendingNew, 1);
+    assert.equal(first.pendingUpdated, 0);
+
+    const restoreStillHoldWithEstimate = mockFetchOnce([
+      { status: 0, is_confirmed: 0, transaction_id: "TX-REFRESH-001", transaction_value: 100_000, commission: 10_000, utm_content: "zalo-user-a-abc-def" },
+    ]);
+    const second = await syncAccesstradeTransactions(logStore, ledgerStore, { ...SYNC_CONFIG_BASE, recordOrderConfig: ORDER_CONFIG });
+    restoreStillHoldWithEstimate();
+
+    assert.equal(second.pendingNew, 0);
+    assert.equal(second.pendingUpdated, 1);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0); // van chua tinh vao so du, van con pending
+
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries.length, 1); // khong tao entry trung
+    assert.equal(entries[0].status, "pending");
+    assert.equal(entries[0].commissionAmount, 10_000); // da cap nhat tu 0 -> 10_000
+    assert.equal(entries[0].userShareAmount, 8_000); // 80% cua 10_000
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
 test("syncAccesstradeTransactions: don 'pending' sau do duoc Accesstrade duyet -> chuyen sang 'confirmed', khong tao trung, tinh dung so du", async () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");

@@ -156,8 +156,8 @@ async function runAccesstradeSync(): Promise<void> {
     });
     console.log(
       `[accesstrade-sync] Xong: quet ${result.transactionsScanned} giao dich, ${result.confirmedNew} don moi, ` +
-        `${result.confirmedDuplicate} da co san, ${result.pendingNew} dang cho duyet, ${result.reversedCount} bi huy, ` +
-        `${result.skippedNoSubId + result.skippedSubIdNotFound} bo qua, ${result.errors.length} loi.`
+        `${result.confirmedDuplicate} da co san, ${result.pendingNew} dang cho duyet, ${result.pendingUpdated} pending duoc cap nhat so lieu, ` +
+        `${result.reversedCount} bi huy, ${result.skippedNoSubId + result.skippedSubIdNotFound} bo qua, ${result.errors.length} loi.`
     );
     if (result.errors.length > 0) {
       console.warn("[accesstrade-sync] Chi tiet loi:", result.errors);

@@ -286,6 +286,78 @@ export class LedgerStore {
   }
 
   /**
+   * Cap nhat lai order_amount/commission_amount (va thue/phi/userShare tinh lai theo) cho 1 entry
+   * VAN CON "pending" (2026-08-21, phat hien qua bao cao thuc te: Accesstrade tra ve commission=0
+   * luc giao dich con hold, roi dien dan so lieu uoc tinh that len dashboard cua ho TRUOC KHI duyet
+   * hang - nhung sync cu bo qua hoan toan entry da ton tai bat ke trang thai gi (`if (existing)
+   * continue`), nen dashboard cua bot ket qua bi "dong bang" o 0d cho toi khi don duoc duyet, du
+   * Accesstrade da hien so uoc tinh that tu lau). KHONG doi status (van "pending"), chi cap nhat so
+   * lieu hien thi - khac confirmPendingEntry (doi status sang "confirmed").
+   */
+  updatePendingEntry(
+    entryId: string,
+    input: {
+      orderAmount: number;
+      commissionAmount: number;
+      productName?: string | null;
+      taxPercent: number;
+      platformFeePercent: number;
+      userSharePercent: number;
+      maxCommissionRatioPercent: number;
+    }
+  ): CommissionEntry {
+    const row = this.db.prepare(`SELECT * FROM commission_entries WHERE id = ?`).get(entryId);
+    if (!row) {
+      throw new Error(`Khong tim thay commission entry voi id "${entryId}"`);
+    }
+    const existing = rowToCommissionEntry(row);
+
+    const maxPlausibleCommission = (input.orderAmount * input.maxCommissionRatioPercent) / 100;
+    if (input.commissionAmount > maxPlausibleCommission) {
+      throw new ImplausibleCommissionAmountError(
+        input.commissionAmount,
+        input.orderAmount,
+        input.maxCommissionRatioPercent
+      );
+    }
+
+    const taxAmount = Math.round((input.commissionAmount * input.taxPercent) / 100);
+    const afterTaxOnly = input.commissionAmount - taxAmount;
+    const platformFeeAmount = Math.round((afterTaxOnly * input.platformFeePercent) / 100);
+    const afterTaxAmount = afterTaxOnly - platformFeeAmount;
+    const userShareAmount = Math.round((afterTaxAmount * input.userSharePercent) / 100);
+    const productName = input.productName ?? existing.productName;
+
+    this.db
+      .prepare(
+        `UPDATE commission_entries SET order_amount = ?, commission_amount = ?,
+          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?, product_name = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.orderAmount,
+        input.commissionAmount,
+        taxAmount,
+        platformFeeAmount,
+        afterTaxAmount,
+        userShareAmount,
+        productName,
+        entryId
+      );
+
+    return {
+      ...existing,
+      orderAmount: input.orderAmount,
+      commissionAmount: input.commissionAmount,
+      taxAmount,
+      platformFeeAmount,
+      afterTaxAmount,
+      userShareAmount,
+      productName,
+    };
+  }
+
+  /**
    * Chuyen 1 entry dang "pending" (tao boi accesstradeSync.ts khi Accesstrade con hold/chua chot,
    * 2026-08-20) sang "confirmed" khi Accesstrade sau do duyet that (status=1+is_confirmed=1) -
    * UPDATE tai cho thay vi INSERT moi, vi INSERT se dung UNIQUE constraint (merchant, order_id)
