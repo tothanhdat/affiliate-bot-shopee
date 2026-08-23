@@ -522,13 +522,13 @@ test("card doi chieu canh bao khi so du chu bot am", async () => {
   }
 });
 
-test("GET /admin/record-orders hien du 2 form (ghi 1 don le + import CSV)", async () => {
+test("GET /admin/record-orders hien du 2 form (ghi 1 don le + import bao cao Shopee)", async () => {
   const { baseUrl, cleanup } = setup();
   try {
     const cookie = await loginAndGetCookie(baseUrl);
     const html = await (await fetch(`${baseUrl}/admin/record-orders`, { headers: { cookie: cookie! } })).text();
     assert.match(html, /Ghi 1 đơn lẻ/);
-    assert.match(html, /Import file CSV/);
+    assert.match(html, /Import báo cáo gốc Shopee Affiliate/);
   } finally {
     cleanup();
   }
@@ -558,6 +558,15 @@ test("POST /admin/record-orders/single ghi dung don khi subId hop le", async () 
     assert.equal(notifyUserCalls[0].userId, "user-a");
     assert.match(notifyUserCalls[0].message, /Đơn WEB-ORDER-001/);
     assert.match(notifyUserCalls[0].message, /16.000đ/);
+
+    // 2026-08-23: ghi 1 don le cung phai len lich su, phan loai action = "single" (form), khong bao
+    // gio co statusTransitions vi day luon la INSERT moi (khong UPDATE entry co san).
+    assert.match(html, /Ghi 1 đơn lẻ \(form\)/);
+    const history = ledgerStore.listImportHistory(10);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].actionType, "single");
+    assert.deepEqual(history[0].newOrderIds, ["WEB-ORDER-001"]);
+    assert.deepEqual(history[0].statusTransitions, []);
   } finally {
     cleanup();
   }
@@ -575,60 +584,6 @@ test("POST /admin/record-orders/single bao loi ro khi subId khong ton tai", asyn
     assert.equal(res.status, 422);
     const html = await res.text();
     assert.match(html, /Không tìm thấy request nào ứng với subId/);
-  } finally {
-    cleanup();
-  }
-});
-
-test("POST /admin/record-orders/csv import file that (multipart), 1 dong OK + 1 dong LOI", async () => {
-  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
-  try {
-    seedRequestLog(logStore, "telegram-user-a-abc123-def");
-
-    const csvContent =
-      "subId,orderId,orderAmount,commissionAmount\n" +
-      "telegram-user-a-abc123-def,CSV-ORDER-001,200000,20000\n" +
-      "subid-khong-ton-tai,CSV-ORDER-002,100000,10000\n";
-    const formData = new FormData();
-    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "weekly.csv");
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
-      method: "POST",
-      headers: { cookie: cookie! },
-      body: formData,
-    });
-    assert.equal(res.status, 200);
-    const html = await res.text();
-    assert.match(html, /Tổng: 2 dòng, 1 thành công, 1 lỗi/);
-    assert.match(html, /CSV-ORDER-001/);
-    assert.match(html, /CSV-ORDER-002/);
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000);
-
-    // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B): 1 tin gop cho user-a (dong loi
-    // khong thuoc ve user nao nen khong tao ra thong bao rieng).
-    assert.equal(notifyUserCalls.length, 1);
-    assert.equal(notifyUserCalls[0].platform, "telegram");
-    assert.equal(notifyUserCalls[0].userId, "user-a");
-    assert.match(notifyUserCalls[0].message, /Đơn CSV-ORDER-001/);
-  } finally {
-    cleanup();
-  }
-});
-
-test("POST /admin/record-orders/csv khong co file -> 422 kem loi ro rang", async () => {
-  const { baseUrl, cleanup } = setup();
-  try {
-    const cookie = await loginAndGetCookie(baseUrl);
-    const formData = new FormData();
-    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
-      method: "POST",
-      headers: { cookie: cookie! },
-      body: formData,
-    });
-    assert.equal(res.status, 422);
-    const html = await res.text();
-    assert.match(html, /Chưa chọn file CSV nào/);
   } finally {
     cleanup();
   }
@@ -659,66 +614,6 @@ test("POST /admin/record-orders/single voi status=pending -> ghi entry pending, 
   }
 });
 
-test("POST /admin/record-orders/csv voi cot status: dong pending khong gui thong bao, dong confirmed van gui", async () => {
-  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
-  try {
-    seedRequestLog(logStore, "telegram-user-a-abc123-def");
-    seedRequestLog(logStore, "telegram-user-b-abc123-def", { userId: "user-b" });
-
-    const csvContent =
-      "subId,orderId,orderAmount,commissionAmount,status\n" +
-      "telegram-user-a-abc123-def,CSV-PENDING-001,200000,20000,pending\n" +
-      "telegram-user-b-abc123-def,CSV-CONFIRMED-001,200000,20000,confirmed\n";
-    const formData = new FormData();
-    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "weekly.csv");
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
-      method: "POST",
-      headers: { cookie: cookie! },
-      body: formData,
-    });
-    assert.equal(res.status, 200);
-    const html = await res.text();
-    assert.match(html, /Tổng: 2 dòng, 2 thành công, 0 lỗi/);
-
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0); // pending, chua tinh
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-b"), 16_000); // confirmed
-
-    // Chi user-b (dong confirmed) nhan thong bao - dong nhat voi accesstradeSync.ts.
-    assert.equal(notifyUserCalls.length, 1);
-    assert.equal(notifyUserCalls[0].userId, "user-b");
-  } finally {
-    cleanup();
-  }
-});
-
-test("POST /admin/record-orders/csv voi cot status khong hop le -> dong do bi bao loi, khong ghi", async () => {
-  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    seedRequestLog(logStore, "telegram-user-a-abc123-def");
-
-    const csvContent =
-      "subId,orderId,orderAmount,commissionAmount,status\n" +
-      "telegram-user-a-abc123-def,CSV-BADSTATUS-001,200000,20000,paid\n";
-    const formData = new FormData();
-    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "weekly.csv");
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    const res = await fetch(`${baseUrl}/admin/record-orders/csv`, {
-      method: "POST",
-      headers: { cookie: cookie! },
-      body: formData,
-    });
-    assert.equal(res.status, 200);
-    const html = await res.text();
-    assert.match(html, /Tổng: 1 dòng, 0 thành công, 1 lỗi/);
-    assert.equal(ledgerStore.listCommissionEntries({}).length, 0);
-  } finally {
-    cleanup();
-  }
-});
-
 test("POST /admin/record-orders/single dung userSharePercent MOI NHAT tu ledgerStore.setUserSharePercent thay vi gia tri tinh luc khoi tao", async () => {
   const { ledgerStore, logStore, baseUrl, cleanup } = setup();
   try {
@@ -742,6 +637,105 @@ test("POST /admin/record-orders/single dung userSharePercent MOI NHAT tu ledgerS
     // ORDER_CONFIG mac dinh trong setup() la userSharePercent=80 - neu con dung gia tri tinh nay
     // thi userShareAmount se la 80% cua 100_000 (=80_000) thay vi 50% (=50_000) nhu setting moi.
     assert.equal(entry!.userShareAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+const SHOPEE_REPORT_HEADER =
+  "ID đơn hàng,Tên Item,Giá trị đơn hàng (₫),Tổng hoa hồng sản phẩm(₫),Trạng thái sản phẩm liên kết,Sub_id1,Sub_id2,Sub_id3,Sub_id4,Sub_id5";
+
+function shopeeReportRow(orderId: string, status: string, subIdParts: string[]): string {
+  const sub = [0, 1, 2, 3, 4].map((i) => subIdParts[i] ?? "");
+  return [orderId, "San pham test", "100000", "10000", status, ...sub].join(",");
+}
+
+test("POST /admin/record-orders/shopee-report ghi lich su action=csv kem newOrderIds", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+
+    const csvContent = [
+      SHOPEE_REPORT_HEADER,
+      shopeeReportRow("SHOPEE-001", "Hoàn thành", ["zalo", "user-a", "abc", "def"]),
+    ].join("\n");
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "report.csv");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Import CSV \(báo cáo Shopee\)/);
+    assert.match(html, /SHOPEE-001/);
+    // 2026-08-23: toast thanh cong hien voi so luong dung (1 don moi, 0 doi trang thai).
+    assert.match(html, /class="toast"[^>]*>Import thành công: 1 đơn mới, 0 đơn cập nhật trạng thái\./);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000); // 80% cua 10_000
+
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+
+    const history = ledgerStore.listImportHistory(10);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].actionType, "csv");
+    assert.deepEqual(history[0].newOrderIds, ["SHOPEE-001"]);
+    assert.deepEqual(history[0].statusTransitions, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/record-orders/shopee-report don pending co san chuyen 'Hoan thanh' -> lich su ghi statusTransitions, khong ghi newOrderIds", async () => {
+  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: (() => {
+        const fd = new FormData();
+        fd.append(
+          "file",
+          new Blob(
+            [[SHOPEE_REPORT_HEADER, shopeeReportRow("SHOPEE-002", "Đang chờ xử lý", ["zalo", "user-a", "abc", "def"])].join("\n")],
+            { type: "text/csv" }
+          ),
+          "report1.csv"
+        );
+        return fd;
+      })(),
+    });
+
+    const res2 = await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: (() => {
+        const fd = new FormData();
+        fd.append(
+          "file",
+          new Blob(
+            [[SHOPEE_REPORT_HEADER, shopeeReportRow("SHOPEE-002", "Hoàn thành", ["zalo", "user-a", "abc", "def"])].join("\n")],
+            { type: "text/csv" }
+          ),
+          "report2.csv"
+        );
+        return fd;
+      })(),
+    });
+    assert.equal(res2.status, 200);
+
+    const history = ledgerStore.listImportHistory(10);
+    assert.equal(history.length, 2); // 1 dong cho moi lan upload
+    assert.equal(history[0].actionType, "csv"); // moi nhat truoc
+    assert.deepEqual(history[0].newOrderIds, []);
+    assert.deepEqual(history[0].statusTransitions, [{ orderId: "SHOPEE-002", from: "pending", to: "confirmed" }]);
+    assert.deepEqual(history[1].newOrderIds, ["SHOPEE-002"]);
   } finally {
     cleanup();
   }

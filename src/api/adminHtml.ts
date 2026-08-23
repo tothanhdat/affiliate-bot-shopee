@@ -1,10 +1,11 @@
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
-import type { OrderRowResult } from "../core/orderIngest.js";
+import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import type {
   AccesstradePayment,
   CommissionEntry,
   CommissionStatus,
+  ImportHistoryEntry,
   Platform,
   ReconciliationSummary,
   WithdrawalRequest,
@@ -15,6 +16,7 @@ import {
   formatDateTime,
   formatVnd,
   statusBadge,
+  successToast,
   todayDateInputValue,
 } from "./htmlHelpers.js";
 
@@ -106,6 +108,22 @@ function shellStyles(): string {
   .muted { color: var(--text-muted); font-size: 0.78rem; }
   .empty { color: var(--text-muted); font-size: 0.9rem; padding: 1rem 0; text-align: center; }
   .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+  .cell-truncate { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .summary-list { list-style: none; padding: 0; margin: 0.75rem 0; font-size: 0.85rem; }
+  .summary-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--card-border); }
+  .summary-list li:last-child { border-bottom: none; }
+  .toast {
+    position: fixed; top: 1.25rem; right: 1.25rem; z-index: 1000;
+    background: var(--success-soft); color: var(--success); padding: 0.85rem 1.25rem;
+    border-radius: 10px; font-size: 0.88rem; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    animation: toast-fade 4s ease-in forwards;
+  }
+  @keyframes toast-fade {
+    0% { opacity: 0; transform: translateY(-8px); }
+    8% { opacity: 1; transform: translateY(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+  }
   .badge-success { background: var(--success-soft); color: var(--success); }
   .badge-warning { background: var(--warning-soft); color: var(--warning); }
   .badge-danger { background: var(--danger-soft); color: var(--danger); }
@@ -485,7 +503,9 @@ export function renderOrdersPage(
   const rows = entries
     .map((e) => {
       const badge = statusBadge(e);
-      const product = e.productName ? escapeHtml(e.productName) : `<span class="muted">—</span>`;
+      const product = e.productName
+        ? `<span class="cell-truncate" title="${escapeHtml(e.productName)}">${escapeHtml(e.productName)}</span>`
+        : `<span class="muted">—</span>`;
       // 2026-08-20 (quyet dinh chot lai voi user): CHI huy duoc don dang "pending" - "confirmed"
       // (Khai dung) nghia la Accesstrade da duyet chinh thuc/chot so lieu, xem la hoan tat, khong
       // con ly do gi de huy nua (khop FAQ chinh thuc Accesstrade: "hoa hong duoc duyet" la so lieu
@@ -577,10 +597,16 @@ export interface SingleOrderFormResult {
   message: string;
 }
 
+const ACTION_TYPE_LABELS: Record<ImportHistoryEntry["actionType"], string> = {
+  csv: "Import CSV (báo cáo Shopee)",
+  single: "Ghi 1 đơn lẻ (form)",
+};
+
 export function renderRecordOrdersPage(
+  history: ImportHistoryEntry[],
   singleResult?: SingleOrderFormResult | null,
-  csvResults?: OrderRowResult[] | null,
-  csvError?: string | null
+  shopeeReportResult?: ShopeeReportImportResult | null,
+  shopeeReportError?: string | null
 ): string {
   const singleBlock = singleResult
     ? `<div class="${singleResult.ok ? "success" : "error"}">${escapeHtml(singleResult.message)}</div>`
@@ -625,43 +651,88 @@ ${singleBlock}
 </form>
 </div>`;
 
-  const okCount = csvResults ? csvResults.filter((r) => r.ok).length : 0;
-  const csvResultsBlock =
-    csvResults && csvResults.length > 0
-      ? `<div class="table-scroll"><table>
-<thead><tr><th>Dòng</th><th>Mã đơn</th><th>subId</th><th>Kết quả</th><th>Chi tiết</th></tr></thead>
-<tbody>${csvResults
-          .map(
-            (r) => `<tr>
-  <td>${r.line}</td>
-  <td>${escapeHtml(r.orderId)}</td>
-  <td>${escapeHtml(r.subId)}</td>
-  <td><span class="badge badge-${r.ok ? "success" : "danger"}">${r.ok ? "OK" : "LỖI"}</span></td>
-  <td>${escapeHtml(r.detail)}</td>
-</tr>`
-          )
-          .join("\n")}</tbody>
-</table></div>
-<p class="muted">Tổng: ${csvResults.length} dòng, ${okCount} thành công, ${csvResults.length - okCount} lỗi.</p>`
-      : "";
+  const shopeeReportErrorBlock = shopeeReportError ? `<div class="error">${escapeHtml(shopeeReportError)}</div>` : "";
 
-  const csvErrorBlock = csvError ? `<div class="error">${escapeHtml(csvError)}</div>` : "";
+  // Toast chi hien khi import THAT SU chay xong (co ket qua tra ve, khong phai loi truoc khi xu ly
+  // nhu "chua chon file" - truong hop do da co shopeeReportErrorBlock rieng, khong can toast).
+  const shopeeReportToast = shopeeReportResult
+    ? successToast(
+        shopeeReportResult.newOrderIds.length > 0 || shopeeReportResult.statusTransitions.length > 0
+          ? `Import thành công: ${shopeeReportResult.newOrderIds.length} đơn mới, ${shopeeReportResult.statusTransitions.length} đơn cập nhật trạng thái.`
+          : "Import hoàn tất: không có đơn nào thay đổi."
+      )
+    : "";
 
-  const csvCard = `<div class="card">
-<h2>Import file CSV (nhiều đơn cùng lúc)</h2>
-<p class="muted">Cột bắt buộc: subId, orderId, orderAmount, commissionAmount. Tuỳ chọn: productName, note, status ("pending" hoặc "confirmed", mặc định "confirmed" nếu để trống). File mẫu: src/scripts/templates/weekly-conversions.example.csv</p>
-${csvErrorBlock}
-<form method="POST" action="/admin/record-orders/csv" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit("Xác nhận import file CSV này? Sẽ ghi nhận nhiều đơn hàng cùng lúc vào hệ thống.")}>
+  const shopeeReportResultBlock = shopeeReportResult
+    ? `<ul class="summary-list">
+  <li>Số đơn quét được: <strong>${shopeeReportResult.ordersScanned}</strong></li>
+  <li>Ghi mới "Khả dụng": <strong>${shopeeReportResult.confirmedNew}</strong> (trùng, bỏ qua: ${shopeeReportResult.confirmedDuplicate})</li>
+  <li>Ghi mới "Chờ xác nhận": <strong>${shopeeReportResult.pendingNew}</strong> (cập nhật lại số liệu: ${shopeeReportResult.pendingUpdated})</li>
+  <li>Đã huỷ (Không hợp lệ): <strong>${shopeeReportResult.reversedCount}</strong></li>
+  <li>Bỏ qua - đơn nhiều sản phẩm (chưa hỗ trợ): ${shopeeReportResult.skippedMultiItem}</li>
+  <li>Bỏ qua - không tách được subId: ${shopeeReportResult.skippedNoSubId}</li>
+  <li>Bỏ qua - subId không khớp user nào: ${shopeeReportResult.skippedSubIdNotFound}</li>
+  <li>Bỏ qua - trạng thái lạ: ${shopeeReportResult.skippedUnknownStatus}</li>
+</ul>
+${
+  shopeeReportResult.errors.length > 0
+    ? `<div class="table-scroll"><table>
+<thead><tr><th>Cảnh báo / lỗi</th></tr></thead>
+<tbody>${shopeeReportResult.errors.map((e) => `<tr><td>${escapeHtml(e)}</td></tr>`).join("\n")}</tbody>
+</table></div>`
+    : ""
+}`
+    : "";
+
+  const shopeeReportCard = `<div class="card">
+<h2>Import báo cáo gốc Shopee Affiliate</h2>
+<p class="muted">Upload thẳng file export từ affiliate.shopee.vn/report/conversion_report (vd AffiliateCommissionReport_*.csv) - không cần đổi tên cột. Trạng thái ghi nhận lấy theo cột "Trạng thái sản phẩm liên kết" trong file. Đơn nhiều sản phẩm cùng 1 mã đơn hiện chưa hỗ trợ tự động.</p>
+${shopeeReportErrorBlock}
+<form method="POST" action="/admin/record-orders/shopee-report" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit("Xác nhận import file báo cáo Shopee này? Sẽ ghi nhận/cập nhật đơn hàng vào hệ thống.")}>
   <div>
-    <label for="file">File CSV</label>
-    <input type="file" id="file" name="file" accept=".csv,text/csv" required>
+    <label for="shopee-file">File báo cáo Shopee (.csv)</label>
+    <input type="file" id="shopee-file" name="file" accept=".csv,text/csv" required>
   </div>
   <div><button type="submit" class="primary">Import</button></div>
 </form>
-${csvResultsBlock}
+${shopeeReportResultBlock}
 </div>`;
 
-  return adminShell("record-orders", "Ghi nhận đơn hàng", `${singleCard}\n${csvCard}`);
+  const historyRows = history
+    .map((h) => {
+      const newOrdersCell = h.newOrderIds.length > 0 ? h.newOrderIds.map((id) => escapeHtml(id)).join(", ") : "0";
+      const transitionsCell =
+        h.statusTransitions.length > 0
+          ? h.statusTransitions
+              .map((t) => `${escapeHtml(t.orderId)}: ${STATUS_LABELS[t.from]} → ${STATUS_LABELS[t.to]}`)
+              .join("<br>")
+          : "0";
+      return `<tr>
+  <td>${formatDateTime(h.createdAt)}</td>
+  <td>${escapeHtml(ACTION_TYPE_LABELS[h.actionType])}</td>
+  <td>${newOrdersCell}</td>
+  <td>${transitionsCell}</td>
+</tr>`;
+    })
+    .join("\n");
+
+  const historyCard = `<div class="card">
+<h2>Lịch sử ghi nhận đơn hàng</h2>
+${
+  history.length > 0
+    ? `<div class="table-scroll"><table>
+<thead><tr><th>Thời gian</th><th>Loại</th><th>Đơn mới</th><th>Đơn đổi trạng thái</th></tr></thead>
+<tbody>${historyRows}</tbody>
+</table></div>`
+    : `<p class="empty">Chưa có lượt ghi nhận nào.</p>`
+}
+</div>`;
+
+  return adminShell(
+    "record-orders",
+    "Ghi nhận đơn hàng",
+    `${shopeeReportToast}\n${singleCard}\n${shopeeReportCard}\n${historyCard}`
+  );
 }
 
 export function renderSettingsPage(

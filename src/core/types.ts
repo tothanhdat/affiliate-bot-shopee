@@ -133,3 +133,27 @@ export interface ReconciliationSummary {
   totalPaidToUsersVnd: number;
   remainingVnd: number;
 }
+
+/**
+ * Lich su cac lan "ghi nhan don hang" tren web /admin/record-orders (2026-08-23) - "csv" la import
+ * bao cao goc Shopee (co the nhieu don/lan), "single" la form "Ghi 1 don le" (luon dung 1 don moi,
+ * khong bao gio co statusTransitions vi recordOrderFromAccesstrade chi INSERT, khong UPDATE entry
+ * co san). Xem LedgerStore.recordImportHistory()/listImportHistory().
+ */
+export type ImportActionType = "csv" | "single";
+
+/** 1 don doi trang thai trong 1 lan import (vd pending -> confirmed) - CHI ghi khi trang thai THAT SU doi, khong ghi khi chi cap nhat lai so lieu (updatePendingEntry, van giu nguyen "pending"). */
+export interface StatusTransition {
+  orderId: string;
+  from: CommissionStatus;
+  to: CommissionStatus;
+}
+
+export interface ImportHistoryEntry {
+  id: string;
+  createdAt: string;
+  actionType: ImportActionType;
+  /** Ma don duoc ghi MOI trong lan nay (dung chung ca "Kha dung" lan "Cho xac nhan"). */
+  newOrderIds: string[];
+  statusTransitions: StatusTransition[];
+}

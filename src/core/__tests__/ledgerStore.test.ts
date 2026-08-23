@@ -673,3 +673,34 @@ test("LedgerStore: typed getters (userSharePercent/withdrawalThresholdVnd/usageT
   assert.equal(store.getSuccessReplyTemplate("default success"), "custom success");
   store.close();
 });
+
+test("LedgerStore: recordImportHistory roi listImportHistory tra ve dung thu tu moi nhat truoc", () => {
+  const store = new LedgerStore(":memory:");
+  store.recordImportHistory({ actionType: "single", newOrderIds: ["SP001"], statusTransitions: [] });
+  store.recordImportHistory({
+    actionType: "csv",
+    newOrderIds: ["SP002"],
+    statusTransitions: [{ orderId: "SP003", from: "pending", to: "confirmed" }],
+  });
+
+  const history = store.listImportHistory(10);
+  assert.equal(history.length, 2);
+  // moi nhat truoc: lan ghi thu 2 (csv) phai dung dau danh sach.
+  assert.equal(history[0].actionType, "csv");
+  assert.deepEqual(history[0].newOrderIds, ["SP002"]);
+  assert.deepEqual(history[0].statusTransitions, [{ orderId: "SP003", from: "pending", to: "confirmed" }]);
+  assert.equal(history[1].actionType, "single");
+  assert.deepEqual(history[1].newOrderIds, ["SP001"]);
+  assert.deepEqual(history[1].statusTransitions, []);
+  store.close();
+});
+
+test("LedgerStore: listImportHistory gioi han dung so luong theo limit", () => {
+  const store = new LedgerStore(":memory:");
+  for (let i = 0; i < 5; i++) {
+    store.recordImportHistory({ actionType: "single", newOrderIds: [`SP${i}`], statusTransitions: [] });
+  }
+  assert.equal(store.listImportHistory(3).length, 3);
+  assert.equal(store.listImportHistory(100).length, 5);
+  store.close();
+});

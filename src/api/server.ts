@@ -15,7 +15,6 @@ import {
 } from "./adminHtml.js";
 import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
-import { parseCsv } from "../core/csv.js";
 import { AppError } from "../core/errors.js";
 import type { LedgerStore } from "../core/ledgerStore.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
@@ -23,12 +22,11 @@ import type { LogStore } from "../core/logStore.js";
 import { MERCHANTS, type MerchantId } from "../core/merchants.js";
 import {
   recordOrderFromAccesstrade,
-  recordOrdersFromCsv,
-  summarizeOrderResultsByUser,
   type RecordOrderConfig,
   type RecordableOrderStatus,
 } from "../core/orderIngest.js";
 import type { RateLimiter } from "../core/rateLimiter.js";
+import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
 import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
@@ -490,7 +488,7 @@ export function createServer(
   // cho ledgerAdmin.ts record-conversion / record-conversions-csv. Dung chung logic qua core/orderIngest.ts
   // de khong lap lai (tra subId -> platform/userId/merchant -> ledgerStore.recordConversion).
   app.get("/admin/record-orders", requireAdminAuth, (_req: Request, res: Response) => {
-    res.type("html").send(renderRecordOrdersPage());
+    res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20)));
   });
 
   app.post("/admin/record-orders/single", requireAdminAuth, (req: Request, res: Response) => {
@@ -507,7 +505,7 @@ export function createServer(
 
     if (!subId || !orderId || !Number.isFinite(orderAmount) || !Number.isFinite(commissionAmount)) {
       res.status(422).type("html").send(
-        renderRecordOrdersPage({
+        renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
           ok: false,
           message: "Thiếu subId/orderId hoặc orderAmount/commissionAmount không phải số.",
         })
@@ -546,39 +544,39 @@ export function createServer(
           console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
         });
       }
+      // Lich su (2026-08-23): form "Ghi 1 don le" luon tao 1 entry MOI (recordOrderFromAccesstrade
+      // chi INSERT, khong bao gio UPDATE entry co san) - vi vay khong bao gio co statusTransitions.
+      ledgerStore.recordImportHistory({ actionType: "single", newOrderIds: [entry.orderId], statusTransitions: [] });
+
       const statusLabel = entry.status === "pending" ? "Chờ xác nhận" : "Khả dụng";
       const amountHint =
         entry.status === "pending"
           ? `dự kiến user nhận ~${entry.userShareAmount.toLocaleString("vi-VN")}đ khi được xác nhận`
           : `user nhận ${entry.userShareAmount.toLocaleString("vi-VN")}đ`;
       res.type("html").send(
-        renderRecordOrdersPage({
+        renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
           ok: true,
           message: `Đã ghi nhận đơn "${entry.orderId}" (${statusLabel}) - ${amountHint}.`,
         })
       );
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res.status(422).type("html").send(renderRecordOrdersPage({ ok: false, message }));
+      res.status(422).type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }));
     }
   });
 
   app.post(
-    "/admin/record-orders/csv",
+    "/admin/record-orders/shopee-report",
     requireAdminAuth,
     csvUpload.single("file"),
     (req: Request, res: Response) => {
       if (!req.file) {
-        res.status(422).type("html").send(renderRecordOrdersPage(null, null, "Chưa chọn file CSV nào."));
-        return;
-      }
-
-      const rows = parseCsv(req.file.buffer.toString("utf8"));
-      if (rows.length === 0) {
         res
           .status(422)
           .type("html")
-          .send(renderRecordOrdersPage(null, null, "File CSV không có dòng dữ liệu nào (chỉ có header hoặc rỗng)."));
+          .send(
+            renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.")
+          );
         return;
       }
 
@@ -586,20 +584,30 @@ export function createServer(
         ...orderConfig,
         userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
       };
-      const results = recordOrdersFromCsv(logStore, ledgerStore, requestOrderConfig, rows);
-      // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1 (Option B): gop thong bao theo user cho
-      // ca lot CSV thay vi gui tung don rieng - best-effort, khong lam hong ket qua da tra ve trang.
-      for (const summary of summarizeOrderResultsByUser(results)) {
+      const result = importShopeeReport(
+        logStore,
+        ledgerStore,
+        { recordOrderConfig: requestOrderConfig },
+        req.file.buffer.toString("utf8")
+      );
+      for (const summary of result.confirmedByUser) {
         const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
         notifyUser(
           summary.platform,
           summary.userId,
           formatOrdersConfirmedReply(summary.items, `${dashboardBaseUrl}/d/${token}`)
         ).catch((notifyErr) => {
-          console.warn("[user-notify] gui thong bao gop don moi that bai:", notifyErr);
+          console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
         });
       }
-      res.type("html").send(renderRecordOrdersPage(null, results));
+      // Ghi lich su du ket qua co gi thay doi hay khong (0 don moi/0 doi trang thai) - de admin thay
+      // "da chay luc nay" thay vi khong thay gi ca, xem comment LedgerStore.recordImportHistory().
+      ledgerStore.recordImportHistory({
+        actionType: "csv",
+        newOrderIds: result.newOrderIds,
+        statusTransitions: result.statusTransitions,
+      });
+      res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result));
     }
   );
 

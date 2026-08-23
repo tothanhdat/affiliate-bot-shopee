@@ -29,6 +29,16 @@ function jsStringLiteral(text: string): string {
 }
 
 /**
+ * Toast thanh cong goc tren-phai, tu bien mat sau vai giay - dung THUAN CSS animation (class
+ * .toast, dinh nghia keyframes trong <style> cua adminHtml.ts), KHONG can JS/setTimeout, giu dung
+ * triet ly "HTML tay, JS toi thieu" cua thu muc nay. Dung cho cac action "import"/hang loat - khac
+ * banner tinh <div class="success"> da co san cho form ghi 1 don le (van giu nguyen, khong doi).
+ */
+export function successToast(message: string): string {
+  return `<div class="toast" role="status">${escapeHtml(message)}</div>`;
+}
+
+/**
  * Tra ve attribute `onsubmit="return confirm('...');"` de gan vao 1 the <form> - popup xac nhan
  * bat buoc cho MOI action lien quan den tien (rut tien, danh dau da tra, huy don, ghi nhan don/
  * khoan Accesstrade...). Day la 1 trong so RAT IT ngoai le dung JS phia client trong toan bo

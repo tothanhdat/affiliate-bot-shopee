@@ -13,6 +13,12 @@
  * Subcommands:
  *   record-conversion --subId= --orderId= --orderAmount= --commissionAmount= [--productName=] [--note=]
  *   record-conversions-csv --file=<duong dan file .csv>   (xem quy-trinh-van-hanh-cashback.md, quy trinh hang tuan)
+ *   record-shopee-report --file=<duong dan file .csv>     (2026-08-22: import THANG file bao cao goc
+ *     Shopee Affiliate, vd "AffiliateCommissionReport_*.csv" tu affiliate.shopee.vn/report/conversion_report
+ *     - khac record-conversions-csv, khong can doi ten cot truoc. Tu quyet dinh confirmed/pending/reversed
+ *     theo cot "Trang thai san pham lien ket" trong file - xem core/shopeeReportImport.ts. Don nhieu san
+ *     pham (nhieu dong cung ID don hang) hien CHUA HO TRO, se bi skip kem canh bao - dung
+ *     record-conversion ghi tay cho case do.)
  *   mark-withdrawal-paid --id= --proofImagePath=<duong dan anh chup man hinh da chuyen khoan>
  *     (anh se duoc COPY vao WITHDRAWAL_PROOF_DIR, ban chi can tro toi 1 file da co san tren may -
  *     bat buoc, xem rui ro so 7 trong rui-ro-can-giai-quyet.md)
@@ -37,6 +43,7 @@ import { AppError } from "../core/errors.js";
 import { LedgerStore } from "../core/ledgerStore.js";
 import { LogStore } from "../core/logStore.js";
 import { syncAccesstradeTransactions } from "../core/accesstradeSync.js";
+import { importShopeeReport } from "../core/shopeeReportImport.js";
 import {
   recordOrderFromAccesstrade,
   recordOrdersFromCsv,
@@ -115,7 +122,7 @@ async function main(): Promise<void> {
   const [subcommand, ...rest] = process.argv.slice(2);
   if (!subcommand) {
     fail(
-      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade"
+      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-conversions-csv, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade"
     );
   }
 
@@ -214,6 +221,29 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "record-shopee-report": {
+        const filePath = requireFlag(values, "file");
+        let raw: string;
+        try {
+          raw = readFileSync(filePath, "utf8");
+        } catch (err) {
+          fail(`Khong doc duoc file "${filePath}": ${(err as Error).message}`);
+        }
+
+        const result = importShopeeReport(logStore, ledgerStore, { recordOrderConfig: orderConfig }, raw!);
+        console.log(JSON.stringify(result, null, 2));
+
+        for (const summary of result.confirmedByUser) {
+          const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          await notifyUserFromCli(
+            summary.platform,
+            summary.userId,
+            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+          );
+        }
+        break;
+      }
+
       case "mark-withdrawal-paid": {
         const id = requireFlag(values, "id");
         const proofImagePath = requireFlag(values, "proofImagePath");
@@ -297,7 +327,7 @@ async function main(): Promise<void> {
 
       default:
         fail(
-          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-conversions-csv, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade`
+          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-conversions-csv, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade`
         );
     }
   } catch (err) {

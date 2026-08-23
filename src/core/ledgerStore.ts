@@ -20,8 +20,11 @@ import type {
   CommissionEntry,
   CommissionStatus,
   DashboardToken,
+  ImportActionType,
+  ImportHistoryEntry,
   Platform,
   ReconciliationSummary,
+  StatusTransition,
   WithdrawalRequest,
 } from "./types.js";
 
@@ -146,6 +149,15 @@ export class LedgerStore {
         value TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS import_history (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        new_order_ids TEXT NOT NULL,
+        status_transitions TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_import_history_created ON import_history(created_at);
     `);
     // DB tao truoc khi co yeu cau dinh kem bang chung chuyen khoan (2026-08-19) se thieu cot nay.
     this.migrateAddWithdrawalProofColumn();
@@ -936,6 +948,51 @@ export class LedgerStore {
 
   getSuccessReplyTemplate(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.successReplyTemplate, defaultValue);
+  }
+
+  /**
+   * Ghi 1 dong lich su cho 1 lan "ghi nhan don hang" tren /admin/record-orders (2026-08-23) - goi
+   * sau khi da thuc su xu ly xong (ke ca khi ket qua la 0 don moi/0 doi trang thai, de admin thay
+   * "da chay luc nay nhung khong co gi thay doi" thay vi khong thay gi ca). Khong ghi cho cac lan
+   * that bai truoc khi xu ly (vd thieu file, sai tham so) - loi da hien ngay tren trang, khong can
+   * luu lai.
+   */
+  recordImportHistory(input: {
+    actionType: ImportActionType;
+    newOrderIds: string[];
+    statusTransitions: StatusTransition[];
+  }): ImportHistoryEntry {
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO import_history (id, created_at, action_type, new_order_ids, status_transitions) VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(id, createdAt, input.actionType, JSON.stringify(input.newOrderIds), JSON.stringify(input.statusTransitions));
+
+    return {
+      id,
+      createdAt,
+      actionType: input.actionType,
+      newOrderIds: input.newOrderIds,
+      statusTransitions: input.statusTransitions,
+    };
+  }
+
+  /** Lich su gan nhat truoc, dung cho bang hien thi tren /admin/record-orders. */
+  listImportHistory(limit: number): ImportHistoryEntry[] {
+    const rows = this.db
+      // rowid phu - 2 lan ghi lien tiep co the trung created_at (do ISO string chi phan giai toi
+      // milli-giay) khien ORDER BY created_at DESC mot minh khong on dinh thu tu.
+      .prepare(`SELECT * FROM import_history ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      id: r.id as string,
+      createdAt: r.created_at as string,
+      actionType: r.action_type as ImportActionType,
+      newOrderIds: JSON.parse(r.new_order_ids as string) as string[],
+      statusTransitions: JSON.parse(r.status_transitions as string) as StatusTransition[],
+    }));
   }
 
   close(): void {

@@ -7,7 +7,10 @@
 
 /** Dong dau tien la header, cac dong sau map theo ten cot trong header (khong theo vi tri co dinh). */
 export function parseCsv(text: string): Record<string, string>[] {
-  const rows = parseCsvRows(text);
+  // Excel/Shopee xuat CSV UTF-8 luon kem BOM dau file - neu khong bo se lam sai ten cot dau tien
+  // (vd "﻿ID don hang" khong khop "ID don hang" khi tra theo ten cot).
+  const withoutBom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const rows = parseCsvRows(withoutBom);
   if (rows.length === 0) return [];
 
   const header = rows[0].map((h) => h.trim());
