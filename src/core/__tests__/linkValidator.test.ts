@@ -80,3 +80,13 @@ test("parseProductLink: nem NotAProductLinkError voi link tiktok.com khong phai 
 test("parseProductLink: nem InvalidLinkError voi chuoi khong phai URL", async () => {
   await assert.rejects(() => parseProductLink("khong-phai-url"), InvalidLinkError);
 });
+
+test("parseProductLink: nem NotAProductLinkError voi link Shopee Video (sv.shopee.vn/share-video)", async () => {
+  await assert.rejects(
+    () =>
+      parseProductLink(
+        "https://sv.shopee.vn/share-video/aIAUX-6xBwDxgDMcAAAAAA==?c=share_web&contentType=0&fromShareLink=share-marker"
+      ),
+    NotAProductLinkError
+  );
+});

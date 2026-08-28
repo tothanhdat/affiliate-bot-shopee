@@ -87,12 +87,27 @@ function extractIds(merchant: MerchantConfig, url: URL): { shopId: string | null
 }
 
 /**
- * Ghep merchant + canonical URL thanh ParsedProductLink, kem validate rieng cho TikTok
- * Shop: itemId la bat buoc (khac Shopee) vi tiktok.com dung chung cho ca video thuong -
- * link khong khop pattern /view/product/{id} coi nhu KHONG PHAI link san pham, tu choi
- * ro rang thay vi goi API voi du lieu thieu.
+ * sv.shopee.vn la subdomain rieng cho Shopee Video (link dang /share-video/...), khong co noi
+ * dung san pham nao o day - khac voi cac trang shopee.vn khac (shop/category/campaign...) van
+ * hop le du khong tach duoc shopId/itemId. Phat hien qua bug that (2026-08-28): bot tung tao
+ * link an_redir voi origin_link tro thang toi trang video nay, nhung phien click dung o trang
+ * video/live la truong hop Shopee KHONG tinh hoa hong (xem canh bao "Khong xem video/live trong
+ * phien" da co san trong SUCCESS_REPLY_TEMPLATE_DEFAULT, replyText.ts) - nen link tao ra vo ich,
+ * tu choi ngay tu dau giong cach TikTok Shop tu choi link video thuong.
+ */
+function isShopeeVideoLink(url: URL): boolean {
+  return url.hostname.toLowerCase() === "sv.shopee.vn";
+}
+
+/**
+ * Ghep merchant + canonical URL thanh ParsedProductLink, kem validate rieng cho Shopee Video
+ * va TikTok Shop: 2 case nay bi tu choi hang NotAProductLinkError thay vi coi id rong la
+ * optional metadata (khac cac merchant/URL Shopee khac, xem extractIds()).
  */
 function buildParsedLink(merchant: MerchantConfig, canonicalUrl: URL): ParsedProductLink {
+  if (merchant.id === "shopee" && isShopeeVideoLink(canonicalUrl)) {
+    throw new NotAProductLinkError(merchant.displayName);
+  }
   const { shopId, itemId } = extractIds(merchant, canonicalUrl);
   if (merchant.id === "tiktokshop" && itemId === null) {
     throw new NotAProductLinkError(merchant.displayName);
