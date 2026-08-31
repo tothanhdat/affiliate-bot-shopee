@@ -4,6 +4,8 @@ import {
   renderTemplate,
   formatWelcomeReply,
   formatSuccessReply,
+  formatWithdrawalRequestedReply,
+  formatWithdrawalPaidReply,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
 } from "../replyText.js";
@@ -50,7 +52,7 @@ test("formatSuccessReply: template mac dinh chua link va dong luu y cuoi", () =>
 
 test("formatSuccessReply: merchant shopee khong co commissionEstimate -> dong thong bao rieng cho shopee", () => {
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "shopee", "https://s.shopee.vn/abc", null);
-  assert.match(result, /sàn Shopee không cho phép mình xem giá sản phẩm/);
+  assert.match(result, /Shopee chưa cho xem giá/);
 });
 
 test("formatSuccessReply: co commissionEstimate -> hien dong % va so tien uoc tinh", () => {
@@ -68,4 +70,15 @@ test("formatSuccessReply: template tuy chinh chi giu lai placeholder duoc thay",
     result,
     "LINK: https://x.test | GHI CHU: Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé."
   );
+});
+
+test("formatWithdrawalRequestedReply: hien dung so tien da format VND", () => {
+  const result = formatWithdrawalRequestedReply(80_000);
+  assert.match(result, /Đã ghi nhận yêu cầu rút 80\.000đ nha/);
+});
+
+test("formatWithdrawalPaidReply: co dung link dashboard", () => {
+  const result = formatWithdrawalPaidReply("https://example.com/d/abc123");
+  assert.match(result, /Tiền đã bay về bạn rồi đó/);
+  assert.match(result, /https:\/\/example\.com\/d\/abc123/);
 });

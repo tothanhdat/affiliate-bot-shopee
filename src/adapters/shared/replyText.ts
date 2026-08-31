@@ -50,7 +50,7 @@ export function formatSuccessReply(
   const commissionLine = commissionEstimate
     ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.`
     : merchant === "shopee"
-      ? `Vì sàn Shopee không cho phép mình xem giá sản phẩm nên tạm thời mình chưa tính được hoa hồng thực tế. Bạn vui lòng đợi đơn hoàn tất rồi mình sẽ chủ động nhắn tin cho bạn nhé.`
+      ? `Do Shopee chưa cho xem giá nên chưa tính hoa hồng liền được, đợi xíu đơn confirm là em nhắn ngay nha!`
       : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
   return renderTemplate(template, { link: affiliateUrl, commissionLine });
 }
@@ -78,8 +78,9 @@ export function formatPromotionsReply(merchant: MerchantId, items: PromotionItem
  */
 export function formatDashboardLinkReply(dashboardUrl: string, userId: string): string {
   return (
-    `🆔 ID của bạn là: ${userId}\n\n` +
-    `🎁 Đây là link theo dõi hoa hồng của bạn: ${dashboardUrl}`
+    `Đây nè 👇\n` +
+    `🆔 ID: ${userId}\n` +
+    `🎁 Dashboard của bạn: ${dashboardUrl} — bấm vào coi hoa hồng/đơn hàng bất cứ lúc nào nha, link này xài hoài không đổi.`
   );
 }
 
@@ -98,17 +99,17 @@ export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboar
   if (items.length === 1) {
     const [item] = items;
     return (
-      `🎉 Yay, đơn "${label(item)}" của bạn đã được xác nhận rồi nè! Bạn nhận được ${formatVnd(item.userShareAmount)} hoa hồng 💰\n\n` +
+      `Yayyy 🎉 đơn "${label(item)}" của bạn confirm rồi nè, về túi bạn ${formatVnd(item.userShareAmount)} 💸\n\n` +
       `Xem chi tiết: ${dashboardUrl}`
     );
   }
 
-  const lines = items.map((item) => `- ${label(item)}: ${formatVnd(item.userShareAmount)}`).join("\n");
+  const lines = items.map((item) => `${label(item)}: ${formatVnd(item.userShareAmount)}`).join(" / ");
   return (
-    `🎉 Yay, bạn có ${items.length} đơn mới được xác nhận rồi nè!\n` +
-    `${lines}\n\n` +
-    `💰 Tổng cộng bạn nhận được: ${formatVnd(total)}\n\n` +
-    `Xem chi tiết: ${dashboardUrl}`
+    `Chốt đợt này bạn có ${items.length} đơn về luôn nè 🥳\n` +
+    `${lines}\n` +
+    `Tổng cộng: ${formatVnd(total)} 💰\n\n` +
+    `Coi chi tiết: ${dashboardUrl}`
   );
 }
 
@@ -134,6 +135,20 @@ export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
   `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
   `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/edit?tab=t.0\n\n` +
   `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`;
+
+/** DM tu dong khi user gui yeu cau rut tien thanh cong tren dashboard (POST /d/:token/withdraw). */
+export function formatWithdrawalRequestedReply(amountVnd: number): string {
+  return (
+    `Đã ghi nhận yêu cầu rút ${formatVnd(amountVnd)} nha 💸 Admin check thông tin xong sẽ nhắn riêng xác nhận trước khi chuyển khoản, chờ chút xíu nhen!`
+  );
+}
+
+/** DM tu dong khi admin danh dau 1 yeu cau rut tien la "da tra" (POST /admin/withdrawals/:id/mark-paid). */
+export function formatWithdrawalPaidReply(dashboardUrl: string): string {
+  return (
+    `Tiền đã bay về bạn rồi đó 🥰 Vô dashboard xem ảnh chuyển khoản nếu cần đối chiếu nha: ${dashboardUrl}`
+  );
+}
 
 export function formatWelcomeReply(template: string, userSharePercent: number, withdrawalThresholdVnd: number): string {
   const botSharePercent = 100 - userSharePercent;

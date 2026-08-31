@@ -188,8 +188,8 @@ test("login dung -> vao duoc /admin/withdrawals; dang xuat -> quay lai yeu cau l
   }
 });
 
-test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, luu duoc bang chung", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
+test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, luu duoc bang chung, bao user qua notifyUser", async () => {
+  const { ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
   try {
     ledgerStore.recordConversion({
       subId: "telegram-user-a-abc-123",
@@ -225,6 +225,11 @@ test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, lu
       { headers: { cookie: cookie! } }
     );
     assert.equal(proofRes.status, 200);
+
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].platform, "telegram");
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+    assert.match(notifyUserCalls[0].message, /Tiền đã bay về bạn rồi đó/);
   } finally {
     cleanup();
   }

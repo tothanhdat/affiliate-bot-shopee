@@ -42,7 +42,7 @@ export class UnsupportedMerchantLinkError extends AppError {
   constructor() {
     super(
       "UNSUPPORTED_MERCHANT_LINK",
-      "Link này không thuộc sàn (Shopee, Lazada) mà bot đang hỗ trợ."
+      "Sàn này em chưa hỗ trợ được á, để em báo admin cập nhật thêm nha 🙏"
     );
   }
 }
@@ -122,10 +122,10 @@ export class SubIdNotFoundError extends AppError {
 }
 
 export class NotAProductLinkError extends AppError {
-  constructor(merchantDisplayName: string) {
+  constructor(_merchantDisplayName: string) {
     super(
       "NOT_A_PRODUCT_LINK",
-      `Link này không phải link sản phẩm ${merchantDisplayName}, mình chỉ xử lý được link sản phẩm cụ thể.`
+      "Cái này là video chứ không phải link sản phẩm nha 😅 Gửi đúng link mua hàng thì em mới ra mã được."
     );
   }
 }

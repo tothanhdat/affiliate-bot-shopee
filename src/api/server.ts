@@ -28,7 +28,11 @@ import {
 import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
-import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
+import {
+  formatOrdersConfirmedReply,
+  formatWithdrawalPaidReply,
+  formatWithdrawalRequestedReply,
+} from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
@@ -240,6 +244,11 @@ export function createServer(
       ).catch((notifyErr) => {
         console.warn("[admin-notify] gui thong bao yeu cau rut tien that bai:", notifyErr);
       });
+      notifyUser(identity.platform, identity.userId, formatWithdrawalRequestedReply(withdrawal.amount)).catch(
+        (notifyErr) => {
+          console.warn("[user-notify] gui thong bao xac nhan yeu cau rut tien that bai:", notifyErr);
+        }
+      );
       res.redirect(303, `/d/${req.params.token}`);
     } catch (err) {
       const summary = ledgerStore.getUserSummary(identity.platform, identity.userId);
@@ -344,7 +353,14 @@ export function createServer(
         const ext = extname(req.file.originalname) || ".png";
         const filename = `${req.params.id}-${Date.now()}${ext}`;
         writeFileSync(join(withdrawalProofDir, filename), req.file.buffer);
-        ledgerStore.markWithdrawalPaid(req.params.id, filename);
+        const paid = ledgerStore.markWithdrawalPaid(req.params.id, filename);
+        // Best-effort: loi gui thong bao khong duoc lam fail response, da danh dau "paid" trong DB roi.
+        const { token } = ledgerStore.findOrCreateDashboardToken(paid.platform, paid.userId);
+        notifyUser(paid.platform, paid.userId, formatWithdrawalPaidReply(`${dashboardBaseUrl}/d/${token}`)).catch(
+          (notifyErr) => {
+            console.warn("[user-notify] gui thong bao da chuyen khoan that bai:", notifyErr);
+          }
+        );
         res.redirect(303, "/admin/withdrawals");
       } catch (err) {
         const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";

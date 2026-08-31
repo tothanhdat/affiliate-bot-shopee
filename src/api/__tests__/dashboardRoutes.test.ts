@@ -26,6 +26,10 @@ function setup() {
   const notifyAdmin = async (message: string): Promise<void> => {
     notifyCalls.push(message);
   };
+  const notifyUserCalls: Array<{ platform: string; userId: string; message: string }> = [];
+  const notifyUser = async (platform: string, userId: string, message: string): Promise<void> => {
+    notifyUserCalls.push({ platform, userId, message });
+  };
 
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
   const adminLoginRateLimiter = new RateLimiter(1000, 60_000);
@@ -45,7 +49,7 @@ function setup() {
     withdrawalProofDir,
     adminLoginRateLimiter,
     "http://localhost:3002",
-    async (): Promise<void> => {}
+    notifyUser
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -60,7 +64,7 @@ function setup() {
     rmSync(withdrawalProofDir, { recursive: true, force: true });
   }
 
-  return { ledgerStore, logStore, baseUrl, notifyCalls, withdrawalProofDir, cleanup };
+  return { ledgerStore, logStore, baseUrl, notifyCalls, notifyUserCalls, withdrawalProofDir, cleanup };
 }
 
 test("GET /d/:token voi token khong ton tai -> 404", async () => {
@@ -102,8 +106,8 @@ test("GET /d/:token duoi nguong -> khong co form rut tien", async () => {
   }
 });
 
-test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdmin dung 1 lan; POST lan 2 khi dang cho -> hien loi", async () => {
-  const { ledgerStore, baseUrl, notifyCalls, cleanup } = setup();
+test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdmin va notifyUser dung 1 lan; POST lan 2 khi dang cho -> hien loi", async () => {
+  const { ledgerStore, baseUrl, notifyCalls, notifyUserCalls, cleanup } = setup();
   try {
     const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
     ledgerStore.recordConversion({
@@ -137,6 +141,10 @@ test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdm
     assert.equal(firstPost.status, 303);
     assert.equal(notifyCalls.length, 1);
     assert.match(notifyCalls[0], /telegram\/user-a/);
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].platform, "telegram");
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+    assert.match(notifyUserCalls[0].message, /Đã ghi nhận yêu cầu rút/);
 
     const secondPost = await fetch(`${baseUrl}/d/${token}/withdraw`, {
       method: "POST",
@@ -147,6 +155,7 @@ test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdm
     const html = await secondPost.text();
     assert.match(html, /đang chờ xử lý/);
     assert.equal(notifyCalls.length, 1); // khong goi them lan 2
+    assert.equal(notifyUserCalls.length, 1); // khong goi them lan 2
   } finally {
     cleanup();
   }
