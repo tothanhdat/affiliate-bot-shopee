@@ -75,10 +75,17 @@ function extractIds(merchant: MerchantConfig, url: URL): { shopId: string | null
   }
 
   if (merchant.id === "tiktokshop") {
-    // Dang da xac minh that (2026-08-18): /view/product/{productId}
+    // Dang cu da xac minh that (2026-08-18): /view/product/{productId}
     const productMatch = url.pathname.match(/\/view\/product\/(\d+)/);
     if (productMatch) {
       return { shopId: null, itemId: productMatch[1] };
+    }
+    // Dang moi (phat hien 2026-09-02): TikTok doi target redirect cua vt.tiktok.com tu
+    // www.tiktok.com/view/product/{id} sang shop.tiktok.com/{locale}/pdp/{id} (vd /vn/pdp/{id}) -
+    // khong con /view/product/ nua, khien MOI link san pham TikTok Shop bi tu choi oan la video.
+    const pdpMatch = url.pathname.match(/\/pdp\/(\d+)/);
+    if (pdpMatch) {
+      return { shopId: null, itemId: pdpMatch[1] };
     }
     return { shopId: null, itemId: null };
   }

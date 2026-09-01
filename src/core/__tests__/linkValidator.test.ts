@@ -70,6 +70,15 @@ test("parseProductLink: tach dung product_id tu dang /view/product/{id} cua TikT
   assert.equal(result.itemId, "1733294149780801469");
 });
 
+test("parseProductLink: tach dung product_id tu dang moi /{locale}/pdp/{id} cua TikTok Shop (shop.tiktok.com)", async () => {
+  const result = await parseProductLink(
+    "https://shop.tiktok.com/vn/pdp/1732783707240498274?_d=ebja7ibeka4jl4&scene=pdp"
+  );
+  assert.equal(result.merchant, "tiktokshop");
+  assert.equal(result.shopId, null);
+  assert.equal(result.itemId, "1732783707240498274");
+});
+
 test("parseProductLink: nem NotAProductLinkError voi link tiktok.com khong phai san pham (vd video thuong)", async () => {
   await assert.rejects(
     () => parseProductLink("https://www.tiktok.com/@someuser/video/1234567890123456789"),
