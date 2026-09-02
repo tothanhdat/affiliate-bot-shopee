@@ -67,6 +67,10 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
           { reply_parameters: { message_id: ctx.message.message_id } }
         );
       } catch (err) {
+        // Giong zalo/bot.ts: log chi tiet chan doan truoc khi tra ve cau chung chung cho user.
+        const detail = err instanceof Error ? err.message : String(err);
+        const code = err instanceof AppError ? err.code : "UNKNOWN";
+        console.warn(`[telegram] tao link that bai (${code}) cho ${rawUrl}: ${detail}`);
         const userMessage =
           err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
         await ctx.reply(formatErrorReply(userMessage), {

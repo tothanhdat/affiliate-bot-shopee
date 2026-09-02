@@ -185,6 +185,12 @@ export class ZaloGroupBot {
           formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate)
         );
       } catch (err) {
+        // AppError.message chua chi tiet chan doan (vd "Affiliate API error: HTTP 400: ...") con
+        // userMessage chi la cau chung chung cho user - truoc 2026-09-02 chi tiet nay bi vut di
+        // hoan toan, khien moi loi tao link deu phai trace tay lai tu dau. Luon log truoc khi tra loi.
+        const detail = err instanceof Error ? err.message : String(err);
+        const code = err instanceof AppError ? err.code : "UNKNOWN";
+        console.warn(`[zalo] tao link that bai (${code}) cho ${rawUrl}: ${detail}`);
         const userMessage =
           err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
         await this.sendGroupReply(api, message, formatErrorReply(userMessage));

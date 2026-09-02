@@ -11,6 +11,7 @@ export type ErrorCode =
   | "DUPLICATE_CONVERSION"
   | "SUB_ID_NOT_FOUND"
   | "NOT_A_PRODUCT_LINK"
+  | "PRODUCT_NOT_AFFILIATE_ELIGIBLE"
   | "ENTRY_ALREADY_WITHDRAWN"
   | "IMPLAUSIBLE_COMMISSION_AMOUNT"
   | "INVALID_PAYMENT_AMOUNT"
@@ -127,6 +128,22 @@ export class NotAProductLinkError extends AppError {
       "NOT_A_PRODUCT_LINK",
       "Cái này là video chứ không phải link sản phẩm nha 😅 Gửi đúng link mua hàng thì em mới ra mã được."
     );
+  }
+}
+
+/**
+ * San pham co that va link hop le, nhung nguoi ban CHUA bat tiep thi lien ket cho no (hoa hong 0%,
+ * khong co trong Affiliate Center) - Accesstrade tu choi tao link. Tach rieng khoi AffiliateApiError
+ * vi day KHONG phai su co he thong: thu lai bao nhieu lan cung cho ket qua y het, nen tuyet doi
+ * khong duoc noi voi user "vui long thu lai sau" (phat hien 2026-09-02, xem accesstradeProvider.ts).
+ */
+export class ProductNotAffiliateEligibleError extends AppError {
+  constructor(detail: string) {
+    super(
+      "PRODUCT_NOT_AFFILIATE_ELIGIBLE",
+      "Sản phẩm này shop chưa bật hoàn tiền nên em không tạo được link nha 😅 Bạn thử sản phẩm khác giúp em."
+    );
+    this.message = `Product not affiliate eligible: ${detail}`;
   }
 }
 

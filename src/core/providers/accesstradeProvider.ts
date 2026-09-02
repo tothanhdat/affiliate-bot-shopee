@@ -1,4 +1,9 @@
-import { AffiliateApiError, AffiliateApiTimeoutError, MerchantNotConfiguredError } from "../errors.js";
+import {
+  AffiliateApiError,
+  AffiliateApiTimeoutError,
+  MerchantNotConfiguredError,
+  ProductNotAffiliateEligibleError,
+} from "../errors.js";
 import { getMerchantConfig, type MerchantId } from "../merchants.js";
 import type {
   AffiliateProvider,
@@ -125,6 +130,18 @@ export class AccesstradeProvider implements AffiliateProvider {
       json = await response.json();
     } catch (err) {
       throw new AffiliateApiError("response khong phai JSON hop le", err);
+    }
+
+    // Accesstrade bao loi NGHIEP VU bang {"status": false} TRONG response HTTP 200 (khong dung ma
+    // HTTP loi) - phai chan TRUOC extractAffiliateUrl, neu khong se roi vao nhanh "khong tim thay
+    // short link" va bao user "he thong dang gap su co, thu lai sau" trong khi he thong hoan toan
+    // binh thuong va thu lai se khong bao gio thanh cong (phat hien 2026-09-02 tu 1 link that).
+    const businessFailure = extractBusinessFailureMessage(json);
+    if (businessFailure !== null) {
+      if (isNotAffiliateEligibleMessage(businessFailure)) {
+        throw new ProductNotAffiliateEligibleError(businessFailure);
+      }
+      throw new AffiliateApiError(`Accesstrade tu choi (status=false): ${businessFailure}`);
     }
 
     const rawAffiliateUrl = extractAffiliateUrl(json);
@@ -294,6 +311,37 @@ function extractPromotionItems(json: unknown): PromotionItem[] {
     }
   }
   return items;
+}
+
+/**
+ * Tra ve message loi nghiep vu neu response co {"status": false}, nguoc lai tra null.
+ * CHI nhan dung boolean false - response thanh cong khong co field "status", va so sanh long le
+ * (vd !json.status) se coi ca truong hop thieu field la loi.
+ * Vi du that (2026-09-02): {"data": null, "message": "Precondition Required...", "status": false}
+ */
+function extractBusinessFailureMessage(json: unknown): string | null {
+  if (typeof json !== "object" || json === null) return null;
+  const root = json as Record<string, unknown>;
+  if (root.status !== false) return null;
+  const message = root.message;
+  return typeof message === "string" && message.length > 0
+    ? message
+    : JSON.stringify(json).slice(0, 300);
+}
+
+/**
+ * Phan biet "san pham chua bat tiep thi lien ket" voi cac ly do status:false khac (vd campaign chua
+ * duyet) - dua vao dau hieu trong message cua Accesstrade. Chua co ma loi co cau truc de dua vao,
+ * nen day la heuristic: khong khop thi roi ve AffiliateApiError chung, VAN giu nguyen message goc
+ * de doc duoc trong log (khong nuot mat nhu truoc).
+ */
+function isNotAffiliateEligibleMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("affiliate center") ||
+    normalized.includes("precondition required") ||
+    normalized.includes("not available")
+  );
 }
 
 function extractAffiliateUrl(json: unknown): string | null {
