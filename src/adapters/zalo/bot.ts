@@ -59,7 +59,13 @@ export class ZaloGroupBot {
   ) {}
 
   async start(): Promise<void> {
-    const zalo = new Zalo();
+    // selfListen: true - mac dinh zca-js NUOT AM THAM moi group_event co isSelf=true, VA isSelf
+    // dung true khong chi khi bot la nguoi DUOC add ma ca khi CHINH tai khoan bot la actor thuc
+    // hien hanh dong (vd chu bot dung chinh tai khoan dang login cho bot de tu xoa/them thanh vien
+    // - rat pho bien vi tai khoan bot cung la tai khoan Zalo ca nhan chu bot dung hang ngay). Neu
+    // khong bat co nay, DM chao mung group-join se im lang tuyet doi trong dung truong hop test
+    // thuc te nhat (phat hien 2026-09-07 tu bao cao that cua user, xem handleGroupEvent).
+    const zalo = new Zalo({ selfListen: true });
     const saved = loadZaloCredentials(this.options.sessionPath);
 
     if (saved) {
@@ -132,6 +138,7 @@ export class ZaloGroupBot {
       });
     });
     api.listener.on("group_event", (event) => {
+      console.log(`[zalo] Nhan group_event type=${event.type} isSelf=${event.isSelf} thread=${event.threadId}`);
       this.handleGroupEvent(api, event).catch((err: unknown) => {
         console.error("[zalo] Loi khong xu ly duoc khi xu ly group_event:", err);
       });
@@ -286,14 +293,19 @@ export class ZaloGroupBot {
 
   /**
    * Xu ly event "group_event" cua zca-js - hien CHI quan tam loai JOIN (co thanh vien moi duoc them
-   * vao group). event.isSelf === true nghia la CHINH tai khoan bot vua duoc them vao 1 group moi
-   * (vd admin add bot vao group khac) - bo qua case nay, khong phai khach hang moi.
+   * vao group). KHONG dung event.isSelf de loc bo ca event - field nay dung true khong chi khi bot
+   * la nguoi DUOC add, ma CA KHI chinh tai khoan bot la actor thuc hien hanh dong add/xoa (rat pho
+   * bien: chu bot dung chinh tai khoan dang login cho bot de tu quan ly group) - loc theo isSelf se
+   * bo sot dung truong hop nay (phat hien 2026-09-07 tu test that cua user, xem selfListen o start()).
+   * Thay vao do, tu loc TUNG PHAN TU trong updateMembers trung uid cua chinh bot (qua api.getOwnId(),
+   * dong bo - khong phai Promise) - chi bo qua dung phan tu do, khong bo qua ca event.
    */
   private async handleGroupEvent(api: API, event: GroupEvent): Promise<void> {
     if (event.type !== GroupEventType.JOIN) return;
-    if (event.isSelf) return;
 
+    const ownUid = api.getOwnId();
     for (const member of event.data.updateMembers) {
+      if (member.id === ownUid) continue;
       await this.maybeSendGroupJoinWelcome(api, member.id);
     }
   }
