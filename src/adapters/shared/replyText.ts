@@ -122,6 +122,9 @@ export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboar
  * CHI dung boi Zalo (zca-js DM duoc bat ky user nao) - Telegram Bot API chan DM toi user chua tung
  * tu nhan tin cho bot truoc (loi "Forbidden: bot can't initiate conversation"), nen khong ap dung
  * cho Telegram (quyet dinh 2026-08-20, xem zalo/bot.ts).
+ * 2026-09-07 (yeu cau truc tiep cua user): doan "Theo doi hoa hong" doi tu huong dan nhan "xemhh"
+ * sang hien THANG link dashboard (tham so dashboardUrl moi, lay qua findOrCreateDashboardToken
+ * trong zalo/bot.ts) - "xemhh" van con nhung chi con la cach lay LAI link neu lo mat.
  */
 /** Default cho setting "welcome_message_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
@@ -130,7 +133,7 @@ export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
   `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
   `💰 Hoa hồng: Bạn nhận {{userSharePercent}}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại {{botSharePercent}}% để duy trì vận hành.\n\n` +
   `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
-  `📊 Theo dõi hoa hồng: Nhắn "xemhh" cho mình qua tin nhắn riêng (không phải trong group) bất cứ lúc nào để lấy link dashboard cá nhân — xem chi tiết từng đơn và số dư.\n\n` +
+  `📊 Theo dõi hoa hồng: Đây là dashboard riêng của bạn nè, bấm vào xem chi tiết từng đơn và số dư bất cứ lúc nào, link xài hoài không đổi: {{dashboardUrl}} (lỡ mất thì nhắn "xemhh" cho mình để lấy lại nha).\n\n` +
   `💵 Rút tiền: Khi số dư đạt từ {{withdrawalThreshold}}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
   `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
   `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/edit?tab=t.0\n\n` +
@@ -150,11 +153,36 @@ export function formatWithdrawalPaidReply(dashboardUrl: string): string {
   );
 }
 
-export function formatWelcomeReply(template: string, userSharePercent: number, withdrawalThresholdVnd: number): string {
+export function formatWelcomeReply(
+  template: string,
+  userSharePercent: number,
+  withdrawalThresholdVnd: number,
+  dashboardUrl: string
+): string {
   const botSharePercent = 100 - userSharePercent;
   return renderTemplate(template, {
     userSharePercent: String(userSharePercent),
     botSharePercent: String(botSharePercent),
     withdrawalThreshold: formatVnd(withdrawalThresholdVnd),
+    dashboardUrl,
   });
+}
+
+/**
+ * DM chao mung gui 1 LAN DUY NHAT toi user NGAY LUC vua duoc ADD vao group (2026-09-07, yeu cau
+ * truc tiep cua user - truoc do phai doi den khi user tu gui link san pham dau tien moi co
+ * formatWelcomeReply o tren, khien user moi khong biet cach dung phai nhan tin rieng hoi admin).
+ * Ngan gon, tone GenZ, chi kem link So tay hoan tien - KHONG kem dashboard (dashboard chi co y
+ * nghia sau khi user da co hoat dong, xem formatWelcomeReply). Khong co placeholder dong nao nen
+ * khong can di qua renderTemplate, tra thang template.
+ */
+/** Default cho setting "group_join_welcome_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
+  `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
+  `Mình là bot săn sale hoàn tiền — cứ thả link sản phẩm Shopee/TikTok Shop vào group, mình trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
+  `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk\n\n` +
+  `Có gì cứ hỏi riêng mình, đừng ngại nha! 🥳`;
+
+export function formatGroupJoinWelcomeReply(template: string): string {
+  return template;
 }

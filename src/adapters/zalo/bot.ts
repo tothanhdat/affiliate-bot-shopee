@@ -1,4 +1,13 @@
-import { Zalo, LoginQRCallbackEventType, ThreadType, type Message, type API, type TAttachmentContent } from "zca-js";
+import {
+  Zalo,
+  LoginQRCallbackEventType,
+  ThreadType,
+  GroupEventType,
+  type Message,
+  type GroupEvent,
+  type API,
+  type TAttachmentContent,
+} from "zca-js";
 import { AppError } from "../../core/errors.js";
 import type { LedgerStore } from "../../core/ledgerStore.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
@@ -9,12 +18,14 @@ import {
   USAGE_TEXT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
+  GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
   formatPromotionsReply,
   formatDashboardLinkReply,
   formatWelcomeReply,
+  formatGroupJoinWelcomeReply,
 } from "../shared/replyText.js";
 
 export interface ZaloGroupBotOptions {
@@ -118,6 +129,11 @@ export class ZaloGroupBot {
       console.log(`[zalo] Nhan tin nhan tu ${message.data.uidFrom} (thread=${message.threadId}, type=${message.type})`);
       this.handleMessage(api, message).catch((err: unknown) => {
         console.error("[zalo] Loi khong xu ly duoc khi xu ly tin nhan:", err);
+      });
+    });
+    api.listener.on("group_event", (event) => {
+      this.handleGroupEvent(api, event).catch((err: unknown) => {
+        console.error("[zalo] Loi khong xu ly duoc khi xu ly group_event:", err);
       });
     });
     api.listener.on("error", (err) => {
@@ -256,13 +272,48 @@ export class ZaloGroupBot {
       const withdrawalThresholdVnd = this.options.ledgerStore.getWithdrawalThresholdVnd(
         this.options.withdrawalThresholdVnd
       );
+      const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
+      const dashboardUrl = `${this.options.dashboardBaseUrl}/d/${token}`;
       await api.sendMessage(
-        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd),
+        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd, dashboardUrl),
         userId,
         ThreadType.User
       );
     } catch (err) {
       console.warn(`[zalo] gui DM chao mung toi ${userId} that bai:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Xu ly event "group_event" cua zca-js - hien CHI quan tam loai JOIN (co thanh vien moi duoc them
+   * vao group). event.isSelf === true nghia la CHINH tai khoan bot vua duoc them vao 1 group moi
+   * (vd admin add bot vao group khac) - bo qua case nay, khong phai khach hang moi.
+   */
+  private async handleGroupEvent(api: API, event: GroupEvent): Promise<void> {
+    if (event.type !== GroupEventType.JOIN) return;
+    if (event.isSelf) return;
+
+    for (const member of event.data.updateMembers) {
+      await this.maybeSendGroupJoinWelcome(api, member.id);
+    }
+  }
+
+  /**
+   * DM chao mung 1 LAN DUY NHAT NGAY LUC user vua duoc ADD vao group (2026-09-07, yeu cau truc tiep
+   * cua user - truoc do phai doi user tu gui link san pham dau tien moi co DM chao, khien user moi
+   * khong biet cach dung phai nhan tin hoi admin). tryClaimGroupJoinMessage dam bao chi gui 1 lan/
+   * user (bang RIENG voi welcome_messages, xem ledgerStore.ts). Best-effort giong maybeSendWelcomeMessage
+   * o tren: loi gui (vd user chan tin nhan tu nguoi la) chi log canh bao, khong throw len tren.
+   */
+  private async maybeSendGroupJoinWelcome(api: API, userId: string): Promise<void> {
+    const isFirstTime = this.options.ledgerStore.tryClaimGroupJoinMessage("zalo", userId);
+    if (!isFirstTime) return;
+
+    try {
+      const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
+      await api.sendMessage(formatGroupJoinWelcomeReply(template), userId, ThreadType.User);
+    } catch (err) {
+      console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai:`, (err as Error).message);
     }
   }
 

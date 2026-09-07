@@ -3,6 +3,7 @@ import {
   USAGE_TEXT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
+  GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { env } from "./env.js";
 
@@ -55,10 +56,18 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
   },
   {
     key: SETTINGS_KEYS.welcomeMessageTemplate,
-    label: "Tin nhắn chào mừng (Zalo DM, gửi 1 lần/user)",
+    label: "Tin nhắn chào mừng khi gửi link đầu tiên (Zalo DM, gửi 1 lần/user)",
     type: "textarea",
     default: WELCOME_MESSAGE_TEMPLATE_DEFAULT,
-    helpText: "Placeholder hợp lệ: {{userSharePercent}}, {{botSharePercent}}, {{withdrawalThreshold}}.",
+    helpText:
+      "Placeholder hợp lệ: {{userSharePercent}}, {{botSharePercent}}, {{withdrawalThreshold}}, {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.groupJoinWelcomeTemplate,
+    label: "Tin nhắn chào mừng khi vừa được thêm vào group (Zalo DM, gửi 1 lần/user)",
+    type: "textarea",
+    default: GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+    helpText: "Không có placeholder động.",
   },
   {
     key: SETTINGS_KEYS.successReplyTemplate,

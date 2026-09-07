@@ -9,4 +9,5 @@ export const SETTINGS_KEYS = {
   usageText: "usage_text",
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",
+  groupJoinWelcomeTemplate: "group_join_welcome_template",
 } as const;

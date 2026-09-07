@@ -758,6 +758,7 @@ test("GET /admin/settings tra ve form voi gia tri mac dinh khi chua tung luu set
     assert.match(html, /name="usage_text"/);
     assert.match(html, /name="welcome_message_template"/);
     assert.match(html, /name="success_reply_template"/);
+    assert.match(html, /name="group_join_welcome_template"/);
   } finally {
     cleanup();
   }
@@ -776,6 +777,7 @@ test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri mo
         usage_text: "usage moi",
         welcome_message_template: "welcome moi {{userSharePercent}}",
         success_reply_template: "success moi {{link}}",
+        group_join_welcome_template: "group join moi",
       }).toString(),
       redirect: "manual",
     });

@@ -563,6 +563,33 @@ test("LedgerStore: tryClaimWelcomeMessage chi tra true lan dau, false tu lan 2, 
   }
 });
 
+test("LedgerStore: tryClaimGroupJoinMessage chi tra true lan dau, false tu lan 2, doc lap voi tryClaimWelcomeMessage", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    assert.equal(store.tryClaimGroupJoinMessage("zalo", "user-a"), true);
+    assert.equal(store.tryClaimGroupJoinMessage("zalo", "user-a"), false);
+
+    // 2 bang rieng biet - da claim welcome message (link san pham dau tien) khong anh huong claim
+    // group-join message (luc vua duoc add vao group) cua CUNG 1 user.
+    assert.equal(store.tryClaimWelcomeMessage("zalo", "user-a"), true);
+
+    assert.equal(store.tryClaimGroupJoinMessage("zalo", "user-b"), true);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: getGroupJoinWelcomeTemplate fallback ve default khi chua co override", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    assert.equal(store.getGroupJoinWelcomeTemplate("default text"), "default text");
+    store.setSetting("group_join_welcome_template", "text tuy chinh");
+    assert.equal(store.getGroupJoinWelcomeTemplate("default text"), "text tuy chinh");
+  } finally {
+    store.close();
+  }
+});
+
 test("LedgerStore: listUsers tra ve dung displayName tu user_profiles", () => {
   const store = new LedgerStore(":memory:");
   try {

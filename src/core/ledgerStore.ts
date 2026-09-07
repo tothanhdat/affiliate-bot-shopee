@@ -144,6 +144,13 @@ export class LedgerStore {
         PRIMARY KEY (platform, user_id)
       );
 
+      CREATE TABLE IF NOT EXISTS group_join_messages (
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        PRIMARY KEY (platform, user_id)
+      );
+
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -525,6 +532,26 @@ export class LedgerStore {
     try {
       this.db
         .prepare(`INSERT INTO welcome_messages (platform, user_id, sent_at) VALUES (?, ?, ?)`)
+        .run(platform, userId, new Date().toISOString());
+      return true;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Claim-once cho DM chao mung LUC user vua duoc ADD vao group (2026-09-07) - bang RIENG voi
+   * welcome_messages (khac trigger: welcome_messages la luc gui link san pham dau tien) thay vi
+   * them cot phan loai vao bang cu, de khong phai doi PRIMARY KEY cua 1 bang da co du lieu that
+   * tren production. Cung pattern INSERT-roi-catch UNIQUE nhu tryClaimWelcomeMessage o tren.
+   */
+  tryClaimGroupJoinMessage(platform: Platform, userId: string): boolean {
+    try {
+      this.db
+        .prepare(`INSERT INTO group_join_messages (platform, user_id, sent_at) VALUES (?, ?, ?)`)
         .run(platform, userId, new Date().toISOString());
       return true;
     } catch (err) {
@@ -948,6 +975,10 @@ export class LedgerStore {
 
   getSuccessReplyTemplate(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.successReplyTemplate, defaultValue);
+  }
+
+  getGroupJoinWelcomeTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.groupJoinWelcomeTemplate, defaultValue);
   }
 
   /**
