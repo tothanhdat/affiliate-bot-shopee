@@ -125,19 +125,18 @@ export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboar
  * 2026-09-07 (yeu cau truc tiep cua user): doan "Theo doi hoa hong" doi tu huong dan nhan "xemhh"
  * sang hien THANG link dashboard (tham so dashboardUrl moi, lay qua findOrCreateDashboardToken
  * trong zalo/bot.ts) - "xemhh" van con nhung chi con la cach lay LAI link neu lo mat.
+ * 2026-09-07 (rut gon lan 2, cung ngay - yeu cau truc tiep cua user sau khi thay 2 DM chao lien
+ * tiep qua dai dong): bo han cac doan "cach dung"/luu y Shopee/link So tay - da co du o
+ * GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT (DM chao luc vua join group, gui truoc do). Template nay
+ * gio CHI tap trung % hoa hong + link dashboard, xung "em" dong bo voi cac template khac (formatSuccessReply
+ * nhanh shopee cung xung "em").
  */
 /** Default cho setting "welcome_message_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
-  `Chào bạn, rất vui vì bạn đã tham gia group nha! 🎉\n\n` +
-  `Mình là bot hỗ trợ săn sale hoàn tiền (cashback) khi mua hàng qua Shopee, TikTok Shop. Trước khi dùng, gửi bạn vài thông tin quan trọng để dùng cho thuận tiện nhé:\n\n` +
-  `🛍️ Cách dùng: Cứ dán link sản phẩm vào group, mình tự nhận diện sàn và trả ngay link mua hàng được gắn mã hoàn tiền — bấm đúng link đó rồi mua như bình thường là được ghi nhận.\n\n` +
-  `💰 Hoa hồng: Bạn nhận {{userSharePercent}}% hoa hồng phát sinh (sau khi trừ thuế và phí sàn), mình giữ lại {{botSharePercent}}% để duy trì vận hành.\n\n` +
-  `⏳ Thời gian ghi nhận: Sau khi mua, đơn cần vài ngày đến một tuần để sàn xác nhận. Mình đối soát định kỳ hàng tuần, có đơn mới sẽ tự động nhắn báo bạn, không cần hỏi lại.\n\n` +
-  `📊 Theo dõi hoa hồng: Đây là dashboard riêng của bạn nè, bấm vào xem chi tiết từng đơn và số dư bất cứ lúc nào, link xài hoài không đổi: {{dashboardUrl}} (lỡ mất thì nhắn "xemhh" cho mình để lấy lại nha).\n\n` +
-  `💵 Rút tiền: Khi số dư đạt từ {{withdrawalThreshold}}, bạn yêu cầu rút toàn bộ ngay trên dashboard (không hỗ trợ rút một phần), điền thông tin ngân hàng là xong — admin sẽ nhắn riêng xác nhận lại trước khi chuyển khoản.\n\n` +
-  `⚠️ Lưu ý: Shopee không hỗ trợ xem hoa hồng ước tính trước — chỉ TikTok Shop mới trả được ước tính hoa hồng ngay khi lấy link, còn lại phải chờ đơn được xác nhận mới biết chính xác. Đơn đang chờ xác nhận có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn — khi đã xác nhận (Khả dụng) rồi thì hoa hồng cho đơn đó không thay đổi nữa.\n\n` +
-  `Xem Sổ tay hoàn tiền chi tiết tại link: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/edit?tab=t.0\n\n` +
-  `Có gì thắc mắc cứ nhắn mình hoặc tag admin trong group nha. Chúc bạn săn sale vui! 🥳`;
+  `Gửi link đầu tiên rồi nè, em chào lại phát cho chắc kèo luôn nha! 🎉\n\n` +
+  `💰 Bạn nhận {{userSharePercent}}% hoa hồng mỗi đơn (sau thuế/phí sàn), em giữ lại {{botSharePercent}}% để vận hành thôi. Đơn cần vài ngày đến 1 tuần để sàn xác nhận, có đơn mới là em tự nhắn báo liền, khỏi cần hỏi lại đâu.\n\n` +
+  `📊 Đây là dashboard riêng của bạn nè, bấm vào xem chi tiết từng đơn/số dư bất cứ lúc nào, link xài hoài không đổi: {{dashboardUrl}}\n\n` +
+  `💵 Đủ từ {{withdrawalThreshold}} là rút được liền trên dashboard luôn. Lỡ mất link thì nhắn "xemhh" cho em để lấy lại nha!`;
 
 /** DM tu dong khi user gui yeu cau rut tien thanh cong tren dashboard (POST /d/:token/withdraw). */
 export function formatWithdrawalRequestedReply(amountVnd: number): string {
@@ -174,14 +173,16 @@ export function formatWelcomeReply(
  * formatWelcomeReply o tren, khien user moi khong biet cach dung phai nhan tin rieng hoi admin).
  * Ngan gon, tone GenZ, chi kem link So tay hoan tien - KHONG kem dashboard (dashboard chi co y
  * nghia sau khi user da co hoat dong, xem formatWelcomeReply). Khong co placeholder dong nao nen
- * khong can di qua renderTemplate, tra thang template.
+ * khong can di qua renderTemplate, tra thang template. Xung "em" (sua 2026-09-07 cung ngay, dong
+ * bo voi WELCOME_MESSAGE_TEMPLATE_DEFAULT) - rieng "nha tụi mình" giu nguyen vi la so nhieu (chao
+ * vao khong gian chung), khong phai bot tu xung ngoi thu nhat so it.
  */
 /** Default cho setting "group_join_welcome_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
-  `Mình là bot săn sale hoàn tiền — cứ thả link sản phẩm Shopee/TikTok Shop vào group, mình trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
+  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee/TikTok Shop vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
   `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk\n\n` +
-  `Có gì cứ hỏi riêng mình, đừng ngại nha! 🥳`;
+  `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
 
 export function formatGroupJoinWelcomeReply(template: string): string {
   return template;
