@@ -50,8 +50,13 @@ export interface ZaloGroupBotOptions {
  * T2.3 them lenh "xemhh" xu ly rieng trong tin nhan DM (ThreadType.User) - lan dau file
  * nay phan biet DM vs group, vi truoc gio chi tra loi giong het nhau ca 2 loai thread.
  */
+/** Cho lan thu dang nhap lai khi listener bao "closed" ma khong phai do stop() chu dich. */
+const RECONNECT_DELAY_MS = 10_000;
+
 export class ZaloGroupBot {
   private api: API | null = null;
+  private stopping = false;
+  private reconnecting = false;
 
   constructor(
     private readonly resolver: LinkResolverService,
@@ -59,6 +64,14 @@ export class ZaloGroupBot {
   ) {}
 
   async start(): Promise<void> {
+    await this.connect();
+  }
+
+  /**
+   * Dang nhap + gan listener - tach rieng khoi start() de goi lai duoc khi can reconnect
+   * (xem registerListener, event "closed"). Moi lan goi tao API/Zalo instance MOI.
+   */
+  private async connect(): Promise<void> {
     // selfListen: true - mac dinh zca-js NUOT AM THAM moi group_event co isSelf=true, VA isSelf
     // dung true khong chi khi bot la nguoi DUOC add ma ca khi CHINH tai khoan bot la actor thuc
     // hien hanh dong (vd chu bot dung chinh tai khoan dang login cho bot de tu xoa/them thanh vien
@@ -87,6 +100,28 @@ export class ZaloGroupBot {
 
     this.registerListener(this.api);
     this.api.listener.start({ retryOnClose: true });
+  }
+
+  /**
+   * zca-js tu retry noi bo khi socket dong (event "disconnected", retryOnClose: true trong
+   * connect()), nhung chi retry theo config PHIA SERVER Zalo tra ve (ctx.settings.features.socket) -
+   * neu code dong khong nam trong danh sach duoc retry, hoac het retry-budget, no bo cuoc HAN va
+   * bao "closed" - tu do ve sau khong con nhan tin nhan/group_event nao nua, im lang vinh vien
+   * cho toi khi process duoc restart thu cong (phat hien tu su co that 2026-09-08: mat ket noi
+   * ~24h khong ai biet vi khong co log loi ro rang nao khac). Bat buoc tu dang nhap lai o day.
+   */
+  private scheduleReconnect(): void {
+    if (this.stopping || this.reconnecting) return;
+    this.reconnecting = true;
+    console.warn(`[zalo] Se thu dang nhap lai sau ${RECONNECT_DELAY_MS / 1000}s...`);
+    setTimeout(() => {
+      this.reconnecting = false;
+      if (this.stopping) return;
+      this.connect().catch((err: unknown) => {
+        console.error("[zalo] Dang nhap lai that bai:", err);
+        this.scheduleReconnect();
+      });
+    }, RECONNECT_DELAY_MS);
   }
 
   private async loginWithQr(zalo: Zalo): Promise<API> {
@@ -148,6 +183,7 @@ export class ZaloGroupBot {
     });
     api.listener.on("closed", (code, reason) => {
       console.warn(`[zalo] Ket noi bi dong (code=${code}): ${reason}`);
+      this.scheduleReconnect();
     });
     api.listener.on("disconnected", (code, reason) => {
       console.warn(`[zalo] Bi ngat ket noi (code=${code}): ${reason}`);
@@ -342,6 +378,7 @@ export class ZaloGroupBot {
   }
 
   stop(): void {
+    this.stopping = true;
     this.api?.listener.stop();
   }
 }
