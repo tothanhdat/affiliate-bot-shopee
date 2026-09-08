@@ -170,13 +170,16 @@ export function importShopeeReport(
     const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId);
 
     if (targetStatus === "confirmed") {
-      if (existing?.status === "confirmed") {
+      if (existing?.status === "confirmed" || existing?.status === "paid") {
+        // "paid" la trang thai SAU "confirmed" (chi dat duoc qua markWithdrawalPaid, xem ledgerStore.ts)
+        // - bao cao Shopee liet ke lai CA LICH SU nen don da tra tien se tiep tuc hien "Hoan thanh"
+        // o moi lan import sau, day la lap lai binh thuong chu khong phai xung dot, coi nhu duplicate.
         result.confirmedDuplicate += 1;
         continue;
       }
-      if (existing?.status === "reversed" || existing?.status === "paid") {
+      if (existing?.status === "reversed") {
         result.errors.push(
-          `[${orderId}] Bao cao Shopee ghi "Hoan thanh" nhung entry noi bo dang o trang thai "${existing.status}" - can admin kiem tra tay, khong tu dong ghi de.`
+          `[${orderId}] Bao cao Shopee ghi "Hoan thanh" nhung entry noi bo dang o trang thai "reversed" - can admin kiem tra tay, khong tu dong ghi de.`
         );
         continue;
       }

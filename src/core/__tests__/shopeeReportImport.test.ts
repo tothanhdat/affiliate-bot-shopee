@@ -448,3 +448,42 @@ test("importShopeeReport: chay lai file giong het lan truoc (da 'confirmed') -> 
     ledgerStore.close();
   }
 });
+
+test("importShopeeReport: don da rut tien xong ('paid'), bao cao lai 'Hoan thanh' -> confirmedDuplicate, KHONG canh bao (bao cao liet ke lai lich su)", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const csv = buildCsv([
+      {
+        orderId: "SP012",
+        orderAmount: 100_000,
+        commissionAmount: 10_000,
+        status: "Hoàn thành",
+        subIdParts: ["zalo", "user-a", "abc", "def"],
+      },
+    ]);
+
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, csv);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000);
+
+    const withdrawal = ledgerStore.requestWithdrawal("zalo", "user-a", 8_000, {
+      bankName: "Test Bank",
+      bankAccountNumber: "123456",
+      bankAccountHolder: "Nguyen Van A",
+    });
+    ledgerStore.markWithdrawalPaid(withdrawal.id, "/tmp/proof.jpg");
+
+    const result = importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, csv);
+
+    assert.equal(result.confirmedNew, 0);
+    assert.equal(result.confirmedDuplicate, 1);
+    assert.equal(result.errors.length, 0); // khong con bi gan nhan "can admin kiem tra tay" nua
+
+    const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
+    assert.equal(entries[0].status, "paid");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
