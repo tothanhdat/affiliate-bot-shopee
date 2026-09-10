@@ -314,10 +314,13 @@ export function renderDashboardPage(input: {
     })
     .join("\n");
 
+  // empty state nay hien khi user CHUA CO DON NAO (moi trang thai, ke ca pending) - khong phai
+  // "chua co don hoan thanh": bang don o duoi liet ke ca don dang cho xac nhan. Text cu noi
+  // "chua co don o trang thai hoan thanh" gay hieu nham la don pending khong duoc tinh (sua 2026-09-10).
   const table =
     input.entries.length > 0
       ? `<div class="order-list">${cards}</div>`
-      : `<div class="card"><p class="empty">Bạn chưa có đơn hàng nào ở trạng thái hoàn thành.<br>Khi có đơn hoàn thành, Admin sẽ chủ động nhắn tin cho bạn để xem hoa hồng nhé ^^</p></div>`;
+      : `<div class="card"><p class="empty">Đơn hàng của bạn sẽ hiển thị tại đây. Hiện tại bạn chưa phát sinh đơn hàng nào.<br>Khi có đơn hoàn thành, Admin sẽ chủ động nhắn tin cho bạn để xem hoa hồng nhé.</p></div>`;
 
   const errorBlock = input.errorMessage ? `<div class="error">${escapeHtml(input.errorMessage)}</div>` : "";
 
