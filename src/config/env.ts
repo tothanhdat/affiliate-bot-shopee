@@ -165,8 +165,17 @@ export const env = {
     baseUrl: optional("DASHBOARD_BASE_URL", "http://localhost:3000"),
   },
 
-  /** Chat ID Telegram cua chu bot, dung de bao khi co yeu cau rut tien moi. Rong = chi xem duoc qua ledgerAdmin.ts list-pending-withdrawals. */
+  /** Chat ID Telegram cua chu bot, dung de bao khi co yeu cau rut tien moi. Rong = thu kenh Zalo ben duoi. */
   adminTelegramChatId: optional("ADMIN_TELEGRAM_CHAT_ID", ""),
+
+  /**
+   * User ID Zalo cua chu bot - kenh thong bao admin DU PHONG khi instance khong chay Telegram
+   * (vi du deploy rieng chi co Zalo). Chi duoc dung khi ADMIN_TELEGRAM_CHAT_ID rong, xem
+   * createAdminNotifier trong src/adapters/shared/adminNotifier.ts.
+   * PHAI la tai khoan Zalo KHAC tai khoan dang chay bot (bot khong tu nhan tin cho chinh no).
+   * Lay uid tai /admin/users sau khi tai khoan do nhan tin cho bot 1 lan.
+   */
+  adminZaloUserId: optional("ADMIN_ZALO_USER_ID", ""),
 
   admin: {
     /** Mat khau dang nhap trang /admin (1 tai khoan mac dinh). Rong = khong ai dang nhap duoc. */

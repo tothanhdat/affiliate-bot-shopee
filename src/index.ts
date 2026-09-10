@@ -11,6 +11,7 @@ import { createAffiliateProvider } from "./core/providers/index.js";
 import type { Platform } from "./core/types.js";
 import { syncAccesstradeTransactions } from "./core/accesstradeSync.js";
 import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "./adapters/shared/replyText.js";
+import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
 
 const logStore = new LogStore(env.databasePath);
 const ledgerStore = new LedgerStore(env.ledgerDatabasePath);
@@ -47,21 +48,32 @@ if (env.telegramBotToken === "") {
   });
 }
 
-if (env.adminTelegramChatId === "") {
+// Thong bao cho chu bot: uu tien Telegram, khong co thi rot xuong Zalo DM (instance Zalo-only
+// truoc day mat sach thong bao "co yeu cau rut tien moi"), khong co nua thi chi log.
+// Thu tu fallback + ly do xem createAdminNotifier.
+if (env.adminTelegramChatId === "" && env.adminZaloUserId === "") {
   console.warn(
-    "[warn] Thieu ADMIN_TELEGRAM_CHAT_ID - yeu cau rut tien se KHONG duoc bao qua Telegram. " +
-      'Dung "npx tsx src/scripts/ledgerAdmin.ts list-pending-withdrawals" de xem thu cong.'
+    "[warn] Thieu CA ADMIN_TELEGRAM_CHAT_ID va ADMIN_ZALO_USER_ID - yeu cau rut tien se KHONG duoc " +
+      'bao o dau ca. Dung "npx tsx src/scripts/ledgerAdmin.ts list-pending-withdrawals" de xem thu cong.'
   );
+} else if (env.adminTelegramChatId === "") {
+  console.log("[admin-notify] Se bao cho chu bot qua Zalo DM (ADMIN_ZALO_USER_ID).");
 }
 
-const notifyAdmin =
-  telegramBot && env.adminTelegramChatId !== ""
-    ? async (message: string): Promise<void> => {
-        await telegramBot!.telegram.sendMessage(env.adminTelegramChatId, message);
-      }
-    : async (message: string): Promise<void> => {
-        console.warn("[admin-notify] khong the gui thong bao (chua co telegramBot/ADMIN_TELEGRAM_CHAT_ID):", message);
-      };
+const notifyAdmin = createAdminNotifier({
+  resolveTelegramSender: () =>
+    telegramBot && env.adminTelegramChatId !== ""
+      ? async (message: string) => {
+          await telegramBot!.telegram.sendMessage(env.adminTelegramChatId, message);
+        }
+      : null,
+  resolveZaloSender: () =>
+    zaloBot && env.adminZaloUserId !== ""
+      ? async (message: string) => {
+          await zaloBot!.sendDirectMessage(env.adminZaloUserId, message);
+        }
+      : null,
+});
 
 // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc admin ghi nhan (qua
 // /admin/record-orders hoac ledgerAdmin.ts). Chi dinh tuyen Telegram/Zalo - "http" khong co noi
