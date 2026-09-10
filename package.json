@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "zalo:login": "tsx src/scripts/zaloLogin.ts",
-    "test": "tsx --test src/core/__tests__/*.test.ts src/api/__tests__/*.test.ts src/adapters/shared/__tests__/*.test.ts src/scripts/__tests__/*.test.ts",
+    "test": "tsx --test src/core/__tests__/*.test.ts src/api/__tests__/*.test.ts src/adapters/shared/__tests__/*.test.ts src/adapters/zalo/__tests__/*.test.ts src/scripts/__tests__/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -213,11 +213,26 @@ export class ZaloGroupBot {
           message.threadId,
           message.type
         );
+        return;
       }
-      // Tin nhan rieng (DM) voi noi dung khac "xemhh" (vd "hi", link san pham, cau hoi...): IM LANG
-      // hoan toan, khong tra loi gi ca - quyet dinh goc 2026-08-17, tranh lo link dashboard neu lo
-      // tra loi nham trong group. (2026-08-20 tung doi sang tra loi 1 cau huong dan co dinh de tranh
-      // user tuong bot loi, nhung 2026-08-21 user yeu cau doi lai ve im lang hoan toan.)
+
+      // 2026-09-10 (feedback that tu user cuoi): nhieu nguoi ngai gui link trong group vi so thanh
+      // vien khac biet minh dang mua gi, nen DM gui link san pham cung duoc tra link hoan tien y
+      // het trong group (dung chung processProductLinks). Khac group o DUY NHAT cach gui reply:
+      // khong tag @ten, vi mention chi co y nghia trong group.
+      const dmLinks = extractProductUrls(text);
+      if (dmLinks.length === 0) {
+        // Tin nhan rieng (DM) khong phai "xemhh" va khong chua link san pham (vd "hi", cau hoi...):
+        // IM LANG hoan toan, khong tra loi gi ca - quyet dinh goc 2026-08-17. (2026-08-20 tung doi
+        // sang tra loi 1 cau huong dan co dinh de tranh user tuong bot loi, nhung 2026-08-21 user
+        // yeu cau doi lai ve im lang hoan toan.)
+        return;
+      }
+
+      await this.maybeSendWelcomeMessage(api, userId);
+      await this.processProductLinks(userId, dmLinks, (body) =>
+        api.sendMessage(body, message.threadId, message.type).then(() => undefined)
+      );
       return;
     }
 
@@ -232,7 +247,20 @@ export class ZaloGroupBot {
     // group - best-effort, khong duoc lam gian doan viec xu ly link nghiep vu chinh du DM that bai
     // (vd user chan tin nhan tu nguoi la).
     await this.maybeSendWelcomeMessage(api, userId);
+    await this.processProductLinks(userId, links, (body) => this.sendGroupReply(api, message, body));
+  }
 
+  /**
+   * Duyet danh sach link san pham cua 1 tin nhan -> tao link affiliate -> gui reply, dung chung cho
+   * CA group lan DM (2026-09-10). Diem khac nhau duy nhat giua 2 noi la cach gui reply, nen no duoc
+   * truyen vao qua sendReply (group: kem mention @ten; DM: van ban thuan) thay vi nhan doi ca vong
+   * lap nay - sua logic xu ly link o day la ap dung cho ca 2 luong.
+   */
+  private async processProductLinks(
+    userId: string,
+    links: string[],
+    sendReply: (body: string) => Promise<void>
+  ): Promise<void> {
     const linksToProcess = links.slice(0, this.options.maxLinksPerMessage);
     const skippedCount = links.length - linksToProcess.length;
     const successMerchants = new Set<MerchantId>();
@@ -242,9 +270,7 @@ export class ZaloGroupBot {
         const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId });
         successMerchants.add(result.merchant);
         const successTemplate = this.options.ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
-        await this.sendGroupReply(
-          api,
-          message,
+        await sendReply(
           formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate)
         );
       } catch (err) {
@@ -256,12 +282,12 @@ export class ZaloGroupBot {
         console.warn(`[zalo] tao link that bai (${code}) cho ${rawUrl}: ${detail}`);
         const userMessage =
           err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
-        await this.sendGroupReply(api, message, formatErrorReply(userMessage));
+        await sendReply(formatErrorReply(userMessage));
       }
     }
 
     if (skippedCount > 0) {
-      await this.sendGroupReply(api, message, formatSkippedReply(linksToProcess.length, skippedCount));
+      await sendReply(formatSkippedReply(linksToProcess.length, skippedCount));
     }
 
     if (this.options.promotionsLimit > 0) {
@@ -269,7 +295,7 @@ export class ZaloGroupBot {
         try {
           const promotions = await this.resolver.getPromotions(merchant, this.options.promotionsLimit);
           if (promotions.length > 0) {
-            await this.sendGroupReply(api, message, formatPromotionsReply(merchant, promotions));
+            await sendReply(formatPromotionsReply(merchant, promotions));
           }
         } catch (err) {
           console.warn(`[zalo] khong lay duoc danh sach khuyen mai (${merchant}):`, (err as Error).message);
