@@ -52,7 +52,7 @@ import {
   type UserOrderSummary,
 } from "../core/orderIngest.js";
 import type { Platform } from "../core/types.js";
-import { formatOrdersConfirmedReply } from "../adapters/shared/replyText.js";
+import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "../adapters/shared/replyText.js";
 
 function fail(message: string): never {
   console.error(`Loi: ${message}`);
@@ -175,10 +175,12 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(entry, null, 2));
 
         const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+        const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
         await notifyUserFromCli(
           entry.platform,
           entry.userId,
           formatOrdersConfirmedReply(
+            ordersConfirmedTemplate,
             [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
             `${env.dashboard.baseUrl}/d/${token}`
           )
@@ -212,10 +214,11 @@ async function main(): Promise<void> {
         const summaries: UserOrderSummary[] = summarizeOrderResultsByUser(results);
         for (const summary of summaries) {
           const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
           await notifyUserFromCli(
             summary.platform,
             summary.userId,
-            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+            formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
           );
         }
         break;
@@ -235,10 +238,11 @@ async function main(): Promise<void> {
 
         for (const summary of result.confirmedByUser) {
           const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
           await notifyUserFromCli(
             summary.platform,
             summary.userId,
-            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+            formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
           );
         }
         break;
@@ -316,10 +320,11 @@ async function main(): Promise<void> {
 
         for (const summary of result.confirmedByUser) {
           const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+          const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
           await notifyUserFromCli(
             summary.platform,
             summary.userId,
-            formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+            formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
           );
         }
         break;

@@ -10,4 +10,8 @@ export const SETTINGS_KEYS = {
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",
   groupJoinWelcomeTemplate: "group_join_welcome_template",
+  dashboardLinkReplyTemplate: "dashboard_link_reply_template",
+  ordersConfirmedTemplate: "orders_confirmed_template",
+  withdrawalRequestedTemplate: "withdrawal_requested_template",
+  withdrawalPaidTemplate: "withdrawal_paid_template",
 } as const;

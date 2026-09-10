@@ -10,7 +10,7 @@ import { RateLimiter } from "./core/rateLimiter.js";
 import { createAffiliateProvider } from "./core/providers/index.js";
 import type { Platform } from "./core/types.js";
 import { syncAccesstradeTransactions } from "./core/accesstradeSync.js";
-import { formatOrdersConfirmedReply } from "./adapters/shared/replyText.js";
+import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "./adapters/shared/replyText.js";
 
 const logStore = new LogStore(env.databasePath);
 const ledgerStore = new LedgerStore(env.ledgerDatabasePath);
@@ -165,9 +165,12 @@ async function runAccesstradeSync(): Promise<void> {
 
     for (const summary of result.confirmedByUser) {
       const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
-      notifyUser(summary.platform, summary.userId, formatOrdersConfirmedReply(summary.items, `${env.dashboard.baseUrl}/d/${token}`)).catch(
-        (err) => console.warn("[accesstrade-sync] gui thong bao user that bai:", err)
-      );
+      const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
+      notifyUser(
+        summary.platform,
+        summary.userId,
+        formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
+      ).catch((err) => console.warn("[accesstrade-sync] gui thong bao user that bai:", err));
     }
 
     if (result.confirmedNew > 0 || result.pendingNew > 0 || result.reversedCount > 0 || result.errors.length > 0) {

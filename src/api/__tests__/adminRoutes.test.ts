@@ -778,6 +778,10 @@ test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri mo
         welcome_message_template: "welcome moi {{userSharePercent}}",
         success_reply_template: "success moi {{link}}",
         group_join_welcome_template: "group join moi",
+        dashboard_link_reply_template: "dashboard moi {{dashboardUrl}}",
+        orders_confirmed_template: "orders moi {{summaryLine}}",
+        withdrawal_requested_template: "withdrawal requested moi {{amount}}",
+        withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
       }).toString(),
       redirect: "manual",
     });

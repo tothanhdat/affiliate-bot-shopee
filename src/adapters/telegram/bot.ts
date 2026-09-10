@@ -8,6 +8,7 @@ import type { MerchantId } from "../../core/merchants.js";
 import {
   USAGE_TEXT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
+  DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
@@ -42,7 +43,10 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
     // thanh vien khac trong group vo tinh kich hoat link ca nhan cua nguoi khac.
     if (ctx.chat.type === "private" && text.trim().toLowerCase() === "xemhh") {
       const { token: dashboardToken } = ledgerStore.findOrCreateDashboardToken("telegram", userId);
-      await ctx.reply(formatDashboardLinkReply(`${dashboardBaseUrl}/d/${dashboardToken}`, userId));
+      const dashboardLinkTemplate = ledgerStore.getDashboardLinkReplyTemplate(DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT);
+      await ctx.reply(
+        formatDashboardLinkReply(dashboardLinkTemplate, `${dashboardBaseUrl}/d/${dashboardToken}`, userId)
+      );
       return;
     }
 

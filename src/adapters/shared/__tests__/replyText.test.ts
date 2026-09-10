@@ -7,9 +7,15 @@ import {
   formatWithdrawalRequestedReply,
   formatWithdrawalPaidReply,
   formatGroupJoinWelcomeReply,
+  formatDashboardLinkReply,
+  formatOrdersConfirmedReply,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
+  ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+  WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
+  WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
 } from "../replyText.js";
 
 test("renderTemplate: thay dung placeholder co trong vars", () => {
@@ -92,13 +98,72 @@ test("formatSuccessReply: template tuy chinh chi giu lai placeholder duoc thay",
   );
 });
 
-test("formatWithdrawalRequestedReply: hien dung so tien da format VND", () => {
-  const result = formatWithdrawalRequestedReply(80_000);
+test("formatWithdrawalRequestedReply: template mac dinh hien dung so tien da format VND", () => {
+  const result = formatWithdrawalRequestedReply(WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT, 80_000);
   assert.match(result, /Đã ghi nhận yêu cầu rút 80\.000đ nha/);
 });
 
-test("formatWithdrawalPaidReply: co dung link dashboard", () => {
-  const result = formatWithdrawalPaidReply("https://example.com/d/abc123");
+test("formatWithdrawalRequestedReply: template tuy chinh chi giu lai placeholder duoc thay", () => {
+  const result = formatWithdrawalRequestedReply("Rut {{amount}} nhe.", 50_000);
+  assert.equal(result, "Rut 50.000đ nhe.");
+});
+
+test("formatWithdrawalPaidReply: template mac dinh co dung link dashboard", () => {
+  const result = formatWithdrawalPaidReply(WITHDRAWAL_PAID_TEMPLATE_DEFAULT, "https://example.com/d/abc123");
   assert.match(result, /Tiền đã bay về bạn rồi đó/);
   assert.match(result, /https:\/\/example\.com\/d\/abc123/);
+});
+
+test("formatWithdrawalPaidReply: template tuy chinh chi giu lai placeholder duoc thay", () => {
+  const result = formatWithdrawalPaidReply("Da chuyen khoan, xem tai {{dashboardUrl}}.", "https://x.test/d/1");
+  assert.equal(result, "Da chuyen khoan, xem tai https://x.test/d/1.");
+});
+
+test("formatDashboardLinkReply: template mac dinh hien dung userId va dashboardUrl", () => {
+  const result = formatDashboardLinkReply(DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT, "https://example.com/d/abc123", "12345");
+  assert.match(result, /🆔 ID: 12345/);
+  assert.match(result, /https:\/\/example\.com\/d\/abc123/);
+});
+
+test("formatDashboardLinkReply: template tuy chinh chi giu lai placeholder duoc thay", () => {
+  const result = formatDashboardLinkReply("ID {{userId}} - link {{dashboardUrl}}", "https://x.test/d/1", "u1");
+  assert.equal(result, "ID u1 - link https://x.test/d/1");
+});
+
+test("formatOrdersConfirmedReply: 1 don - template mac dinh hien ten don, so tien va link dashboard", () => {
+  const result = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [{ orderId: "ORDER1", productName: "Ao thun", userShareAmount: 50_000 }],
+    "https://example.com/d/abc123"
+  );
+  assert.match(result, /đơn "Ao thun" của bạn confirm rồi nè/);
+  assert.match(result, /50\.000đ/);
+  assert.match(result, /https:\/\/example\.com\/d\/abc123/);
+});
+
+test("formatOrdersConfirmedReply: nhieu don - hien tong so tien va tung dong rieng", () => {
+  const result = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [
+      { orderId: "ORDER1", productName: "Ao thun", userShareAmount: 30_000 },
+      { orderId: "ORDER2", productName: null, userShareAmount: 20_000 },
+    ],
+    "https://example.com/d/abc123"
+  );
+  assert.match(result, /bạn có 2 đơn về luôn nè/);
+  assert.match(result, /Ao thun: 30\.000đ/);
+  assert.match(result, /Đơn ORDER2: 20\.000đ/);
+  assert.match(result, /Tổng cộng: 50\.000đ/);
+});
+
+test("formatOrdersConfirmedReply: template tuy chinh chi giu lai placeholder duoc thay", () => {
+  const result = formatOrdersConfirmedReply(
+    "{{summaryLine}} | {{dashboardUrl}}",
+    [{ orderId: "ORDER1", productName: "Ao thun", userShareAmount: 50_000 }],
+    "https://x.test/d/1"
+  );
+  assert.equal(
+    result,
+    `Yayyy 🎉 đơn "Ao thun" của bạn confirm rồi nè, về túi bạn 50.000đ 💸 | https://x.test/d/1`
+  );
 });

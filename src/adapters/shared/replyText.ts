@@ -76,12 +76,14 @@ export function formatPromotionsReply(merchant: MerchantId, items: PromotionItem
  * userId tra ve kem theo de admin sau nay tim lai dung cuoc tro chuyen (vi du go thang userId
  * vao o tim kiem cua Zalo/Telegram de nhay toi dung nguoi, khi can nhan tin hoi STK luc xu ly rut tien).
  */
-export function formatDashboardLinkReply(dashboardUrl: string, userId: string): string {
-  return (
-    `Đây nè 👇\n` +
-    `🆔 ID: ${userId}\n` +
-    `🎁 Dashboard của bạn: ${dashboardUrl} — bấm vào coi hoa hồng/đơn hàng bất cứ lúc nào nha, link này xài hoài không đổi.`
-  );
+/** Default cho setting "dashboard_link_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT =
+  `Đây nè 👇\n` +
+  `🆔 ID: {{userId}}\n` +
+  `🎁 Dashboard của bạn: {{dashboardUrl}} — bấm vào coi hoa hồng/đơn hàng bất cứ lúc nào nha, link này xài hoài không đổi.`;
+
+export function formatDashboardLinkReply(template: string, dashboardUrl: string, userId: string): string {
+  return renderTemplate(template, { dashboardUrl, userId });
 }
 
 /**
@@ -92,25 +94,25 @@ export function formatDashboardLinkReply(dashboardUrl: string, userId: string): 
  * thay vi chi tong so tien, tone gan gui/de thuong hon. productName null (admin bo trong luc ghi
  * nhan) fallback ve "Đơn <orderId>" de khong hien "null" tho trong tin nhan.
  */
-export function formatOrdersConfirmedReply(items: ConfirmedOrderItem[], dashboardUrl: string): string {
+/** Default cho setting "orders_confirmed_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
+
+export function formatOrdersConfirmedReply(
+  template: string,
+  items: ConfirmedOrderItem[],
+  dashboardUrl: string
+): string {
   const total = items.reduce((sum, item) => sum + item.userShareAmount, 0);
   const label = (item: ConfirmedOrderItem) => (item.productName ? item.productName : `Đơn ${item.orderId}`);
 
-  if (items.length === 1) {
-    const [item] = items;
-    return (
-      `Yayyy 🎉 đơn "${label(item)}" của bạn confirm rồi nè, về túi bạn ${formatVnd(item.userShareAmount)} 💸\n\n` +
-      `Xem chi tiết: ${dashboardUrl}`
-    );
-  }
+  const summaryLine =
+    items.length === 1
+      ? `Yayyy 🎉 đơn "${label(items[0])}" của bạn confirm rồi nè, về túi bạn ${formatVnd(items[0].userShareAmount)} 💸`
+      : `Chốt đợt này bạn có ${items.length} đơn về luôn nè 🥳\n` +
+        `${items.map((item) => `${label(item)}: ${formatVnd(item.userShareAmount)}`).join(" / ")}\n` +
+        `Tổng cộng: ${formatVnd(total)} 💰`;
 
-  const lines = items.map((item) => `${label(item)}: ${formatVnd(item.userShareAmount)}`).join(" / ");
-  return (
-    `Chốt đợt này bạn có ${items.length} đơn về luôn nè 🥳\n` +
-    `${lines}\n` +
-    `Tổng cộng: ${formatVnd(total)} 💰\n\n` +
-    `Coi chi tiết: ${dashboardUrl}`
-  );
+  return renderTemplate(template, { summaryLine, dashboardUrl });
 }
 
 /**
@@ -138,18 +140,22 @@ export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
   `📊 Đây là dashboard riêng của bạn nè, bấm vào xem chi tiết từng đơn/số dư bất cứ lúc nào, link xài hoài không đổi: {{dashboardUrl}}\n\n` +
   `💵 Đủ từ {{withdrawalThreshold}} là rút được liền trên dashboard luôn. Lỡ mất link thì nhắn "xemhh" cho em để lấy lại nha!`;
 
+/** Default cho setting "withdrawal_requested_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT =
+  `Đã ghi nhận yêu cầu rút {{amount}} nha 💸 Admin check thông tin xong sẽ nhắn riêng xác nhận trước khi chuyển khoản, chờ chút xíu nhen!`;
+
 /** DM tu dong khi user gui yeu cau rut tien thanh cong tren dashboard (POST /d/:token/withdraw). */
-export function formatWithdrawalRequestedReply(amountVnd: number): string {
-  return (
-    `Đã ghi nhận yêu cầu rút ${formatVnd(amountVnd)} nha 💸 Admin check thông tin xong sẽ nhắn riêng xác nhận trước khi chuyển khoản, chờ chút xíu nhen!`
-  );
+export function formatWithdrawalRequestedReply(template: string, amountVnd: number): string {
+  return renderTemplate(template, { amount: formatVnd(amountVnd) });
 }
 
+/** Default cho setting "withdrawal_paid_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const WITHDRAWAL_PAID_TEMPLATE_DEFAULT =
+  `Tiền đã bay về bạn rồi đó 🥰 Vô dashboard xem ảnh chuyển khoản nếu cần đối chiếu nha: {{dashboardUrl}}`;
+
 /** DM tu dong khi admin danh dau 1 yeu cau rut tien la "da tra" (POST /admin/withdrawals/:id/mark-paid). */
-export function formatWithdrawalPaidReply(dashboardUrl: string): string {
-  return (
-    `Tiền đã bay về bạn rồi đó 🥰 Vô dashboard xem ảnh chuyển khoản nếu cần đối chiếu nha: ${dashboardUrl}`
-  );
+export function formatWithdrawalPaidReply(template: string, dashboardUrl: string): string {
+  return renderTemplate(template, { dashboardUrl });
 }
 
 export function formatWelcomeReply(

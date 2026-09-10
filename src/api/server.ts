@@ -32,6 +32,9 @@ import {
   formatOrdersConfirmedReply,
   formatWithdrawalPaidReply,
   formatWithdrawalRequestedReply,
+  ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+  WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
+  WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 
@@ -244,8 +247,14 @@ export function createServer(
       ).catch((notifyErr) => {
         console.warn("[admin-notify] gui thong bao yeu cau rut tien that bai:", notifyErr);
       });
-      notifyUser(identity.platform, identity.userId, formatWithdrawalRequestedReply(withdrawal.amount)).catch(
-        (notifyErr) => {
+      const withdrawalRequestedTemplate = ledgerStore.getWithdrawalRequestedTemplate(
+        WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT
+      );
+      notifyUser(
+        identity.platform,
+        identity.userId,
+        formatWithdrawalRequestedReply(withdrawalRequestedTemplate, withdrawal.amount)
+      ).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao xac nhan yeu cau rut tien that bai:", notifyErr);
         }
       );
@@ -356,11 +365,14 @@ export function createServer(
         const paid = ledgerStore.markWithdrawalPaid(req.params.id, filename);
         // Best-effort: loi gui thong bao khong duoc lam fail response, da danh dau "paid" trong DB roi.
         const { token } = ledgerStore.findOrCreateDashboardToken(paid.platform, paid.userId);
-        notifyUser(paid.platform, paid.userId, formatWithdrawalPaidReply(`${dashboardBaseUrl}/d/${token}`)).catch(
-          (notifyErr) => {
-            console.warn("[user-notify] gui thong bao da chuyen khoan that bai:", notifyErr);
-          }
-        );
+        const withdrawalPaidTemplate = ledgerStore.getWithdrawalPaidTemplate(WITHDRAWAL_PAID_TEMPLATE_DEFAULT);
+        notifyUser(
+          paid.platform,
+          paid.userId,
+          formatWithdrawalPaidReply(withdrawalPaidTemplate, `${dashboardBaseUrl}/d/${token}`)
+        ).catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao da chuyen khoan that bai:", notifyErr);
+        });
         res.redirect(303, "/admin/withdrawals");
       } catch (err) {
         const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
@@ -549,10 +561,12 @@ export function createServer(
       // lam fail response, don da ghi vao ledger roi.
       if (entry.status === "confirmed") {
         const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+        const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
         notifyUser(
           entry.platform,
           entry.userId,
           formatOrdersConfirmedReply(
+            ordersConfirmedTemplate,
             [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
             `${dashboardBaseUrl}/d/${token}`
           )
@@ -608,10 +622,11 @@ export function createServer(
       );
       for (const summary of result.confirmedByUser) {
         const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+        const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
         notifyUser(
           summary.platform,
           summary.userId,
-          formatOrdersConfirmedReply(summary.items, `${dashboardBaseUrl}/d/${token}`)
+          formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${dashboardBaseUrl}/d/${token}`)
         ).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
         });

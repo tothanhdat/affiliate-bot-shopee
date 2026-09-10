@@ -4,6 +4,10 @@ import {
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
+  ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+  WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
+  WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { env } from "./env.js";
 
@@ -75,5 +79,34 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: SUCCESS_REPLY_TEMPLATE_DEFAULT,
     helpText: "Placeholder hợp lệ: {{link}}, {{commissionLine}} (dòng hoa hồng ước tính, tự tính theo sản phẩm).",
+  },
+  {
+    key: SETTINGS_KEYS.dashboardLinkReplyTemplate,
+    label: 'Tin nhắn trả link dashboard (lệnh "xemhh")',
+    type: "textarea",
+    default: DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
+    helpText: "Placeholder hợp lệ: {{userId}}, {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.ordersConfirmedTemplate,
+    label: "Tin nhắn báo đơn hàng được xác nhận",
+    type: "textarea",
+    default: ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    helpText:
+      "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.withdrawalRequestedTemplate,
+    label: "Tin nhắn báo đã ghi nhận yêu cầu rút tiền",
+    type: "textarea",
+    default: WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
+    helpText: "Placeholder hợp lệ: {{amount}} (số tiền đã format VNĐ).",
+  },
+  {
+    key: SETTINGS_KEYS.withdrawalPaidTemplate,
+    label: "Tin nhắn báo đã chuyển tiền rút",
+    type: "textarea",
+    default: WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
+    helpText: "Placeholder hợp lệ: {{dashboardUrl}}.",
   },
 ];

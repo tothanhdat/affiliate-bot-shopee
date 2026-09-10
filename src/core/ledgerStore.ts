@@ -981,6 +981,22 @@ export class LedgerStore {
     return this.getSetting(SETTINGS_KEYS.groupJoinWelcomeTemplate, defaultValue);
   }
 
+  getDashboardLinkReplyTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.dashboardLinkReplyTemplate, defaultValue);
+  }
+
+  getOrdersConfirmedTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.ordersConfirmedTemplate, defaultValue);
+  }
+
+  getWithdrawalRequestedTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.withdrawalRequestedTemplate, defaultValue);
+  }
+
+  getWithdrawalPaidTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.withdrawalPaidTemplate, defaultValue);
+  }
+
   /**
    * Ghi 1 dong lich su cho 1 lan "ghi nhan don hang" tren /admin/record-orders (2026-08-23) - goi
    * sau khi da thuc su xu ly xong (ke ca khi ket qua la 0 don moi/0 doi trang thai, de admin thay

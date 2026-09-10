@@ -19,6 +19,7 @@ import {
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
   formatSkippedReply,
@@ -204,8 +205,11 @@ export class ZaloGroupBot {
     if (message.type === ThreadType.User) {
       if (text.trim().toLowerCase() === "xemhh") {
         const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
+        const dashboardLinkTemplate = this.options.ledgerStore.getDashboardLinkReplyTemplate(
+          DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT
+        );
         await api.sendMessage(
-          formatDashboardLinkReply(`${this.options.dashboardBaseUrl}/d/${token}`, userId),
+          formatDashboardLinkReply(dashboardLinkTemplate, `${this.options.dashboardBaseUrl}/d/${token}`, userId),
           message.threadId,
           message.type
         );
