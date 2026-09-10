@@ -668,8 +668,8 @@ ${singleBlock}
   <li>Số đơn quét được: <strong>${shopeeReportResult.ordersScanned}</strong></li>
   <li>Ghi mới "Khả dụng": <strong>${shopeeReportResult.confirmedNew}</strong> (trùng, bỏ qua: ${shopeeReportResult.confirmedDuplicate})</li>
   <li>Ghi mới "Chờ xác nhận": <strong>${shopeeReportResult.pendingNew}</strong> (cập nhật lại số liệu: ${shopeeReportResult.pendingUpdated})</li>
-  <li>Đã huỷ (Không hợp lệ): <strong>${shopeeReportResult.reversedCount}</strong></li>
-  <li>Bỏ qua - đơn nhiều sản phẩm (chưa hỗ trợ): ${shopeeReportResult.skippedMultiItem}</li>
+  <li>Đã huỷ (đơn bị huỷ / không hợp lệ): <strong>${shopeeReportResult.reversedCount}</strong></li>
+  <li>Đơn nhiều sản phẩm đã gộp: ${shopeeReportResult.mergedMultiItem}</li>
   <li>Bỏ qua - không tách được subId: ${shopeeReportResult.skippedNoSubId}</li>
   <li>Bỏ qua - subId không khớp user nào: ${shopeeReportResult.skippedSubIdNotFound}</li>
   <li>Bỏ qua - trạng thái lạ: ${shopeeReportResult.skippedUnknownStatus}</li>
@@ -686,7 +686,7 @@ ${
 
   const shopeeReportCard = `<div class="card">
 <h2>Import báo cáo gốc Shopee Affiliate</h2>
-<p class="muted">Upload thẳng file export từ affiliate.shopee.vn/report/conversion_report (vd AffiliateCommissionReport_*.csv) - không cần đổi tên cột. Trạng thái ghi nhận lấy theo cột "Trạng thái sản phẩm liên kết" trong file. Đơn nhiều sản phẩm cùng 1 mã đơn hiện chưa hỗ trợ tự động.</p>
+<p class="muted">Upload thẳng file export từ affiliate.shopee.vn/report/conversion_report (vd AffiliateCommissionReport_*.csv) - không cần đổi tên cột. Trạng thái ghi nhận lấy theo cột "Trạng thái sản phẩm liên kết" trong file. Đơn nhiều sản phẩm cùng 1 mã đơn được tự động gộp thành 1 đơn (dòng bị huỷ trong đơn không tính vào tổng).</p>
 ${shopeeReportErrorBlock}
 <form method="POST" action="/admin/record-orders/shopee-report" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit("Xác nhận import file báo cáo Shopee này? Sẽ ghi nhận/cập nhật đơn hàng vào hệ thống.")}>
   <div>
