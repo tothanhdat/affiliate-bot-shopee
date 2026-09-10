@@ -5,8 +5,11 @@ dist/
 .DS_Store
 data/*.db
 data/*.db-journal
-data/zalo-session.json
-data/zalo-qr.png
+# Glob (khong phai ten co dinh): script zaloLogin.ts ghi ra zalo-session-bot2.json,
+# zalo-qr-bot2.png... cho cac instance bot khac - file session = quyen truy cap tai khoan Zalo,
+# lot vao git la mat tai khoan.
+data/zalo-session*.json
+data/zalo-qr*.png
 data/withdrawal-proofs/
 *.log
 
