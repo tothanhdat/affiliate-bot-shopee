@@ -15,6 +15,7 @@ import {
 } from "./errors.js";
 import type { MerchantId } from "./merchants.js";
 import { SETTINGS_KEYS } from "./settingsKeys.js";
+import { normalizeNewlines } from "./textNormalize.js";
 import type {
   AccesstradePayment,
   CommissionEntry,
@@ -930,11 +931,14 @@ export class LedgerStore {
    * /admin/settings (xem SETTINGS_KEYS + src/config/settingsRegistry.ts). Khong cache - moi lan
    * goi query lai SQLite truc tiep (chi phi khong dang ke, nhat quan voi cac method khac).
    */
+  // normalizeNewlines o day (READ path, khong chi o route POST /admin/settings) la co chu dich:
+  // cac template da luu bang CRLF truoc ban va nay van con nguyen trong DB that, normalize luc doc
+  // giup chung tu khoi ma admin khong phai vao sua/luu lai - xem textNormalize.ts.
   getSetting(key: string, defaultValue: string): string {
     const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
       | { value: string }
       | undefined;
-    return row ? row.value : defaultValue;
+    return normalizeNewlines(row ? row.value : defaultValue);
   }
 
   getSettingInt(key: string, defaultValue: number): number {

@@ -852,3 +852,35 @@ test("POST /admin/settings voi text rong -> 422", async () => {
     cleanup();
   }
 });
+
+// Xem comment trong ledgerStore.test.ts ("getSetting normalize CRLF") de biet bug goc: trinh duyet
+// nop <textarea> len bang CRLF, Zalo desktop hien thi thanh dong trong gap doi.
+test("POST /admin/settings: xuong dong CRLF cua textarea duoc normalize ve LF truoc khi luu", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        commission_user_share_percent: "90",
+        withdrawal_threshold_vnd: "50000",
+        usage_text: "usage moi",
+        welcome_message_template: "welcome moi",
+        success_reply_template: "Link đây ạ: {{link}}\r\n\r\n{{commissionLine}}\r\n\r\nCuoi cung",
+        group_join_welcome_template: "group join moi",
+        dashboard_link_reply_template: "dashboard moi {{dashboardUrl}}",
+        orders_confirmed_template: "orders moi {{summaryLine}}",
+        withdrawal_requested_template: "withdrawal requested moi {{amount}}",
+        withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
+      }).toString(),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    const saved = ledgerStore.getSetting("success_reply_template", "");
+    assert.equal(saved.includes("\r"), false);
+    assert.equal(saved, "Link đây ạ: {{link}}\n\n{{commissionLine}}\n\nCuoi cung");
+  } finally {
+    cleanup();
+  }
+});

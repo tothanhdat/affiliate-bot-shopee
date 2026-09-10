@@ -731,3 +731,16 @@ test("LedgerStore: listImportHistory gioi han dung so luong theo limit", () => {
   assert.equal(store.listImportHistory(100).length, 5);
   store.close();
 });
+
+// Bug that (2026-09-10, phat hien tu Zalo desktop instance "sanhoantien"): template sua qua form
+// /admin/settings duoc trinh duyet nop len dang CRLF ("\r\n" - dung chuan HTML cho <textarea>), luu
+// nguyen xi vao DB, roi Zalo desktop (Chromium, white-space: pre-wrap) dem "\r" va "\n" la 2 lan
+// xuong dong RIENG BIET -> moi dong trong bi nhan doi, tin nhan gian ra rat xa. Normalize o READ path
+// (khong phai chi o route POST) de cac gia tri DA LUU SAI trong DB that tu khoi luc deploy, khong
+// bat admin phai vao sua/luu lai tung template.
+test("LedgerStore: getSetting normalize CRLF/CR ve LF (chua lanh du lieu cu da luu sai)", () => {
+  const store = new LedgerStore(":memory:");
+  store.setSetting("success_reply_template", "Link đây ạ: {{link}}\r\n\r\nDòng 2\rDòng 3");
+  assert.equal(store.getSetting("success_reply_template", ""), "Link đây ạ: {{link}}\n\nDòng 2\nDòng 3");
+  store.close();
+});

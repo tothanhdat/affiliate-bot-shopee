@@ -37,6 +37,7 @@ import {
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
+import { normalizeNewlines } from "../core/textNormalize.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
@@ -656,7 +657,9 @@ export function createServer(
     const errors: string[] = [];
 
     for (const entry of SETTINGS_REGISTRY) {
-      const raw = typeof req.body?.[entry.key] === "string" ? req.body[entry.key] : "";
+      // normalizeNewlines: trinh duyet nop <textarea> len dang CRLF, luu nguyen se lam Zalo desktop
+      // hien thi moi dong trong thanh gap doi - xem textNormalize.ts.
+      const raw = typeof req.body?.[entry.key] === "string" ? normalizeNewlines(req.body[entry.key]) : "";
       const trimmed = raw.trim();
 
       if (entry.type === "number") {
@@ -686,7 +689,7 @@ export function createServer(
     if (errors.length > 0) {
       const previewValues: Record<string, string> = {};
       for (const entry of SETTINGS_REGISTRY) {
-        const raw = typeof req.body?.[entry.key] === "string" ? req.body[entry.key] : "";
+        const raw = typeof req.body?.[entry.key] === "string" ? normalizeNewlines(req.body[entry.key]) : "";
         previewValues[entry.key] = submitted[entry.key] ?? raw;
       }
       res.status(422).type("html").send(renderSettingsPage(previewValues, errors.join(" ")));
