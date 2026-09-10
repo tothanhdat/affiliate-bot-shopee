@@ -760,7 +760,7 @@ export function renderSettingsPage(
   }).join("\n");
 
   const body = `<div class="card">
-<h2>5 giá trị chỉnh được qua form này</h2>
+<h2>${SETTINGS_REGISTRY.length} giá trị chỉnh được qua form này</h2>
 ${errorBlock}
 ${successBlock}
 <form method="POST" action="/admin/settings" class="settings-form" ${confirmOnSubmit("Xác nhận lưu thay đổi cấu hình này? Áp dụng ngay lập tức, không cần khởi động lại bot.")}>
