@@ -9,6 +9,7 @@ import type {
   Platform,
   ReconciliationSummary,
   WithdrawalRequest,
+  ZaloGroup,
 } from "../core/types.js";
 import {
   confirmOnSubmit,
@@ -163,6 +164,10 @@ function shellStyles(): string {
   .settings-form textarea { min-height: 130px; line-height: 1.55; margin-bottom: 0.5rem; }
   .settings-form .help { font-size: 0.78rem; color: var(--text-muted); margin: 0.4rem 0 0; line-height: 1.5; }
   .settings-form .actions { padding-top: 1.35rem; }
+  .group-choice { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0; font-size: 0.85rem; }
+  .group-choice + .group-choice { border-top: 1px solid var(--card-border); }
+  .group-choice .group-name { font-weight: 600; color: var(--text); }
+  .group-choice .group-id { font-size: 0.75rem; color: var(--text-muted); font-family: ui-monospace, monospace; }
 
   /* Responsive (2026-08-21, phan hoi truc tiep cua user sau khi test tren mobile that - ban dau
      tung doi sidebar thanh thanh nav ngang o tren, nhung user muon menu VAN nam ben trai, chi thu
@@ -738,7 +743,8 @@ ${
 export function renderSettingsPage(
   currentValues: Record<string, string>,
   errorMessage?: string | null,
-  successMessage?: string | null
+  successMessage?: string | null,
+  zaloGroups: ZaloGroup[] = []
 ): string {
   const errorBlock = errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : "";
   const successBlock = successMessage ? `<div class="success">${escapeHtml(successMessage)}</div>` : "";
@@ -767,7 +773,42 @@ ${successBlock}
 ${fields}
 <div class="actions"><button type="submit" class="primary">Lưu thay đổi</button></div>
 </form>
-</div>`;
+</div>
+${renderZaloGroupsCard(zaloGroups)}`;
 
   return adminShell("settings", "Cấu hình", body);
+}
+
+/**
+ * Card chon group Zalo nhan thong bao sau moi lan import bao cao Shopee (2026-09-11). KHONG di qua
+ * SETTINGS_REGISTRY vi registry la khai bao TINH (label/type/default co dinh trong code), con danh
+ * sach group la du lieu DONG doc tu bang zalo_groups - nhet vao registry se pha tinh chat "them 1
+ * setting chi sua 1 file" cua no. Vi vay card nay co form + route rieng (POST /admin/settings/zalo-groups).
+ */
+function renderZaloGroupsCard(zaloGroups: ZaloGroup[]): string {
+  if (zaloGroups.length === 0) {
+    return `<div class="card">
+<h2>Group Zalo nhận thông báo</h2>
+<p class="help">Chưa phát hiện group nào. Bot tự ghi nhận danh sách group lúc đăng nhập Zalo và khi có tin nhắn mới trong group — bật Zalo adapter rồi chờ bot khởi động xong (hoặc chờ có người nhắn trong group), sau đó tải lại trang này.</p>
+</div>`;
+  }
+
+  const rows = zaloGroups
+    .map(
+      (group) => `<label class="group-choice">
+<input type="checkbox" name="groupIds" value="${escapeHtml(group.groupId)}"${group.notifyEnabled ? " checked" : ""}>
+<span class="group-name">${escapeHtml(group.name || "(chưa lấy được tên)")}</span>
+<span class="group-id">${escapeHtml(group.groupId)}</span>
+</label>`
+    )
+    .join("\n");
+
+  return `<div class="card">
+<h2>Group Zalo nhận thông báo</h2>
+<p class="help">Tick group sẽ nhận tin "đơn hàng đã được cập nhật" mỗi lần import báo cáo Shopee thành công. Mặc định tất cả đều TẮT — tài khoản Zalo chạy bot thường cũng ở trong các group cá nhân không liên quan.</p>
+<form method="POST" action="/admin/settings/zalo-groups" class="settings-form" ${confirmOnSubmit("Xác nhận lưu danh sách group nhận thông báo?")}>
+${rows}
+<div class="actions"><button type="submit" class="primary">Lưu danh sách group</button></div>
+</form>
+</div>`;
 }

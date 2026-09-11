@@ -101,6 +101,51 @@ export class ZaloGroupBot {
 
     this.registerListener(this.api);
     this.api.listener.start({ retryOnClose: true });
+
+    // Nap san danh sach group de admin tick duoc NGAY tren /admin/settings, khong phai cho den khi co
+    // nguoi nhan tin trong group (xem maybeRegisterGroup). Best-effort: loi goi API chi log canh bao,
+    // khong duoc lam that bai ca viec khoi dong bot.
+    this.syncKnownGroups(this.api).catch((err: unknown) => {
+      console.warn("[zalo] khong dong bo duoc danh sach group:", (err as Error).message);
+    });
+  }
+
+  /**
+   * Ghi nhan TOAN BO group bot dang la thanh vien vao bang zalo_groups (2026-09-11) - getAllGroups()
+   * chi tra ve id (gridVerMap), phai goi getGroupInfo() cho ca danh sach de lay ten hien thi cho admin.
+   * Chay 1 lan moi lan dang nhap (ke ca reconnect) - KHONG bat/tat notify cho group nao, lua chon do
+   * thuoc ve admin va duoc giu nguyen qua cac lan dong bo (xem LedgerStore.upsertZaloGroup).
+   */
+  private async syncKnownGroups(api: API): Promise<void> {
+    const all = await api.getAllGroups();
+    const groupIds = Object.keys(all.gridVerMap ?? {});
+    if (groupIds.length === 0) return;
+
+    const info = await api.getGroupInfo(groupIds);
+    for (const groupId of groupIds) {
+      this.options.ledgerStore.upsertZaloGroup(groupId, info.gridInfoMap?.[groupId]?.name ?? "");
+    }
+    console.log(`[zalo] Da dong bo ${groupIds.length} group vao danh sach chon thong bao (/admin/settings).`);
+  }
+
+  /**
+   * Bo sung 1 group vua thay tin nhan nhung chua co trong bang (vd bot duoc add vao group moi GIUA
+   * luc dang chay, sau lan syncKnownGroups cua phien dang nhap nay). Chi goi getGroupInfo cho group
+   * CHUA BIET - khong phai moi tin nhan (tranh 1 request mang/tin nhan). Neu lay ten that bai van ghi
+   * nhan group voi ten rong: de khong thu lai o moi tin nhan tiep theo, ten se duoc dien o lan dong bo
+   * ke tiep (upsertZaloGroup khong cho ten rong ghi de ten da biet).
+   */
+  private async maybeRegisterGroup(api: API, groupId: string): Promise<void> {
+    if (this.options.ledgerStore.hasZaloGroup(groupId)) return;
+
+    let name = "";
+    try {
+      const info = await api.getGroupInfo(groupId);
+      name = info.gridInfoMap?.[groupId]?.name ?? "";
+    } catch (err) {
+      console.warn(`[zalo] khong lay duoc ten group ${groupId}:`, (err as Error).message);
+    }
+    this.options.ledgerStore.upsertZaloGroup(groupId, name);
   }
 
   /**
@@ -235,6 +280,10 @@ export class ZaloGroupBot {
       );
       return;
     }
+
+    // Ghi nhan group nay vao danh sach chon thong bao (/admin/settings) - dat TRUOC nhanh "khong co
+    // link" de group van duoc ghi nhan du tin nhan dau tien thay duoc khong phai link san pham.
+    await this.maybeRegisterGroup(api, message.threadId);
 
     const links = extractProductUrls(text);
 
@@ -405,6 +454,19 @@ export class ZaloGroupBot {
       throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
     }
     await this.api.sendMessage(message, userId, ThreadType.User);
+  }
+
+  /**
+   * Gui 1 tin nhan chu dong vao GROUP (2026-09-11) - dung boi route POST /admin/record-orders/shopee-report
+   * (qua notifyZaloGroup trong index.ts) de bao ca group biet don hang vua duoc cap nhat. Khong kem
+   * mention ai: day la thong bao chung cho ca group, khong phai tra loi 1 nguoi (khac sendGroupReply).
+   * Nem loi neu chua dang nhap - noi goi tu bat (.catch) de khong lam fail request cua admin.
+   */
+  async sendGroupMessage(groupId: string, message: string): Promise<void> {
+    if (!this.api) {
+      throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
+    }
+    await this.api.sendMessage(message, groupId, ThreadType.Group);
   }
 
   stop(): void {

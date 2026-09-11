@@ -9,6 +9,7 @@ import {
   formatGroupJoinWelcomeReply,
   formatDashboardLinkReply,
   formatOrdersConfirmedReply,
+  formatGroupReportUpdatedReply,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
@@ -16,6 +17,7 @@ import {
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
+  GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
 } from "../replyText.js";
 
 test("renderTemplate: thay dung placeholder co trong vars", () => {
@@ -166,4 +168,19 @@ test("formatOrdersConfirmedReply: template tuy chinh chi giu lai placeholder duo
     result,
     `Yayyy 🎉 đơn "Ao thun" của bạn confirm rồi nè, về túi bạn 50.000đ 💸 | https://x.test/d/1`
   );
+});
+
+// 2026-09-11 (yeu cau truc tiep cua user): sau moi lan admin import bao cao Shopee tren web, bot
+// nhan vao group da duoc tick de ca group biet du lieu hoa hong vua duoc cap nhat.
+test("formatGroupReportUpdatedReply: dien ngay dd/mm vao {{date}}", () => {
+  const body = formatGroupReportUpdatedReply("Đơn hàng Shopee ngày {{date}} đã được cập nhật.", "10/09");
+  assert.equal(body, "Đơn hàng Shopee ngày 10/09 đã được cập nhật.");
+});
+
+test("formatGroupReportUpdatedReply: template default co {{date}} va huong dan 'xemhh'", () => {
+  assert.ok(GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT.includes("{{date}}"), "default phai co placeholder ngay");
+  const body = formatGroupReportUpdatedReply(GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT, "10/09");
+  assert.ok(body.includes("10/09"));
+  assert.ok(body.includes("xemhh"), "phai chi cho user cach lay lai link dashboard");
+  assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
 });

@@ -27,6 +27,7 @@ import type {
   ReconciliationSummary,
   StatusTransition,
   WithdrawalRequest,
+  ZaloGroup,
 } from "./types.js";
 
 export interface RecordConversionInput {
@@ -150,6 +151,14 @@ export class LedgerStore {
         user_id TEXT NOT NULL,
         sent_at TEXT NOT NULL,
         PRIMARY KEY (platform, user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS zalo_groups (
+        group_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        notify_enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS settings (
@@ -560,6 +569,77 @@ export class LedgerStore {
         return false;
       }
       throw err;
+    }
+  }
+
+  /**
+   * Ghi nhan 1 group Zalo bot dang o (2026-09-11) - goi tu zalo/bot.ts khi dong bo danh sach group
+   * luc dang nhap va khi thay tin nhan tu group chua biet. Giu nguyen `notify_enabled` neu group da
+   * ton tai: day la lua chon cua ADMIN tren /admin/settings, dong bo lai danh sach group khong duoc
+   * lam mat no. Ten rong ("" - khi getGroupInfo that bai hoac khong tra ve ten) cung khong ghi de
+   * ten da biet truoc do, de danh sach tren trang admin khong bi trong ten sau 1 lan goi API loi.
+   */
+  upsertZaloGroup(groupId: string, name: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO zalo_groups (group_id, name, notify_enabled, created_at, last_seen_at)
+         VALUES (?, ?, 0, ?, ?)
+         ON CONFLICT(group_id) DO UPDATE SET
+           name = CASE WHEN excluded.name = '' THEN zalo_groups.name ELSE excluded.name END,
+           last_seen_at = excluded.last_seen_at`
+      )
+      .run(groupId, name, now, now);
+  }
+
+  /** Dung boi zalo/bot.ts de chi goi getGroupInfo (1 request mang) cho group chua tung thay. */
+  hasZaloGroup(groupId: string): boolean {
+    const row = this.db.prepare(`SELECT 1 FROM zalo_groups WHERE group_id = ?`).get(groupId);
+    return row !== undefined;
+  }
+
+  /** Toan bo group da biet (cho form checkbox tren /admin/settings) - sap theo ten cho de tim. */
+  listZaloGroups(): ZaloGroup[] {
+    const rows = this.db
+      .prepare(`SELECT group_id, name, notify_enabled, created_at, last_seen_at FROM zalo_groups ORDER BY name, group_id`)
+      .all() as Array<{
+      group_id: string;
+      name: string;
+      notify_enabled: number;
+      created_at: string;
+      last_seen_at: string;
+    }>;
+    return rows.map(mapZaloGroupRow);
+  }
+
+  /** Cac group admin da tick - dung boi POST /admin/record-orders/shopee-report de gui thong bao. */
+  listNotifyEnabledZaloGroups(): ZaloGroup[] {
+    const rows = this.db
+      .prepare(
+        `SELECT group_id, name, notify_enabled, created_at, last_seen_at FROM zalo_groups
+         WHERE notify_enabled = 1 ORDER BY name, group_id`
+      )
+      .all() as Array<{
+      group_id: string;
+      name: string;
+      notify_enabled: number;
+      created_at: string;
+      last_seen_at: string;
+    }>;
+    return rows.map(mapZaloGroupRow);
+  }
+
+  /**
+   * Luu lai TOAN BO lua chon tu form checkbox: bat dung cac group_id duoc tick, tat tat ca phan con
+   * lai (form HTML khong gui ve checkbox bi bo tick, nen khong the suy ra "group nao vua bi tat" -
+   * phai ghi lai ca danh sach). group_id la (vd group bot da roi khoi) khong tao dong moi: UPDATE
+   * chi tac dong len dong da ton tai.
+   */
+  setZaloGroupNotifySelection(groupIds: string[]): void {
+    this.db.exec(`UPDATE zalo_groups SET notify_enabled = 0`);
+    const stmt = this.db.prepare(`UPDATE zalo_groups SET notify_enabled = 1 WHERE group_id = ?`);
+    for (const groupId of groupIds) {
+      stmt.run(groupId);
     }
   }
 
@@ -1001,6 +1081,10 @@ export class LedgerStore {
     return this.getSetting(SETTINGS_KEYS.withdrawalPaidTemplate, defaultValue);
   }
 
+  getGroupReportUpdatedTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.groupReportUpdatedTemplate, defaultValue);
+  }
+
   /**
    * Ghi 1 dong lich su cho 1 lan "ghi nhan don hang" tren /admin/record-orders (2026-08-23) - goi
    * sau khi da thuc su xu ly xong (ke ca khi ket qua la 0 don moi/0 doi trang thai, de admin thay
@@ -1111,5 +1195,21 @@ function rowToAccesstradePayment(row: unknown): AccesstradePayment {
     receivedAt: r.received_at as string,
     amountVnd: r.amount as number,
     note: (r.note as string | null) ?? null,
+  };
+}
+
+function mapZaloGroupRow(row: {
+  group_id: string;
+  name: string;
+  notify_enabled: number;
+  created_at: string;
+  last_seen_at: string;
+}): ZaloGroup {
+  return {
+    groupId: row.group_id,
+    name: row.name,
+    notifyEnabled: row.notify_enabled === 1,
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
   };
 }

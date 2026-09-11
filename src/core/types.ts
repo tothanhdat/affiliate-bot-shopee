@@ -157,3 +157,17 @@ export interface ImportHistoryEntry {
   newOrderIds: string[];
   statusTransitions: StatusTransition[];
 }
+
+/**
+ * 1 group Zalo bot dang la thanh vien (2026-09-11) - bot tu ghi nhan (xem LedgerStore.upsertZaloGroup),
+ * admin tick `notifyEnabled` tren /admin/settings de chon group nao nhan thong bao "da cap nhat don
+ * hang" sau moi lan import bao cao Shopee. Mac dinh TAT vi tai khoan Zalo chay bot la tai khoan ca
+ * nhan, thuong dang o ca group khong lien quan.
+ */
+export interface ZaloGroup {
+  groupId: string;
+  name: string;
+  notifyEnabled: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+}

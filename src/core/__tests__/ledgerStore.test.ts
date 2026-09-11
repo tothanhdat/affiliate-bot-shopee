@@ -744,3 +744,90 @@ test("LedgerStore: getSetting normalize CRLF/CR ve LF (chua lanh du lieu cu da l
   assert.equal(store.getSetting("success_reply_template", ""), "Link đây ạ: {{link}}\n\nDòng 2\nDòng 3");
   store.close();
 });
+
+// 2026-09-11: bang zalo_groups - danh sach group Zalo bot dang o, de admin tick group nao nhan thong
+// bao "da cap nhat don hang" sau moi lan import bao cao Shopee (xem /admin/settings).
+test("LedgerStore: upsertZaloGroup ghi group moi voi notify_enabled TAT mac dinh", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+
+  const groups = store.listZaloGroups();
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].groupId, "group-1");
+  assert.equal(groups[0].name, "Group Hoàn Tiền");
+  // Mac dinh TAT: tai khoan Zalo chay bot la tai khoan ca nhan, co the dang o group gia dinh/ban be -
+  // bat san se nhan thong bao vao het cac group do ngay lan import dau tien.
+  assert.equal(groups[0].notifyEnabled, false);
+  assert.deepEqual(store.listNotifyEnabledZaloGroups(), []);
+  store.close();
+});
+
+test("LedgerStore: upsertZaloGroup goi lai cap nhat ten nhung KHONG reset lua chon notify", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "Tên cũ");
+  store.setZaloGroupNotifySelection(["group-1"]);
+
+  store.upsertZaloGroup("group-1", "Tên mới");
+
+  const groups = store.listZaloGroups();
+  assert.equal(groups.length, 1, "khong duoc tao dong trung cho cung group_id");
+  assert.equal(groups[0].name, "Tên mới");
+  assert.equal(groups[0].notifyEnabled, true, "lua chon cua admin phai song sot qua cac lan dong bo lai");
+  store.close();
+});
+
+test("LedgerStore: upsertZaloGroup ten rong khong ghi de ten da biet", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+  // getGroupInfo that bai/tra ve thieu ten -> caller truyen "" - khong duoc xoa ten da luu duoc truoc do.
+  store.upsertZaloGroup("group-1", "");
+  assert.equal(store.listZaloGroups()[0].name, "Group Hoàn Tiền");
+  store.close();
+});
+
+test("LedgerStore: setZaloGroupNotifySelection chi bat dung group duoc tick, tat phan con lai", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "A");
+  store.upsertZaloGroup("group-2", "B");
+  store.upsertZaloGroup("group-3", "C");
+
+  store.setZaloGroupNotifySelection(["group-1", "group-3"]);
+  assert.deepEqual(
+    store.listNotifyEnabledZaloGroups().map((g) => g.groupId),
+    ["group-1", "group-3"]
+  );
+
+  // Bo tick het -> khong con group nao nhan thong bao.
+  store.setZaloGroupNotifySelection([]);
+  assert.deepEqual(store.listNotifyEnabledZaloGroups(), []);
+  store.close();
+});
+
+test("LedgerStore: setZaloGroupNotifySelection bo qua group_id khong co trong bang", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "A");
+  store.setZaloGroupNotifySelection(["group-1", "group-khong-ton-tai"]);
+
+  assert.equal(store.listZaloGroups().length, 1, "khong duoc tao dong moi tu id la");
+  assert.deepEqual(
+    store.listNotifyEnabledZaloGroups().map((g) => g.groupId),
+    ["group-1"]
+  );
+  store.close();
+});
+
+test("LedgerStore: hasZaloGroup phan biet group da biet va chua biet", () => {
+  const store = new LedgerStore(":memory:");
+  store.upsertZaloGroup("group-1", "A");
+  assert.equal(store.hasZaloGroup("group-1"), true);
+  assert.equal(store.hasZaloGroup("group-2"), false);
+  store.close();
+});
+
+test("LedgerStore: getGroupReportUpdatedTemplate tra default khi admin chua tuy chinh", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getGroupReportUpdatedTemplate("mặc định"), "mặc định");
+  store.setSetting("group_report_updated_template", "Đơn ngày {{date}} đã cập nhật");
+  assert.equal(store.getGroupReportUpdatedTemplate("mặc định"), "Đơn ngày {{date}} đã cập nhật");
+  store.close();
+});

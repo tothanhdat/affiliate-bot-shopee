@@ -22,10 +22,27 @@ interface SentMessage {
  */
 function setup() {
   const sent: SentMessage[] = [];
+  const groupInfoCalls: string[] = [];
+  // Ten group gia lap tra ve boi getGroupInfo - test ghi vao day de kiem soat ket qua.
+  const groupNames = new Map<string, string>([["group-1", "Group Hoàn Tiền"]]);
+  let allGroupIds: string[] = [];
   const api = {
     sendMessage: async (payload: SentMessage["payload"], threadId: string, type: ThreadType) => {
       sent.push({ payload, threadId, type });
       return {};
+    },
+    getAllGroups: async () => ({
+      version: "1",
+      gridVerMap: Object.fromEntries(allGroupIds.map((id) => [id, "1"])),
+    }),
+    getGroupInfo: async (groupId: string | string[]) => {
+      const ids = Array.isArray(groupId) ? groupId : [groupId];
+      groupInfoCalls.push(...ids);
+      return {
+        removedsGroup: [],
+        unchangedsGroup: [],
+        gridInfoMap: Object.fromEntries(ids.map((id) => [id, { name: groupNames.get(id) ?? "" }])),
+      };
     },
   } as unknown as API;
 
@@ -55,7 +72,29 @@ function setup() {
     ledgerStore.close();
   }
 
-  return { api, sent, ledgerStore, handleMessage, cleanup };
+  const syncKnownGroups = (): Promise<void> =>
+    (bot as unknown as { syncKnownGroups(api: API): Promise<void> }).syncKnownGroups(api);
+
+  /** Gia lap trang thai "da dang nhap" de goi duoc sendGroupMessage ma khong mo ket noi that. */
+  const setLoggedIn = () => {
+    (bot as unknown as { api: API | null }).api = api;
+  };
+
+  return {
+    api,
+    sent,
+    ledgerStore,
+    handleMessage,
+    bot,
+    groupInfoCalls,
+    groupNames,
+    setAllGroupIds: (ids: string[]) => {
+      allGroupIds = ids;
+    },
+    syncKnownGroups,
+    setLoggedIn,
+    cleanup,
+  };
 }
 
 function makeMessage(type: ThreadType, text: string, uid = "user-1"): Message {
@@ -140,6 +179,98 @@ test("Zalo group: link trong group van reply kem mention @ten nhu cu", async () 
     assert.equal(typeof sent[0].payload, "object");
     assert.match(bodyOf(sent[0]), /^@Nguyen Van A /);
     assert.match(bodyOf(sent[0]), /https:\/\/mock-aff\.local\//);
+  } finally {
+    cleanup();
+  }
+});
+
+// 2026-09-11: bot tu ghi nhan danh sach group dang o (bang zalo_groups) de admin tick tren
+// /admin/settings group nao nhan thong bao sau moi lan import bao cao Shopee.
+test("Zalo: syncKnownGroups ghi nhan moi group bot dang o kem ten", async () => {
+  const { ledgerStore, setAllGroupIds, syncKnownGroups, groupNames, cleanup } = setup();
+  try {
+    groupNames.set("group-2", "Gia đình");
+    setAllGroupIds(["group-1", "group-2"]);
+
+    await syncKnownGroups();
+
+    const groups = ledgerStore.listZaloGroups();
+    assert.deepEqual(
+      groups.map((g) => [g.groupId, g.name]),
+      [
+        ["group-2", "Gia đình"],
+        ["group-1", "Group Hoàn Tiền"],
+      ],
+      "sap theo ten nen Gia đình dung truoc Group Hoàn Tiền"
+    );
+    // Mac dinh TAT - admin phai tu tick tren /admin/settings.
+    assert.deepEqual(ledgerStore.listNotifyEnabledZaloGroups(), []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo: syncKnownGroups khong goi getGroupInfo khi bot khong o group nao", async () => {
+  const { ledgerStore, setAllGroupIds, syncKnownGroups, groupInfoCalls, cleanup } = setup();
+  try {
+    setAllGroupIds([]);
+    await syncKnownGroups();
+    assert.deepEqual(groupInfoCalls, []);
+    assert.deepEqual(ledgerStore.listZaloGroups(), []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group: tin nhan tu group chua biet -> ghi nhan group; group da biet -> khong goi lai getGroupInfo", async () => {
+  const { ledgerStore, handleMessage, groupInfoCalls, cleanup } = setup();
+  try {
+    await handleMessage(makeMessage(ThreadType.Group, PRODUCT_URL));
+
+    assert.deepEqual(
+      ledgerStore.listZaloGroups().map((g) => [g.groupId, g.name]),
+      [["group-1", "Group Hoàn Tiền"]]
+    );
+    assert.deepEqual(groupInfoCalls, ["group-1"]);
+
+    // Tin thu 2 cung group: khong duoc goi getGroupInfo lan nua (tiet kiem request mang moi tin nhan).
+    await handleMessage(makeMessage(ThreadType.Group, PRODUCT_URL));
+    assert.deepEqual(groupInfoCalls, ["group-1"]);
+    assert.equal(ledgerStore.listZaloGroups().length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group: tin nhan khong co link cung ghi nhan group", async () => {
+  const { ledgerStore, handleMessage, cleanup } = setup();
+  try {
+    await handleMessage(makeMessage(ThreadType.Group, "hello moi nguoi"));
+    assert.equal(ledgerStore.hasZaloGroup("group-1"), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo: sendGroupMessage gui vao dung thread group (ThreadType.Group)", async () => {
+  const { sent, bot, setLoggedIn, cleanup } = setup();
+  try {
+    setLoggedIn();
+    await bot.sendGroupMessage("group-1", "Đơn hàng Shopee ngày 10/09 đã được cập nhật.");
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].threadId, "group-1");
+    assert.equal(sent[0].type, ThreadType.Group);
+    assert.equal(bodyOf(sent[0]), "Đơn hàng Shopee ngày 10/09 đã được cập nhật.");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo: sendGroupMessage nem loi khi bot chua dang nhap", async () => {
+  const { bot, cleanup } = setup();
+  try {
+    await assert.rejects(() => bot.sendGroupMessage("group-1", "test"), /chua dang nhap/);
   } finally {
     cleanup();
   }

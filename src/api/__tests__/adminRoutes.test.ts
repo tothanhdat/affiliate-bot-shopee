@@ -11,6 +11,7 @@ import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
+import { yesterdayVnDdMm } from "../../core/vietnamDate.js";
 
 const THRESHOLD_VND = 50_000;
 const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
@@ -33,6 +34,11 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
     notifyUserCalls.push({ platform, userId, message });
   };
 
+  const notifyZaloGroupCalls: Array<{ groupId: string; message: string }> = [];
+  const notifyZaloGroup = async (groupId: string, message: string): Promise<void> => {
+    notifyZaloGroupCalls.push({ groupId, message });
+  };
+
   const app = createServer(
     resolver,
     logStore,
@@ -44,7 +50,8 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
     withdrawalProofDir,
     adminLoginRateLimiter,
     "http://localhost:3002",
-    notifyUser
+    notifyUser,
+    notifyZaloGroup
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -59,7 +66,7 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
     rmSync(withdrawalProofDir, { recursive: true, force: true });
   }
 
-  return { logStore, ledgerStore, baseUrl, withdrawalProofDir, notifyUserCalls, cleanup };
+  return { logStore, ledgerStore, baseUrl, withdrawalProofDir, notifyUserCalls, notifyZaloGroupCalls, cleanup };
 }
 
 /** FormData multipart 1 anh "chuyen khoan" gia lap, dung chung cho cac test mark-paid. */
@@ -782,6 +789,7 @@ test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri mo
         orders_confirmed_template: "orders moi {{summaryLine}}",
         withdrawal_requested_template: "withdrawal requested moi {{amount}}",
         withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
+        group_report_updated_template: "group report moi {{date}}",
       }).toString(),
       redirect: "manual",
     });
@@ -873,6 +881,7 @@ test("POST /admin/settings: xuong dong CRLF cua textarea duoc normalize ve LF tr
         orders_confirmed_template: "orders moi {{summaryLine}}",
         withdrawal_requested_template: "withdrawal requested moi {{amount}}",
         withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
+        group_report_updated_template: "group report moi {{date}}",
       }).toString(),
       redirect: "manual",
     });
@@ -880,6 +889,173 @@ test("POST /admin/settings: xuong dong CRLF cua textarea duoc normalize ve LF tr
     const saved = ledgerStore.getSetting("success_reply_template", "");
     assert.equal(saved.includes("\r"), false);
     assert.equal(saved, "Link đây ạ: {{link}}\n\n{{commissionLine}}\n\nCuoi cung");
+  } finally {
+    cleanup();
+  }
+});
+
+// 2026-09-11 (yeu cau truc tiep cua user): sau moi lan import bao cao Shopee tren web, bot nhan vao
+// group Zalo da duoc admin tick tren /admin/settings de ca group biet du lieu vua duoc cap nhat.
+test("POST /admin/record-orders/shopee-report nhan vao group da tick, bo qua group chua tick", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyZaloGroupCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+    ledgerStore.upsertZaloGroup("group-hoan-tien", "Group Hoàn Tiền");
+    ledgerStore.upsertZaloGroup("group-gia-dinh", "Gia đình");
+    ledgerStore.setZaloGroupNotifySelection(["group-hoan-tien"]);
+
+    const csvContent = [
+      SHOPEE_REPORT_HEADER,
+      shopeeReportRow("SHOPEE-GROUP-1", "Hoàn thành", ["zalo", "user-a", "abc", "def"]),
+    ].join("\n");
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "report.csv");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+
+    assert.equal(notifyZaloGroupCalls.length, 1, "chi group da tick duoc nhan tin");
+    assert.equal(notifyZaloGroupCalls[0].groupId, "group-hoan-tien");
+    // Ngay hom qua theo gio VN, dinh dang dd/mm (khong kem nam).
+    const expectedDate = yesterdayVnDdMm();
+    assert.ok(
+      notifyZaloGroupCalls[0].message.includes(expectedDate),
+      `tin nhan phai chua ngay hom qua ${expectedDate}: ${notifyZaloGroupCalls[0].message}`
+    );
+    assert.ok(!notifyZaloGroupCalls[0].message.includes("{{"), "khong duoc con placeholder chua thay the");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/record-orders/shopee-report van nhan vao group khi 0 don moi", async () => {
+  const { ledgerStore, baseUrl, notifyZaloGroupCalls, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-hoan-tien", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-hoan-tien"]);
+
+    // File chi co header -> khong ghi nhan don nao ca. Quyet dinh cua user: van thong bao, de user
+    // quen nhip "moi ngay admin deu cap nhat".
+    const formData = new FormData();
+    formData.append("file", new Blob([SHOPEE_REPORT_HEADER], { type: "text/csv" }), "report.csv");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+
+    assert.equal(notifyZaloGroupCalls.length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/record-orders/shopee-report khong nhan group nao khi admin chua tick group nao", async () => {
+  const { ledgerStore, baseUrl, notifyZaloGroupCalls, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-gia-dinh", "Gia đình");
+
+    const formData = new FormData();
+    formData.append("file", new Blob([SHOPEE_REPORT_HEADER], { type: "text/csv" }), "report.csv");
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+
+    assert.deepEqual(notifyZaloGroupCalls, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /admin/settings hien danh sach group Zalo kem checkbox da tick", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-hoan-tien", "Group Hoàn Tiền");
+    ledgerStore.upsertZaloGroup("group-gia-dinh", "Gia đình");
+    ledgerStore.setZaloGroupNotifySelection(["group-hoan-tien"]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, { headers: { cookie: cookie! } });
+    const html = await res.text();
+
+    assert.match(html, /Group Hoàn Tiền/);
+    assert.match(html, /Gia đình/);
+    // Group da tick phai duoc check san, group chua tick thi khong.
+    assert.match(html, /value="group-hoan-tien"[^>]*checked/);
+    assert.doesNotMatch(html, /value="group-gia-dinh"[^>]*checked/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings/zalo-groups luu dung lua chon group", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    ledgerStore.upsertZaloGroup("group-2", "B");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams([["groupIds", "group-2"]]).toString(),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+
+    assert.deepEqual(
+      ledgerStore.listNotifyEnabledZaloGroups().map((g) => g.groupId),
+      ["group-2"]
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings/zalo-groups bo tick het (khong gui groupIds) -> khong con group nao", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "",
+      redirect: "manual",
+    });
+
+    assert.deepEqual(ledgerStore.listNotifyEnabledZaloGroups(), []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings/zalo-groups yeu cau dang nhap admin", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    const res = await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams([["groupIds", "group-1"]]).toString(),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "/admin/login");
+    assert.deepEqual(ledgerStore.listNotifyEnabledZaloGroups(), [], "khong duoc luu gi khi chua dang nhap");
   } finally {
     cleanup();
   }

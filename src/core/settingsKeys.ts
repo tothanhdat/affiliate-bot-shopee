@@ -14,4 +14,5 @@ export const SETTINGS_KEYS = {
   ordersConfirmedTemplate: "orders_confirmed_template",
   withdrawalRequestedTemplate: "withdrawal_requested_template",
   withdrawalPaidTemplate: "withdrawal_paid_template",
+  groupReportUpdatedTemplate: "group_report_updated_template",
 } as const;

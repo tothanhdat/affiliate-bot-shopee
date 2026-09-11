@@ -29,15 +29,18 @@ import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
 import {
+  formatGroupReportUpdatedReply,
   formatOrdersConfirmedReply,
   formatWithdrawalPaidReply,
   formatWithdrawalRequestedReply,
+  GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import { normalizeNewlines } from "../core/textNormalize.js";
+import { yesterdayVnDdMm } from "../core/vietnamDate.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
@@ -85,7 +88,13 @@ export function createServer(
   withdrawalProofDir: string,
   adminLoginRateLimiter: RateLimiter,
   dashboardBaseUrl: string,
-  notifyUser: (platform: Platform, userId: string, message: string) => Promise<void>
+  notifyUser: (platform: Platform, userId: string, message: string) => Promise<void>,
+  /**
+   * Gui 1 tin nhan vao 1 GROUP Zalo (2026-09-11) - khac notifyUser (DM cho 1 user cuoi). Do index.ts
+   * truyen vao, tro vao ZaloGroupBot.sendGroupMessage(). undefined khi ZALO_GROUP_ENABLED=false (hoac
+   * trong test khong quan tam) - route import bao cao bo qua buoc thong bao group, khong loi.
+   */
+  notifyZaloGroup?: (groupId: string, message: string) => Promise<void>
 ) {
   const app = express();
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
@@ -596,6 +605,27 @@ export function createServer(
     }
   });
 
+  /**
+   * Gui tin "don hang ngay <hom qua> da duoc cap nhat" vao cac group Zalo admin da tick tren
+   * /admin/settings (bang zalo_groups). Best-effort tung group: loi gui 1 group chi log canh bao,
+   * khong chan group con lai va khong lam fail response upload cua admin (giong pattern notifyUser).
+   * Khong lam gi khi chay ma khong co notifyZaloGroup (ZALO_GROUP_ENABLED=false) hoac admin chua
+   * tick group nao.
+   */
+  function notifyEnabledZaloGroups(): void {
+    if (!notifyZaloGroup) return;
+    const groups = ledgerStore.listNotifyEnabledZaloGroups();
+    if (groups.length === 0) return;
+
+    const template = ledgerStore.getGroupReportUpdatedTemplate(GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT);
+    const message = formatGroupReportUpdatedReply(template, yesterdayVnDdMm());
+    for (const group of groups) {
+      notifyZaloGroup(group.groupId, message).catch((err: unknown) => {
+        console.warn(`[group-notify] gui thong bao vao group ${group.groupId} (${group.name}) that bai:`, err);
+      });
+    }
+  }
+
   app.post(
     "/admin/record-orders/shopee-report",
     requireAdminAuth,
@@ -632,6 +662,12 @@ export function createServer(
           console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
         });
       }
+      // 2026-09-11 (yeu cau truc tiep cua user): bao CA GROUP biet du lieu hoa hong vua duoc cap nhat,
+      // thay vi chi DM rieng tung user co don moi. Gui MOI lan import thanh cong - ke ca khi 0 don moi
+      // (quyet dinh cua user: giu nhip thong bao hang ngay) - nen noi dung khong noi gi ve so luong don.
+      // Best-effort nhu notifyUser o tren: loi gui khong duoc lam fail response upload cua admin.
+      notifyEnabledZaloGroups();
+
       // Ghi lich su du ket qua co gi thay doi hay khong (0 don moi/0 doi trang thai) - de admin thay
       // "da chay luc nay" thay vi khong thay gi ca, xem comment LedgerStore.recordImportHistory().
       ledgerStore.recordImportHistory({
@@ -648,8 +684,13 @@ export function createServer(
     for (const entry of SETTINGS_REGISTRY) {
       currentValues[entry.key] = ledgerStore.getSetting(entry.key, entry.default);
     }
-    const successMessage = req.query.saved === "1" ? "Đã lưu thay đổi cấu hình thành công." : null;
-    res.type("html").send(renderSettingsPage(currentValues, null, successMessage));
+    const successMessage =
+      req.query.saved === "1"
+        ? "Đã lưu thay đổi cấu hình thành công."
+        : req.query.groupsSaved === "1"
+          ? "Đã lưu danh sách group Zalo nhận thông báo."
+          : null;
+    res.type("html").send(renderSettingsPage(currentValues, null, successMessage, ledgerStore.listZaloGroups()));
   });
 
   app.post("/admin/settings", requireAdminAuth, (req: Request, res: Response) => {
@@ -692,7 +733,10 @@ export function createServer(
         const raw = typeof req.body?.[entry.key] === "string" ? normalizeNewlines(req.body[entry.key]) : "";
         previewValues[entry.key] = submitted[entry.key] ?? raw;
       }
-      res.status(422).type("html").send(renderSettingsPage(previewValues, errors.join(" ")));
+      res
+        .status(422)
+        .type("html")
+        .send(renderSettingsPage(previewValues, errors.join(" "), null, ledgerStore.listZaloGroups()));
       return;
     }
 
@@ -700,6 +744,20 @@ export function createServer(
       ledgerStore.setSetting(entry.key, submitted[entry.key]);
     }
     res.redirect(303, "/admin/settings?saved=1");
+  });
+
+  /**
+   * Luu lua chon "group Zalo nhan thong bao" (2026-09-11) - route RIENG voi POST /admin/settings vi
+   * danh sach group la du lieu dong tu bang zalo_groups, khong khai bao duoc trong SETTINGS_REGISTRY
+   * (xem renderZaloGroupsCard trong adminHtml.ts). Form HTML khong gui ve checkbox bi bo tick, nen
+   * body rong = "tat het" - setZaloGroupNotifySelection ghi lai ca danh sach theo dung y nghia do.
+   */
+  app.post("/admin/settings/zalo-groups", requireAdminAuth, (req: Request, res: Response) => {
+    const raw = req.body?.groupIds;
+    // express.urlencoded tra ve string khi chi tick 1 group, array khi tick nhieu, undefined khi khong tick gi.
+    const groupIds = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : typeof raw === "string" ? [raw] : [];
+    ledgerStore.setZaloGroupNotifySelection(groupIds);
+    res.redirect(303, "/admin/settings?groupsSaved=1");
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

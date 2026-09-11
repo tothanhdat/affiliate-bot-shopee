@@ -8,6 +8,7 @@ import {
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
+  GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
 import { env } from "./env.js";
 
@@ -108,5 +109,13 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
     helpText: "Placeholder hợp lệ: {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.groupReportUpdatedTemplate,
+    label: "Tin nhắn vào group sau khi import báo cáo Shopee",
+    type: "textarea",
+    default: GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
+    helpText:
+      'Gửi vào các group Zalo được tick ở mục "Group Zalo nhận thông báo" bên dưới, mỗi lần import báo cáo Shopee thành công (kể cả khi không có đơn mới). Placeholder hợp lệ: {{date}} (ngày hôm qua theo giờ VN, dạng dd/mm). Đây là tin nhắn CHUNG cho cả group — đừng đưa số tiền/tên đơn của cá nhân vào đây.',
   },
 ];

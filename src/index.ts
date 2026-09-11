@@ -96,6 +96,17 @@ if (env.admin.password === "") {
 }
 const adminSessionStore = new AdminSessionStore(env.admin.password);
 
+// 2026-09-11: thong bao vao GROUP Zalo (khac notifyUser la DM cho 1 user) sau moi lan admin import
+// bao cao Shopee tren web. Doc `zaloBot` LUC GOI, khong phai luc tao closure - giong notifyUser o
+// tren, vi zaloBot chi duoc gan SAU loi goi createServer() ben duoi.
+const notifyZaloGroup = async (groupId: string, message: string): Promise<void> => {
+  if (!zaloBot) {
+    console.warn(`[group-notify] Zalo adapter chua chay - bo qua thong bao vao group ${groupId}:`, message);
+    return;
+  }
+  await zaloBot.sendGroupMessage(groupId, message);
+};
+
 const app = createServer(
   resolver,
   logStore,
@@ -112,7 +123,8 @@ const app = createServer(
   env.withdrawal.proofDir,
   adminLoginRateLimiter,
   env.dashboard.baseUrl,
-  notifyUser
+  notifyUser,
+  notifyZaloGroup
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);

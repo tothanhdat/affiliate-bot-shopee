@@ -193,3 +193,22 @@ export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
 export function formatGroupJoinWelcomeReply(template: string): string {
   return template;
 }
+
+/**
+ * Tin nhan bot gui VAO GROUP sau khi admin import xong file bao cao Shopee tren /admin/record-orders
+ * (2026-09-11, yeu cau truc tiep cua user) - khac moi template khac trong file nay o cho day la tin
+ * gui cho CA GROUP, khong phai DM cho 1 user, nen tuyet doi khong chua so lieu ca nhan (so tien,
+ * ten don) - chi bao "du lieu da cap nhat" + chi duong vao dashboard rieng.
+ * Gui MOI lan import thanh cong, ke ca khi 0 don moi (quyet dinh cua user: giu nhip thong bao deu
+ * dan hang ngay), nen noi dung co chu dich khong noi gi ve so luong don.
+ * {{date}} la ngay HOM QUA theo gio VN, dinh dang dd/mm - xem src/core/vietnamDate.ts.
+ */
+/** Default cho setting "group_report_updated_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT =
+  `Đơn hàng Shopee ngày {{date}} đã được cập nhật lên hệ thống. ` +
+  `Anh/Chị vào link dashboard của mình để xem nhé. ` +
+  `Nếu chưa nhận được link, anh/chị nhắn "xemhh" để xem nhé.`;
+
+export function formatGroupReportUpdatedReply(template: string, date: string): string {
+  return renderTemplate(template, { date });
+}
