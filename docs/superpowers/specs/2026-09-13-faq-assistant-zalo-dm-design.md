@@ -66,9 +66,8 @@ Giữ nguyên ranh giới core/adapter (`CLAUDE.md` → "Nguyên tắc khi sửa
 | File | Trách nhiệm |
 |---|---|
 | `src/core/faq/faqTopics.ts` | `FAQ_TOPICS: FaqTopic[]` — `{id, description, defaultAnswer}`. `description` là text cho LLM đọc để phân loại (không gửi user); `defaultAnswer` là text gửi user khi admin chưa tuỳ chỉnh |
-| `src/core/faq/faqClassifier.ts` | `interface FaqClassifier { classify(question: string, topics: FaqTopic[]): Promise<string[]> }` — trả mảng topicId (rỗng = không biết). Điểm nối để đổi nhà cung cấp LLM |
+| `src/core/faq/faqClassifier.ts` | `interface FaqClassifier { classify(question: string, topics: FaqTopic[]): Promise<string[]> }` — trả mảng topicId (rỗng = không biết). Điểm nối để đổi nhà cung cấp LLM. Kèm luôn `OffFaqClassifier` (luôn trả `[]` → bot im, dùng khi `FAQ_PROVIDER=off`) — class 3 dòng không đáng một file riêng, để cạnh interface thì đọc 1 chỗ là hiểu cả hợp đồng lẫn hành vi mặc định |
 | `src/core/faq/providers/claudeClassifier.ts` | Gọi `@anthropic-ai/sdk` (mục 6) |
-| `src/core/faq/providers/offClassifier.ts` | Luôn trả `[]` → bot im. Dùng khi `FAQ_PROVIDER=off` |
 | `src/core/faq/providers/index.ts` | Factory theo `env.faq.provider` |
 | `src/core/faq/faqService.ts` | Điều phối: mute → rate limit → classify → lấy answer (settings, fallback default) → render placeholder → trả `string \| null` |
 | `src/core/ledgerStore.ts` | Bảng mới `faq_thread_mutes` + API mute/unmute/isMuted |
@@ -148,9 +147,10 @@ Lưu DB chứ không để RAM: deploy/restart Railway không được làm bot 
 
 - Package: `@anthropic-ai/sdk`, model `claude-haiku-4-5`, `max_tokens: 256`.
 - **Không truyền `thinking`** — Haiku 4.5 dùng `budget_tokens`, không phải adaptive; ở đây không cần thinking.
-- Output ràng buộc bằng structured outputs: `output_config: {format: ...}` với schema `{topicIds: string[]}`.
-  Đọc `typescript/claude-api/tool-use.md` (skill `claude-api`) lấy đúng cú pháp trước khi viết — **không
-  đoán shape**.
+- Output đọc từ response text thuần, lọc qua `parseTopicIds()`: chỉ nhận id **có thật** trong danh sách
+  chủ đề, và trả rỗng nếu model trả về quá 2 id (dấu hiệu model đọc vẹt cả danh sách thay vì chọn).
+  Chặt hơn structured outputs về mặt an toàn, không phụ thuộc shape API có thể đổi, và test được bằng
+  unit test thuần.
 - Timeout 10s. Bắt lỗi theo class (`Anthropic.RateLimitError` → `Anthropic.APIError`), **không** string-match.
 - Không prompt caching: prompt quá ngắn để đạt ngưỡng cacheable tối thiểu, bật cũng không ăn.
 
