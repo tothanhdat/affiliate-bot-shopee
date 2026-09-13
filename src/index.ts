@@ -12,6 +12,8 @@ import type { Platform } from "./core/types.js";
 import { syncAccesstradeTransactions } from "./core/accesstradeSync.js";
 import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "./adapters/shared/replyText.js";
 import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
+import { FaqService } from "./core/faq/faqService.js";
+import { createFaqClassifier } from "./core/faq/providers/index.js";
 
 const logStore = new LogStore(env.databasePath);
 const ledgerStore = new LedgerStore(env.ledgerDatabasePath);
@@ -73,6 +75,23 @@ const notifyAdmin = createAdminNotifier({
           await zaloBot!.sendDirectMessage(env.adminZaloUserId, message);
         }
       : null,
+});
+
+// FAQ tu dong tra loi trong Zalo DM (2026-09-13). Dat SAU notifyAdmin vi FaqService can no de bao
+// chu bot khi gap cau hoi khong nhan ra. Rate limiter RIENG cho FAQ - khong dung chung voi rate
+// limit tao link, de 1 user hoi nhieu khong bi chan mat quyen tao link (va nguoc lai).
+const faqRateLimiter = new RateLimiter(env.faq.rateLimit.maxRequests, env.faq.rateLimit.windowMs);
+const faqService = new FaqService({
+  classifier: createFaqClassifier({
+    provider: env.faq.provider,
+    apiKey: env.faq.apiKey,
+    model: env.faq.model,
+  }),
+  store: ledgerStore,
+  rateLimiter: faqRateLimiter,
+  notifyAdmin,
+  defaultUserSharePercent: env.commission.userSharePercent,
+  defaultWithdrawalThresholdVnd: env.withdrawal.thresholdVnd,
 });
 
 // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc admin ghi nhan (qua
@@ -150,6 +169,7 @@ if (!env.zaloGroup.enabled) {
     dashboardBaseUrl: env.dashboard.baseUrl,
     commissionUserSharePercent: env.commission.userSharePercent,
     withdrawalThresholdVnd: env.withdrawal.thresholdVnd,
+    faqService,
   });
   zaloBot.start().then(
     () => console.log("[zalo] Bot dang chay"),
@@ -239,6 +259,7 @@ async function shutdown(signal: string): Promise<void> {
   zaloBot?.stop();
   rateLimiter.stop();
   adminLoginRateLimiter.stop();
+  faqRateLimiter.stop();
   if (accesstradeSyncTimer) clearTimeout(accesstradeSyncTimer);
   await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   logStore.close();

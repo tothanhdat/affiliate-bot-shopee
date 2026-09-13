@@ -115,6 +115,21 @@ export const env = {
     qrPath: optional("ZALO_QR_PATH", "./data/zalo-qr.png"),
   },
 
+  /**
+   * FAQ tu dong tra loi trong Zalo DM (2026-09-13). Mac dinh "off" - giong AFFILIATE_PROVIDER=mock:
+   * deploy code moi ma chua set key thi hanh vi bot KHONG DOI so voi truoc (van im lang voi moi DM
+   * khong phai "xemhh"/link san pham).
+   */
+  faq: {
+    provider: optional("FAQ_PROVIDER", "off"),
+    apiKey: optional("ANTHROPIC_API_KEY", ""),
+    model: optional("FAQ_MODEL", "claude-haiku-4-5"),
+    rateLimit: {
+      maxRequests: optionalInt("FAQ_RATE_LIMIT_MAX", 5),
+      windowMs: optionalInt("FAQ_RATE_LIMIT_WINDOW_MS", 10 * 60 * 1000),
+    },
+  },
+
   rateLimit: {
     maxRequests: optionalInt("RATE_LIMIT_MAX_REQUESTS", 10),
     windowMs: optionalInt("RATE_LIMIT_WINDOW_MS", 5 * 60 * 1000),
