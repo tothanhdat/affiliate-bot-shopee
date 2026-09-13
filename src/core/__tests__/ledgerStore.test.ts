@@ -831,3 +831,57 @@ test("LedgerStore: getGroupReportUpdatedTemplate tra default khi admin chua tuy 
   assert.equal(store.getGroupReportUpdatedTemplate("mặc định"), "Đơn ngày {{date}} đã cập nhật");
   store.close();
 });
+
+test("faq mute: chua khoa thi isFaqThreadMuted tra false", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    store.close();
+  }
+});
+
+test("faq mute: khoa co han - het han thi tu mo, khong can unmute", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    const now = 1_000_000;
+    store.muteFaqThread("zalo", "user-1", now + 60_000, "admin_typed");
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", now + 59_000), true);
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", now + 61_000), false);
+  } finally {
+    store.close();
+  }
+});
+
+test("faq mute: mutedUntil = null la khoa vo thoi han (lenh /im)", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    store.muteFaqThread("zalo", "user-1", null, "admin_command");
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", Date.now() + 10 * 365 * 24 * 3600_000), true);
+  } finally {
+    store.close();
+  }
+});
+
+test("faq mute: unmute mo khoa, khoa lai duoc (upsert khong throw)", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    store.muteFaqThread("zalo", "user-1", null, "admin_command");
+    store.unmuteFaqThread("zalo", "user-1");
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+    store.muteFaqThread("zalo", "user-1", null, "admin_command");
+    assert.equal(store.isFaqThreadMuted("zalo", "user-1", Date.now()), true);
+  } finally {
+    store.close();
+  }
+});
+
+test("faq mute: khoa theo tung thread, khong anh huong thread khac", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    store.muteFaqThread("zalo", "user-1", null, "admin_typed");
+    assert.equal(store.isFaqThreadMuted("zalo", "user-2", Date.now()), false);
+  } finally {
+    store.close();
+  }
+});

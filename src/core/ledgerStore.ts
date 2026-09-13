@@ -22,6 +22,7 @@ import type {
   CommissionStatus,
   DashboardToken,
   ImportActionType,
+  FaqMuteReason,
   ImportHistoryEntry,
   Platform,
   ReconciliationSummary,
@@ -159,6 +160,15 @@ export class LedgerStore {
         notify_enabled INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS faq_thread_mutes (
+        platform TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        muted_until INTEGER,
+        reason TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (platform, thread_id)
       );
 
       CREATE TABLE IF NOT EXISTS settings (
@@ -641,6 +651,39 @@ export class LedgerStore {
     for (const groupId of groupIds) {
       stmt.run(groupId);
     }
+  }
+
+  /**
+   * Khoa FAQ cho 1 thread (2026-09-13). mutedUntilMs = null nghia la khoa VO THOI HAN (lenh /im cua
+   * admin); truyen epoch ms de khoa co han (admin vua go tay, hoac bot khong hieu cau hoi).
+   * Luu DB chu khong giu trong RAM: deploy/restart khong duoc lam bot "tinh day noi leo" giua luc
+   * admin dang tu van user.
+   */
+  muteFaqThread(platform: string, threadId: string, mutedUntilMs: number | null, reason: FaqMuteReason): void {
+    this.db
+      .prepare(
+        `INSERT INTO faq_thread_mutes (platform, thread_id, muted_until, reason, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(platform, thread_id) DO UPDATE SET
+           muted_until = excluded.muted_until,
+           reason = excluded.reason,
+           updated_at = excluded.updated_at`
+      )
+      .run(platform, threadId, mutedUntilMs, reason, Date.now());
+  }
+
+  unmuteFaqThread(platform: string, threadId: string): void {
+    this.db.prepare(`DELETE FROM faq_thread_mutes WHERE platform = ? AND thread_id = ?`).run(platform, threadId);
+  }
+
+  /** muted_until NULL = vo thoi han; con lai so sanh voi nowMs (truyen vao de test duoc moc thoi gian). */
+  isFaqThreadMuted(platform: string, threadId: string, nowMs: number): boolean {
+    const row = this.db
+      .prepare(`SELECT muted_until FROM faq_thread_mutes WHERE platform = ? AND thread_id = ?`)
+      .get(platform, threadId) as { muted_until: number | null } | undefined;
+    if (row === undefined) return false;
+    if (row.muted_until === null) return true;
+    return row.muted_until > nowMs;
   }
 
   /** Dung boi dashboard ca nhan (GET /d/:token) de hien ten hien thi + userId - tra 1 user, khong can load ca bang nhu getDisplayNamesMap(). */

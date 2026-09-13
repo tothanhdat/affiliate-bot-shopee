@@ -179,3 +179,11 @@ export interface ZaloGroup {
   createdAt: string;
   lastSeenAt: string;
 }
+
+/**
+ * Ly do 1 thread bi khoa FAQ (2026-09-13) - chi de chan doan khi doc DB, khong anh huong logic.
+ * "admin_typed": chu bot vua go tay tra loi user trong thread do (phat hien qua selfListen).
+ * "admin_command": chu bot go lenh "/im".
+ * "unknown_question": bot khong nhan ra chu de cau hoi -> khoa vi admin sap vao tra loi thay.
+ */
+export type FaqMuteReason = "admin_typed" | "admin_command" | "unknown_question";
