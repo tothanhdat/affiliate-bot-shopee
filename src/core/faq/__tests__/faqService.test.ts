@@ -113,26 +113,45 @@ test("resolve: khop 2 chu de -> ghep 2 cau tra loi bang dong trong", async () =>
   }
 });
 
-test("resolve: khong biet -> im lang, bao admin, khoa thread", async () => {
+// 2026-09-13, sua theo bao cao that tu user: KHONG duoc tu khoa thread chi vi khong nhan ra 1 cau
+// hoi - se lam im ca cau FAQ hop le hoi NGAY SAU DO, dung khi admin chua he can thiep gi. Khoa
+// thread CHI xay ra khi admin THAT SU go tay (muteByAdminTyping) hoac go lenh /im (muteByAdminCommand).
+test("resolve: khong biet -> im lang, bao admin, KHONG khoa thread", async () => {
   const { service, ledgerStore, adminMessages, input, cleanup } = setup(fakeClassifier([]));
   try {
     assert.equal(await service.resolve(input), null);
     assert.equal(adminMessages.length, 1);
     assert.match(adminMessages[0], /hoàn tiền như thế nào vậy ad/);
-    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), true);
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
   } finally {
     cleanup();
   }
 });
 
-test("resolve: classifier throw (API loi) -> xu ly y het 'khong biet', khong nem ra ngoai", async () => {
+test("resolve: classifier throw (API loi) -> xu ly y het 'khong biet', khong nem ra ngoai, KHONG khoa thread", async () => {
   const { service, ledgerStore, adminMessages, input, cleanup } = setup(
     fakeClassifier(new Error("API 500"))
   );
   try {
     assert.equal(await service.resolve(input), null);
     assert.equal(adminMessages.length, 1);
-    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), true);
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+// Tai hien dung kich ban bug that (bao cao 2026-09-13): cau hoi ngoai kich ban truoc do KHONG
+// duoc lam im cau hoi FAQ hop le hoi NGAY SAU - admin chua he go tay, nen bot van phai tra loi.
+test("resolve: sau 1 cau khong nhan ra, cau FAQ hop le tiep theo VAN duoc tra loi (khong bi khoa lay)", async () => {
+  const { service, ledgerStore, input, cleanup } = setup({
+    classify: async (question: string) => (question.includes("sàn nào") ? ["san_ho_tro"] : []),
+  });
+  try {
+    assert.equal(await service.resolve({ ...input, question: "câu gì đó lạ hoắc" }), null);
+    const answer = await service.resolve({ ...input, question: "bot hỗ trợ sàn nào" });
+    const topic = FAQ_TOPICS.find((t) => t.id === "san_ho_tro");
+    assert.equal(answer, topic?.defaultAnswer);
   } finally {
     cleanup();
   }

@@ -98,16 +98,13 @@ export class FaqService {
   }
 
   /**
-   * Khong nhan ra cau hoi -> bao chu bot VA khoa thread luon: admin sap vao tra loi tay, neu khong
-   * khoa thi bot se chen ngang giua luc admin dang go.
+   * Khong nhan ra cau hoi -> CHI bao chu bot, KHONG tu khoa thread (sua 2026-09-13 theo bao cao
+   * that: khoa o day se lam im ca cau FAQ hop le hoi NGAY SAU DO, du admin chua he can thiep gi -
+   * xem test "sau 1 cau khong nhan ra, cau FAQ hop le tiep theo VAN duoc tra loi"). Khoa thread CHI
+   * xay ra khi admin THAT SU go tay (muteByAdminTyping, phat hien qua SentMessageTracker trong
+   * zalo/bot.ts) hoac go lenh "/im" (muteByAdminCommand) - khong phai do bot tu doan.
    */
   private escalateToAdmin(input: FaqResolveInput): void {
-    this.options.store.muteFaqThread(
-      input.platform,
-      input.threadId,
-      Date.now() + this.muteMs(),
-      "unknown_question"
-    );
     const message =
       `❓ [${input.platform}] ${input.userDisplayName} (${input.userId}) vừa hỏi câu bot không hiểu:\n` +
       `"${input.question}"`;

@@ -184,6 +184,8 @@ export interface ZaloGroup {
  * Ly do 1 thread bi khoa FAQ (2026-09-13) - chi de chan doan khi doc DB, khong anh huong logic.
  * "admin_typed": chu bot vua go tay tra loi user trong thread do (phat hien qua selfListen).
  * "admin_command": chu bot go lenh "/im".
- * "unknown_question": bot khong nhan ra chu de cau hoi -> khoa vi admin sap vao tra loi thay.
+ * CO CHU DICH khong co gia tri nao cho "bot khong nhan ra cau hoi" (da bo 2026-09-13, xem
+ * faqService.escalateToAdmin) - khoa thread CHI duoc phep xay ra khi admin THAT SU can thiep, neu
+ * khong cau FAQ hop le hoi ngay sau 1 cau la se bi im oan.
  */
-export type FaqMuteReason = "admin_typed" | "admin_command" | "unknown_question";
+export type FaqMuteReason = "admin_typed" | "admin_command";

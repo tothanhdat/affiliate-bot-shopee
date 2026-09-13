@@ -116,11 +116,16 @@ hơn 30 phút.
 
 ### Lớp 3 — im khi không chắc
 
-Classifier trả rỗng (`KHÔNG_BIẾT`), lỗi API, hoặc timeout → bot không nói gì, ping admin qua
-`createAdminNotifier()` có sẵn (`src/adapters/shared/adminNotifier.ts`), **và khoá thread luôn** vì
-admin sắp vào trả lời — tránh cảnh admin gõ dở câu thứ hai thì bot chen ngang.
+Classifier trả rỗng (`KHÔNG_BIẾT`), lỗi API, hoặc timeout → bot không nói gì, chỉ ping admin qua
+`createAdminNotifier()` có sẵn (`src/adapters/shared/adminNotifier.ts`).
 
 Nội dung ping: `"❓ [Zalo] <tên user> (<userId>) vừa hỏi câu bot không hiểu: \"<nguyên văn>\""`.
+
+**⚠️ Sửa 2026-09-13 (bug phát hiện từ dùng thật)**: bản đầu tiên còn khoá thread luôn ở bước này
+("admin sắp vào trả lời thay"). Thực tế dùng cho thấy đây là lỗi: user hỏi 1 câu ngoài kịch bản, bot
+im đúng, nhưng câu FAQ hợp lệ hỏi NGAY SAU ĐÓ cũng bị im lây trong `faqMuteMinutes` phút — dù admin
+chưa hề can thiệp gì. Đã bỏ hẳn việc khoá ở lớp này. Khoá thread giờ **chỉ** xảy ra khi admin
+**thật sự** gõ tay (lớp 1) hoặc gõ lệnh `/im` (lớp 2) — không còn do bot tự đoán.
 
 ### Bảng `faq_thread_mutes`
 
@@ -131,7 +136,7 @@ CREATE TABLE IF NOT EXISTS faq_thread_mutes (
   platform     TEXT    NOT NULL,
   thread_id    TEXT    NOT NULL,
   muted_until  INTEGER,            -- epoch ms; NULL = vô thời hạn (/im)
-  reason       TEXT    NOT NULL,   -- 'admin_typed' | 'admin_command' | 'unknown_question'
+  reason       TEXT    NOT NULL,   -- 'admin_typed' | 'admin_command' (KHONG con 'unknown_question', xem Lop 3 o tren)
   updated_at   INTEGER NOT NULL,
   PRIMARY KEY (platform, thread_id)
 );
