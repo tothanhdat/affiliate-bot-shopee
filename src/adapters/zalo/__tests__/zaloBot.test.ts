@@ -7,6 +7,8 @@ import { LogStore } from "../../../core/logStore.js";
 import { LinkResolverService } from "../../../core/linkResolverService.js";
 import { RateLimiter } from "../../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../../core/providers/mockProvider.js";
+import { FaqService } from "../../../core/faq/faqService.js";
+import { faqAnswerKey } from "../../../core/settingsKeys.js";
 
 const PRODUCT_URL = "https://shopee.vn/giay-cau-long-i.123.456";
 
@@ -68,6 +70,7 @@ function setup() {
 
   function cleanup() {
     rateLimiter.stop();
+    faqRateLimiter.stop();
     logStore.close();
     ledgerStore.close();
   }
@@ -80,11 +83,26 @@ function setup() {
     (bot as unknown as { api: API | null }).api = api;
   };
 
+  // RateLimiter da duoc import san o dau file nay (dung cho LinkResolverService).
+  const faqRateLimiter = new RateLimiter(100, 60_000);
+  /** Gan FaqService vao bot sau khi tao (giong index.ts) - truyen ham classify gia de khoi goi API. */
+  const attachFaq = (classify: (question: string) => Promise<string[]>) => {
+    (bot as unknown as { options: { faqService?: FaqService } }).options.faqService = new FaqService({
+      classifier: { classify: (question: string) => classify(question) },
+      store: ledgerStore,
+      rateLimiter: faqRateLimiter,
+      notifyAdmin: async () => {},
+      defaultUserSharePercent: 90,
+      defaultWithdrawalThresholdVnd: 20_000,
+    });
+  };
+
   return {
     api,
     sent,
     ledgerStore,
     handleMessage,
+    attachFaq,
     bot,
     groupInfoCalls,
     groupNames,
@@ -103,6 +121,16 @@ function makeMessage(type: ThreadType, text: string, uid = "user-1"): Message {
     threadId: type === ThreadType.User ? uid : "group-1",
     isSelf: false,
     data: { uidFrom: uid, dName: "Nguyen Van A", content: text },
+  } as unknown as Message;
+}
+
+/** Tin do CHINH tai khoan bot gui ra (admin go tay hoac bot tu gui) - zca-js emit khi selfListen=true. */
+function makeSelfMessage(text: string, msgId: string, threadId = "user-1"): Message {
+  return {
+    type: ThreadType.User,
+    threadId,
+    isSelf: true,
+    data: { uidFrom: "bot-uid", dName: "Admin", content: text, msgId },
   } as unknown as Message;
 }
 
@@ -271,6 +299,136 @@ test("Zalo: sendGroupMessage nem loi khi bot chua dang nhap", async () => {
   const { bot, cleanup } = setup();
   try {
     await assert.rejects(() => bot.sendGroupMessage("group-1", "test"), /chua dang nhap/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: cau hoi FAQ -> bot tra loi bang cau soan san", async () => {
+  const { sent, ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+    attachFaq(async () => ["san_ho_tro"]);
+    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee và TikTok Shop nha");
+
+    await handleMessage(makeMessage(ThreadType.User, "ad ơi bot hỗ trợ sàn nào v"));
+
+    assert.equal(sent.length, 1);
+    assert.equal(bodyOf(sent[0]), "Shopee và TikTok Shop nha");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: khong gan faqService -> im lang y het hanh vi cu", async () => {
+  const { sent, ledgerStore, handleMessage, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+    await handleMessage(makeMessage(ThreadType.User, "hoàn tiền sao vậy ad"));
+    assert.equal(sent.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group: cau hoi khong phai link -> van tra USAGE_TEXT, KHONG dung FAQ", async () => {
+  const { sent, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    let called = 0;
+    attachFaq(async () => {
+      called += 1;
+      return ["san_ho_tro"];
+    });
+
+    await handleMessage(makeMessage(ThreadType.Group, "hoàn tiền sao vậy ad"));
+
+    assert.equal(called, 0, "FAQ khong duoc chay trong group");
+    assert.equal(sent.length, 1);
+    assert.match(bodyOf(sent[0]), /link sản phẩm/i);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: admin go tay -> khoa FAQ thread do", async () => {
+  const { ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    attachFaq(async () => ["san_ho_tro"]);
+    await handleMessage(makeSelfMessage("để mình check giúp bạn nha", "msg-admin-1"));
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: tin do CHINH bot gui ra -> KHONG tu khoa minh", async () => {
+  const { sent, ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+    attachFaq(async () => ["san_ho_tro"]);
+    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee và TikTok Shop nha");
+
+    await handleMessage(makeMessage(ThreadType.User, "bot hỗ trợ sàn nào"));
+    assert.equal(sent.length, 1);
+
+    // zca-js phat lai chinh tin bot vua gui (selfListen) - phai duoc nhan ra qua SentMessageTracker.
+    await handleMessage(makeSelfMessage("Shopee và TikTok Shop nha", "msg-bot-1"));
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: lenh /im khoa vo thoi han, /noi mo lai", async () => {
+  const { ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    attachFaq(async () => ["san_ho_tro"]);
+
+    await handleMessage(makeSelfMessage("/im", "msg-admin-2"));
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now() + 365 * 24 * 3600_000), true);
+
+    await handleMessage(makeSelfMessage("/noi", "msg-admin-3"));
+    assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: user go /im khong kich hoat duoc lenh admin (khong phai isSelf)", async () => {
+  const { ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    attachFaq(async () => []);
+    await handleMessage(makeMessage(ThreadType.User, "/im"));
+    // "/im" cua user di vao luong FAQ binh thuong -> classifier khong khop -> khoa CO HAN theo
+    // faq_mute_minutes. Neu lenh admin bi kich hoat nham thi khoa se la VO THOI HAN - moc 10 nam
+    // duoi day chinh la cho phan biet 2 truong hop do.
+    assert.equal(
+      ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now() + 10 * 365 * 24 * 3600_000),
+      false,
+      "user khong duoc phep khoa vo thoi han bang /im"
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: thread bi khoa -> link san pham VA xemhh van chay", async () => {
+  const { sent, ledgerStore, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+    attachFaq(async () => ["san_ho_tro"]);
+    ledgerStore.muteFaqThread("zalo", "user-1", null, "admin_command");
+
+    await handleMessage(makeMessage(ThreadType.User, PRODUCT_URL));
+    assert.equal(sent.length, 1, "link san pham phai duoc xu ly du thread bi khoa");
+    assert.match(bodyOf(sent[0]), /https:\/\/mock-aff\.local\//);
+
+    await handleMessage(makeMessage(ThreadType.User, "xemhh"));
+    assert.equal(sent.length, 2, "xemhh phai chay du thread bi khoa");
+    assert.match(bodyOf(sent[1]), /\/d\//);
+
+    await handleMessage(makeMessage(ThreadType.User, "bot hỗ trợ sàn nào"));
+    assert.equal(sent.length, 2, "cau hoi FAQ phai bi im khi thread bi khoa");
   } finally {
     cleanup();
   }

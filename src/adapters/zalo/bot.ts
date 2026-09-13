@@ -13,7 +13,9 @@ import type { LedgerStore } from "../../core/ledgerStore.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
+import type { FaqService } from "../../core/faq/faqService.js";
 import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
+import { SentMessageTracker } from "./sentMessageTracker.js";
 import {
   USAGE_TEXT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
@@ -40,6 +42,11 @@ export interface ZaloGroupBotOptions {
   commissionUserSharePercent: number;
   /** Dung de dien vao DM chao mung user moi (formatWelcomeReply) - dong bo voi WITHDRAWAL_THRESHOLD_VND. */
   withdrawalThresholdVnd: number;
+  /**
+   * Tra loi cau hoi FAQ trong DM (2026-09-13). Khong truyen (vd FAQ_PROVIDER=off) thi bot IM LANG
+   * voi moi DM khong phai "xemhh"/link san pham - dung hanh vi truoc 2026-09-13.
+   */
+  faqService?: FaqService;
 }
 
 /**
@@ -58,6 +65,8 @@ export class ZaloGroupBot {
   private api: API | null = null;
   private stopping = false;
   private reconnecting = false;
+  /** Nho msgId bot vua gui de khong nham tin cua chinh minh voi tin admin go tay - xem handleSelfMessage. */
+  private readonly sentTracker = new SentMessageTracker();
 
   constructor(
     private readonly resolver: LinkResolverService,
@@ -237,7 +246,10 @@ export class ZaloGroupBot {
   }
 
   private async handleMessage(api: API, message: Message): Promise<void> {
-    if (message.isSelf) return;
+    if (message.isSelf) {
+      await this.handleSelfMessage(message);
+      return;
+    }
 
     const text = extractMessageText(message.data.content);
     if (text === null) return;
@@ -253,10 +265,10 @@ export class ZaloGroupBot {
         const dashboardLinkTemplate = this.options.ledgerStore.getDashboardLinkReplyTemplate(
           DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT
         );
-        await api.sendMessage(
-          formatDashboardLinkReply(dashboardLinkTemplate, `${this.options.dashboardBaseUrl}/d/${token}`, userId),
+        await this.sendTrackedDirect(
+          api,
           message.threadId,
-          message.type
+          formatDashboardLinkReply(dashboardLinkTemplate, `${this.options.dashboardBaseUrl}/d/${token}`, userId)
         );
         return;
       }
@@ -267,16 +279,16 @@ export class ZaloGroupBot {
       // khong tag @ten, vi mention chi co y nghia trong group.
       const dmLinks = extractProductUrls(text);
       if (dmLinks.length === 0) {
-        // Tin nhan rieng (DM) khong phai "xemhh" va khong chua link san pham (vd "hi", cau hoi...):
-        // IM LANG hoan toan, khong tra loi gi ca - quyet dinh goc 2026-08-17. (2026-08-20 tung doi
-        // sang tra loi 1 cau huong dan co dinh de tranh user tuong bot loi, nhung 2026-08-21 user
-        // yeu cau doi lai ve im lang hoan toan.)
+        // Truoc 2026-09-13 nhanh nay IM LANG tuyet doi (quyet dinh goc 2026-08-17, tai khang dinh
+        // 2026-08-21). Gio thu nhan dien cau hoi FAQ truoc - KHONG nhan ra chu de nao thi VAN im
+        // lang y nhu cu (faqService.resolve tra null), nen hanh vi chi mo rong chu khong dao nguoc.
+        await this.maybeAnswerFaq(api, message, text);
         return;
       }
 
       await this.maybeSendWelcomeMessage(api, userId);
       await this.processProductLinks(userId, dmLinks, (body) =>
-        api.sendMessage(body, message.threadId, message.type).then(() => undefined)
+        this.sendTrackedDirect(api, message.threadId, body)
       );
       return;
     }
@@ -360,6 +372,67 @@ export class ZaloGroupBot {
    * Fallback ve gui van ban thuong (khong mention) neu Zalo profile khong co dName (hiem, tranh
    * hien thi "@ " truoc noi dung).
    */
+  /**
+   * Gui DM va GHI NHAN msgId - bat buoc dung cho MOI tin bot gui trong DM. Gui thang qua
+   * api.sendMessage ma quen ghi nhan se lam bot tuong do la tin admin go tay roi TU KHOA CHINH MINH.
+   */
+  private async sendTrackedDirect(api: API, threadId: string, body: string): Promise<void> {
+    const result = (await api.sendMessage(body, threadId, ThreadType.User)) as
+      | { message?: { msgId?: number } | null }
+      | undefined;
+    this.sentTracker.record(result?.message?.msgId, body);
+  }
+
+  /**
+   * Tin do CHINH tai khoan bot gui ra (selfListen=true moi thay duoc - xem start()). Hai nguon: bot
+   * tu gui, hoac CHU BOT mo Zalo go tay tra loi user. Nguon thu 2 la tin hieu "admin dang tu van,
+   * bot im di" - day la lop chong chen ngang chinh, admin khong phai nho lenh gi ca.
+   *
+   * CHI xu ly DM: trong group bo qua nhu cu, neu khong bot se tu khoa minh moi lan tra link.
+   */
+  private async handleSelfMessage(message: Message): Promise<void> {
+    if (message.type !== ThreadType.User) return;
+    const faqService = this.options.faqService;
+    if (faqService === undefined) return;
+
+    const text = extractMessageText(message.data.content);
+    if (text === null) return;
+
+    const msgId = message.data.msgId === undefined ? "" : String(message.data.msgId);
+    if (this.sentTracker.isOwn(msgId, text)) return;
+
+    const threadId = message.threadId;
+    const command = text.trim().toLowerCase();
+    if (command === "/im") {
+      faqService.muteByAdminCommand("zalo", threadId);
+      return;
+    }
+    if (command === "/noi") {
+      faqService.unmute("zalo", threadId);
+      return;
+    }
+    faqService.muteByAdminTyping("zalo", threadId);
+  }
+
+  /** Cau hoi trong DM khong phai "xemhh" va khong chua link - tra loi FAQ neu nhan ra chu de. */
+  private async maybeAnswerFaq(api: API, message: Message, text: string): Promise<void> {
+    const faqService = this.options.faqService;
+    if (faqService === undefined) return;
+
+    const userId = message.data.uidFrom;
+    const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
+    const answer = await faqService.resolve({
+      platform: "zalo",
+      userId,
+      threadId: message.threadId,
+      question: text,
+      userDisplayName: message.data.dName ?? "",
+      dashboardUrl: `${this.options.dashboardBaseUrl}/d/${token}`,
+    });
+    if (answer === null) return;
+    await this.sendTrackedDirect(api, message.threadId, answer);
+  }
+
   private async sendGroupReply(api: API, message: Message, body: string): Promise<void> {
     const dName = message.data.dName?.trim();
     if (!dName) {
@@ -396,10 +469,10 @@ export class ZaloGroupBot {
       );
       const { token } = this.options.ledgerStore.findOrCreateDashboardToken("zalo", userId);
       const dashboardUrl = `${this.options.dashboardBaseUrl}/d/${token}`;
-      await api.sendMessage(
-        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd, dashboardUrl),
+      await this.sendTrackedDirect(
+        api,
         userId,
-        ThreadType.User
+        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd, dashboardUrl)
       );
     } catch (err) {
       console.warn(`[zalo] gui DM chao mung toi ${userId} that bai:`, (err as Error).message);
@@ -438,7 +511,7 @@ export class ZaloGroupBot {
 
     try {
       const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
-      await api.sendMessage(formatGroupJoinWelcomeReply(template), userId, ThreadType.User);
+      await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template));
     } catch (err) {
       console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai:`, (err as Error).message);
     }
@@ -453,7 +526,7 @@ export class ZaloGroupBot {
     if (!this.api) {
       throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
     }
-    await this.api.sendMessage(message, userId, ThreadType.User);
+    await this.sendTrackedDirect(this.api, userId, message);
   }
 
   /**
