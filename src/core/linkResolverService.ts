@@ -29,7 +29,7 @@ export class LinkResolverService {
   ) {}
 
   async resolve(request: ResolveLinkRequest): Promise<ResolveLinkResult> {
-    const rateLimitKey = `${request.platform}:${request.userId}`;
+    const rateLimitKey = request.rateLimitKey ?? `${request.platform}:${request.userId}`;
     const rateCheck = this.rateLimiter.checkAndRecord(rateLimitKey);
     if (!rateCheck.allowed) {
       throw new RateLimitedError(rateCheck.retryAfterSeconds);

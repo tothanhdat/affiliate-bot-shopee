@@ -100,7 +100,14 @@ export function createServer(
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
   // sau 1 reverse proxy, khong bat cai nay thi req.ip luon la IP noi bo cua proxy, rate limit theo
   // IP se vo nghia (moi client bi gop chung 1 "IP").
-  app.set("trust proxy", true);
+  //
+  // BAO MAT (2026-09-13): dat = SO HOP proxy (1 = chi Railway proxy), KHONG dat = true. Voi "true"
+  // Express tin TOAN BO chuoi X-Forwarded-For va lay entry TRAI NHAT lam req.ip - ma entry do do
+  // CLIENT tu dat, nen ke tan cong doi header moi request de vuot rate-limit login (da chung minh:
+  // 50 lan doan mat khau, 0 lan bi chan). Voi "1", Express chi tin 1 hop cuoi (Railway proxy) va
+  // dung dung IP client ma proxy that ghi lai, bo qua header gia cua client. Neu sau nay dat them
+  // proxy phia truoc (vd Cloudflare -> Railway = 2 hop), tang so nay len cho khop so tang proxy.
+  app.set("trust proxy", 1);
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
@@ -145,8 +152,17 @@ export function createServer(
         : "http";
     const resolvedUserId = typeof userId === "string" && userId.trim() !== "" ? userId : "anonymous";
 
+    // BAO MAT (2026-09-13): rate-limit theo IP that (req.ip, dung sau khi "trust proxy" da dat dung
+    // so hop) chu KHONG theo userId - userId o endpoint HTTP nay do client tu gui trong body nen
+    // xoay vong duoc de vuot rate-limit (da chung minh: 40 request userId khac nhau deu qua du gioi
+    // han 10). Telegram/Zalo van rate-limit theo userId that cua ho (khong truyen rateLimitKey).
     try {
-      const result = await resolver.resolve({ url, platform: resolvedPlatform, userId: resolvedUserId });
+      const result = await resolver.resolve({
+        url,
+        platform: resolvedPlatform,
+        userId: resolvedUserId,
+        rateLimitKey: `http-ip:${req.ip ?? "unknown"}`,
+      });
       res.status(200).json({ success: true, data: result });
     } catch (err) {
       if (err instanceof AppError) {
@@ -161,7 +177,11 @@ export function createServer(
   });
 
   // T1.4 acceptance: query lai lich su theo ngay/platform/merchant.
-  app.get("/api/v1/logs", (req: Request, res: Response) => {
+  // BAO MAT (2026-09-13): bat buoc dang nhap admin - log chua userId (Telegram/Zalo), link san
+  // pham user da gui (originalUrl), subId, affiliateUrl. Truoc day route nay mo cong khai, bat ky
+  // ai biet domain deu tai ve toan bo lich su request cua moi user (da chung minh: HTTP 200, 40
+  // entries khong can cookie). Day la du lieu hanh vi/danh tinh, phai sau requireAdminAuth.
+  app.get("/api/v1/logs", requireAdminAuth, (req: Request, res: Response) => {
     const from = typeof req.query.from === "string" ? req.query.from : undefined;
     const to = typeof req.query.to === "string" ? req.query.to : undefined;
     const platform =

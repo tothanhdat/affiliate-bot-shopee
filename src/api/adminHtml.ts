@@ -59,8 +59,12 @@ function shellStyles(): string {
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, "Inter", system-ui, sans-serif; background: var(--content-bg); color: var(--text); }
-  .layout { display: flex; min-height: 100vh; }
-  .sidebar { width: 230px; flex-shrink: 0; background: var(--sidebar-bg); padding: 1.5rem 0; }
+  /* .layout khoa dung 100vh + overflow hidden (2026-09-13, phan hoi truc tiep cua user: cuon
+     trang dang keo ca sidebar cuon theo vi truoc day .layout chi co min-height nen cao ra theo
+     noi dung, khien sidebar (stretch theo chieu cao .layout) dai ra va cuon cung trang) - sidebar
+     va topbar giu nguyen cho, CHI .content (bang duoi) duoc cuon rieng qua overflow-y: auto. */
+  .layout { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 230px; flex-shrink: 0; background: var(--sidebar-bg); padding: 1.5rem 0; overflow-y: auto; }
   .sidebar .brand { color: #fff; font-weight: 700; font-size: 1.05rem; padding: 0 1.25rem 1.5rem; white-space: nowrap; overflow: hidden; }
   .sidebar nav a {
     display: flex; align-items: center; gap: 0.7rem; padding: 0.65rem 1.25rem; color: var(--sidebar-text);
@@ -68,10 +72,10 @@ function shellStyles(): string {
   }
   .sidebar nav a .icon { flex-shrink: 0; font-size: 1.05rem; line-height: 1; }
   .sidebar nav a.active { background: var(--sidebar-active-bg); color: var(--sidebar-text-active); font-weight: 600; }
-  .main { flex: 1; min-width: 0; }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .topbar {
     background: #fff; border-bottom: 1px solid var(--card-border); padding: 1rem 1.75rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-shrink: 0;
   }
   .topbar h1 { font-size: 1.1rem; margin: 0; }
   .topbar .topbar-left { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
@@ -87,7 +91,7 @@ function shellStyles(): string {
   .sidebar-toggle-input { display: none; }
   .sidebar-toggle-btn { display: none; }
   .sidebar-backdrop { display: none; }
-  .content { padding: 1.75rem; }
+  .content { padding: 1.75rem; overflow-y: auto; min-height: 0; }
   .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.25rem; }
   .card h2 { font-size: 0.95rem; margin: 0 0 1rem; }
   .totals { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }

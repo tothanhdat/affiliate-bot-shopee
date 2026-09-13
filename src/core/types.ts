@@ -16,6 +16,14 @@ export interface ResolveLinkRequest {
   platform: Platform;
   /** id nguoi dung tren platform goc, dung de rate-limit va log, khong bat buoc voi platform=http */
   userId: string;
+  /**
+   * Khoa rate-limit tuy chon (2026-09-13). Neu co, dung thay cho "{platform}:{userId}". Can cho
+   * platform=http: userId o do do CLIENT tu gui nen gia mao/xoay vong duoc de vuot rate-limit
+   * (da chung minh: 40 request voi userId khac nhau deu qua, du gioi han la 10). Adapter HTTP
+   * truyen khoa theo IP that (req.ip) vao day; Telegram/Zalo bo trong vi userId cua ho dang tin
+   * cay (do platform cap, khong gia mao qua noi dung tin nhan).
+   */
+  rateLimitKey?: string;
 }
 
 export interface ResolveLinkResult {
