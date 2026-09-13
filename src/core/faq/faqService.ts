@@ -3,7 +3,12 @@ import { SETTINGS_KEYS, faqAnswerKey } from "../settingsKeys.js";
 import type { RateLimiter } from "../rateLimiter.js";
 import type { FaqMuteReason } from "../types.js";
 import type { FaqClassifier } from "./faqClassifier.js";
-import { FAQ_TOPICS, FAQ_MUTE_MINUTES_DEFAULT, type FaqTopic } from "./faqTopics.js";
+import {
+  FAQ_TOPICS,
+  FAQ_MUTE_MINUTES_DEFAULT,
+  FAQ_OUT_OF_SCOPE_REPLY_DEFAULT,
+  type FaqTopic,
+} from "./faqTopics.js";
 
 /**
  * Port hep toi LedgerStore - khai bao o day thay vi import class that de core/faq khong phu thuoc
@@ -46,8 +51,9 @@ function formatVnd(amount: number): string {
 
 /**
  * Dieu phoi FAQ: mute -> rate limit -> classify -> lay cau tra loi soan san -> render placeholder.
- * Tra ve null nghia la IM LANG (adapter khong gui gi ca) - moi quyet dinh im/noi nam o day, adapter
- * khong tu suy luan.
+ * Tra ve null nghia la IM LANG (adapter khong gui gi ca) - CHI xay ra khi thread dang bi khoa (admin
+ * dang go tay / lenh "/im") hoac qua rate limit. Cau hoi khong nhan ra chu de nao van CO tra loi (xem
+ * outOfScopeReply) chu khong con im lang - moi quyet dinh im/noi nam o day, adapter khong tu suy luan.
  */
 export class FaqService {
   constructor(private readonly options: FaqServiceOptions) {}
@@ -73,7 +79,7 @@ export class FaqService {
 
     if (topics.length === 0) {
       this.escalateToAdmin(input);
-      return null;
+      return this.outOfScopeReply(input);
     }
 
     return topics.map((topic) => this.answerFor(topic, input)).join("\n\n");
@@ -115,6 +121,25 @@ export class FaqService {
 
   private answerFor(topic: FaqTopic, input: FaqResolveInput): string {
     const template = this.options.store.getSetting(faqAnswerKey(topic.id), topic.defaultAnswer);
+    return this.render(template, input);
+  }
+
+  /**
+   * Cau tra loi khi KHONG nhan ra chu de (2026-09-13, yeu cau truc tiep cua user) - thay im lang
+   * hoan toan bang 1 cau co dinh bao user cho admin, tranh cam giac bot bi loi khong phan hoi gi.
+   * Duoc goi TU resolve() SAU khi da qua het cac cua kiem tra mute/rate-limit, nen KHONG BAO GIO
+   * chay khi thread dang bi khoa (admin dang go tay / lenh "/im") - dung y muon cua user.
+   */
+  private outOfScopeReply(input: FaqResolveInput): string {
+    const template = this.options.store.getSetting(
+      SETTINGS_KEYS.faqOutOfScopeReply,
+      FAQ_OUT_OF_SCOPE_REPLY_DEFAULT
+    );
+    return this.render(template, input);
+  }
+
+  /** Dung chung boi answerFor va outOfScopeReply de khong lap code doc settings + goi renderTemplate. */
+  private render(template: string, input: FaqResolveInput): string {
     const userShare = this.options.store.getSettingInt(
       SETTINGS_KEYS.userSharePercent,
       this.options.defaultUserSharePercent

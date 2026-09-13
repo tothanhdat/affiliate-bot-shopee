@@ -28,6 +28,17 @@ export const FAQ_ANSWER_PLACEHOLDERS = [
 /** So phut khoa FAQ mac dinh sau khi admin go tay trong thread (admin doi duoc tren /admin/settings). */
 export const FAQ_MUTE_MINUTES_DEFAULT = 30;
 
+/**
+ * Cau tra loi mac dinh khi classifier KHONG nhan ra chu de nao (2026-09-13, yeu cau truc tiep cua
+ * user) - thay vi im lang hoan toan, bao user biet la cau hoi ngoai pham vi bot tra loi duoc va admin
+ * se vao xu ly, tranh cam giac bot bi loi khong phan hoi gi. Admin sua duoc qua /admin/settings (key
+ * SETTINGS_KEYS.faqOutOfScopeReply). KHONG ap dung khi thread dang bi khoa (admin dang go tay / lenh
+ * "/im") - resolve() van IM LANG trong 2 truong hop do, vi isFaqThreadMuted() la buoc kiem tra DAU
+ * TIEN, truoc ca buoc goi classifier (xem faqService.ts).
+ */
+export const FAQ_OUT_OF_SCOPE_REPLY_DEFAULT =
+  "Câu hỏi này ngoài phạm vi mà em có thể trả lời. Anh/Chị đợi xíu sẽ có Admin trả lời nha";
+
 export const FAQ_TOPICS: FaqTopic[] = [
   {
     id: "co_che_hoan_tien",

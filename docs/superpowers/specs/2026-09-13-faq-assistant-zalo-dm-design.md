@@ -29,7 +29,8 @@ trường hợp khác vẫn im lặng y như hôm nay.
 
 Đây là bot tiền. Một câu bịa về % hoa hồng hay thời gian nhận tiền gây hậu quả thật. Cho LLM chọn
 1 trong N chủ đề rồi gửi text cố định thì **không tồn tại đường nào để bot nói sai** — đổi lại mất khả
-năng trả lời câu ngoài kịch bản, và đó là đánh đổi có chủ đích (câu ngoài kịch bản → im + ping admin).
+năng trả lời câu ngoài kịch bản, và đó là đánh đổi có chủ đích (câu ngoài kịch bản → trả lời 1 câu cố
+định báo đợi admin, không tự bịa gì thêm + ping admin — xem mục 3 và "Sửa 2026-09-13" ở mục 5).
 
 ## 3. Luồng xử lý 1 tin nhắn DM
 
@@ -44,11 +45,12 @@ tin DM đến
     ├── có link sản phẩm  → tạo link hoàn tiền    (LUÔN chạy, kể cả thread đang khoá)
     └── còn lại
         ├── FAQ_PROVIDER=off  → im lặng (hành vi hôm nay)
-        ├── thread đang khoá  → im lặng
+        ├── thread đang khoá  → im lặng (admin đang gõ tay / đã gõ "/im" — KHÔNG áp dụng cho nhánh dưới)
         ├── quá rate limit    → im lặng
         └── classify(text)
             ├── khớp 1-2 chủ đề → gửi câu trả lời soạn sẵn (ghép bằng "\n\n" nếu 2)
-            └── KHÔNG_BIẾT / lỗi API / timeout → im lặng + ping admin + khoá thread
+            └── KHÔNG_BIẾT / lỗi API / timeout → gửi câu cố định "ngoài phạm vi, đợi admin" + ping
+                admin (KHÔNG khoá thread — sửa 2026-09-13, xem mục 5 Lớp 3)
 ```
 
 **Ranh giới bất di bất dịch**: thread bị khoá chỉ tắt FAQ. Link sản phẩm và `xemhh` luôn chạy — đó là
@@ -114,18 +116,28 @@ Admin gõ trong thread: `/im` → khoá vô thời hạn (`muted_until = NULL`);
 `isSelf === true` nên user không gọi được. Dùng khi muốn chặn trước khi kịp gõ câu nào, hoặc khoá lâu
 hơn 30 phút.
 
-### Lớp 3 — im khi không chắc
+### Lớp 3 — trả lời cố định khi không chắc
 
-Classifier trả rỗng (`KHÔNG_BIẾT`), lỗi API, hoặc timeout → bot không nói gì, chỉ ping admin qua
-`createAdminNotifier()` có sẵn (`src/adapters/shared/adminNotifier.ts`).
+Classifier trả rỗng (`KHÔNG_BIẾT`), lỗi API, hoặc timeout → bot gửi 1 câu **cố định** báo user chờ
+admin (setting `faq_out_of_scope_reply`, mặc định *"Câu hỏi này ngoài phạm vi mà em có thể trả lời.
+Anh/Chị đợi xíu sẽ có Admin trả lời nha"*), **đồng thời** ping admin qua `createAdminNotifier()` có sẵn
+(`src/adapters/shared/adminNotifier.ts`). Câu trả lời render qua cùng cơ chế placeholder với 8 câu FAQ
+(`{{userSharePercent}}`, `{{dashboardUrl}}`...), sửa được qua `/admin/settings`.
 
 Nội dung ping: `"❓ [Zalo] <tên user> (<userId>) vừa hỏi câu bot không hiểu: \"<nguyên văn>\""`.
 
-**⚠️ Sửa 2026-09-13 (bug phát hiện từ dùng thật)**: bản đầu tiên còn khoá thread luôn ở bước này
-("admin sắp vào trả lời thay"). Thực tế dùng cho thấy đây là lỗi: user hỏi 1 câu ngoài kịch bản, bot
-im đúng, nhưng câu FAQ hợp lệ hỏi NGAY SAU ĐÓ cũng bị im lây trong `faqMuteMinutes` phút — dù admin
-chưa hề can thiệp gì. Đã bỏ hẳn việc khoá ở lớp này. Khoá thread giờ **chỉ** xảy ra khi admin
-**thật sự** gõ tay (lớp 1) hoặc gõ lệnh `/im` (lớp 2) — không còn do bot tự đoán.
+**⚠️ Sửa 2026-09-13, 2 lần liên tiếp, cùng dựa trên dùng thật**:
+
+1. **Bug phát hiện đầu tiên**: bản gốc khoá thread luôn ở bước này ("admin sắp vào trả lời thay").
+   Thực tế dùng cho thấy đây là lỗi: user hỏi 1 câu ngoài kịch bản, bot im đúng, nhưng câu FAQ hợp lệ
+   hỏi NGAY SAU ĐÓ cũng bị im lây trong `faqMuteMinutes` phút — dù admin chưa hề can thiệp gì. Đã bỏ
+   hẳn việc khoá ở lớp này. Khoá thread giờ **chỉ** xảy ra khi admin **thật sự** gõ tay (lớp 1) hoặc
+   gõ lệnh `/im` (lớp 2) — không còn do bot tự đoán.
+2. **Yêu cầu tiếp theo, cùng ngày**: im lặng hoàn toàn (sau khi đã bỏ khoá) vẫn cho cảm giác "bot bị
+   lỗi, không phản hồi gì" — đổi sang gửi câu cố định trên. Câu này **KHÔNG** áp dụng khi thread đang
+   bị khoá (admin đang gõ tay / đã gõ `/im`) — tự động đúng nhờ `isFaqThreadMuted()` là bước kiểm tra
+   ĐẦU TIÊN trong `resolve()`, luôn chạy trước cả bước gọi classifier, nên nhánh này không bao giờ
+   được tới nếu thread đang khoá.
 
 ### Bảng `faq_thread_mutes`
 

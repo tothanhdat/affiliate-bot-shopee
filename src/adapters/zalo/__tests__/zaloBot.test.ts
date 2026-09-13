@@ -399,9 +399,9 @@ test("Zalo DM: user go /im khong kich hoat duoc lenh admin (khong phai isSelf)",
   try {
     attachFaq(async () => []);
     await handleMessage(makeMessage(ThreadType.User, "/im"));
-    // "/im" cua user di vao luong FAQ binh thuong -> classifier khong khop -> khoa CO HAN theo
-    // faq_mute_minutes. Neu lenh admin bi kich hoat nham thi khoa se la VO THOI HAN - moc 10 nam
-    // duoi day chinh la cho phan biet 2 truong hop do.
+    // "/im" cua user di vao luong FAQ binh thuong -> classifier khong khop -> bot chi tra loi cau
+    // "ngoai pham vi" (khong con tu khoa thread nua, xem faqService.ts). Neu lenh admin bi kich hoat
+    // nham thi khoa se la VO THOI HAN - moc 10 nam duoi day chinh la cho phan biet 2 truong hop do.
     assert.equal(
       ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now() + 10 * 365 * 24 * 3600_000),
       false,

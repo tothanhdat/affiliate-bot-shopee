@@ -16,6 +16,8 @@ export const SETTINGS_KEYS = {
   withdrawalPaidTemplate: "withdrawal_paid_template",
   groupReportUpdatedTemplate: "group_report_updated_template",
   faqMuteMinutes: "faq_mute_minutes",
+  /** Cau tra loi khi FAQ khong nhan ra chu de (2026-09-13) - xem FAQ_OUT_OF_SCOPE_REPLY_DEFAULT. */
+  faqOutOfScopeReply: "faq_out_of_scope_reply",
 } as const;
 
 /**

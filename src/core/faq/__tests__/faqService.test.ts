@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { LedgerStore } from "../../ledgerStore.js";
 import { RateLimiter } from "../../rateLimiter.js";
 import { FaqService } from "../faqService.js";
-import { FAQ_TOPICS } from "../faqTopics.js";
-import { faqAnswerKey } from "../../settingsKeys.js";
+import { FAQ_TOPICS, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT } from "../faqTopics.js";
+import { SETTINGS_KEYS, faqAnswerKey } from "../../settingsKeys.js";
 import type { FaqClassifier } from "../faqClassifier.js";
 
 /** Classifier gia - tra ve ket qua dinh san hoac throw, de test moi nhanh ma khong goi API that. */
@@ -113,13 +113,19 @@ test("resolve: khop 2 chu de -> ghep 2 cau tra loi bang dong trong", async () =>
   }
 });
 
-// 2026-09-13, sua theo bao cao that tu user: KHONG duoc tu khoa thread chi vi khong nhan ra 1 cau
-// hoi - se lam im ca cau FAQ hop le hoi NGAY SAU DO, dung khi admin chua he can thiep gi. Khoa
-// thread CHI xay ra khi admin THAT SU go tay (muteByAdminTyping) hoac go lenh /im (muteByAdminCommand).
-test("resolve: khong biet -> im lang, bao admin, KHONG khoa thread", async () => {
+// 2026-09-13: KHONG duoc tu khoa thread chi vi khong nhan ra 1 cau hoi - se lam im ca cau FAQ hop
+// le hoi NGAY SAU DO, dung khi admin chua he can thiep gi. Khoa thread CHI xay ra khi admin THAT SU
+// go tay (muteByAdminTyping) hoac go lenh /im (muteByAdminCommand).
+//
+// 2026-09-13 (sau, theo yeu cau truc tiep cua user): thay vi im lang hoan toan, bot tra loi 1 cau
+// co dinh bao user cho admin - tranh cam giac bot "khong phan hoi gi ca" nhu bi loi. Cau nay VAN
+// khong ap dung khi thread dang bi khoa (admin dang go tay / lenh /im) - da tu dong dung nho thu tu
+// check isFaqThreadMuted() luon chay TRUOC buoc classify trong resolve(), xem test rieng ben duoi.
+test("resolve: khong biet -> tra loi cau co dinh bao doi admin, VAN bao admin, KHONG khoa thread", async () => {
   const { service, ledgerStore, adminMessages, input, cleanup } = setup(fakeClassifier([]));
   try {
-    assert.equal(await service.resolve(input), null);
+    const answer = await service.resolve(input);
+    assert.equal(answer, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT);
     assert.equal(adminMessages.length, 1);
     assert.match(adminMessages[0], /hoàn tiền như thế nào vậy ad/);
     assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
@@ -133,9 +139,20 @@ test("resolve: classifier throw (API loi) -> xu ly y het 'khong biet', khong nem
     fakeClassifier(new Error("API 500"))
   );
   try {
-    assert.equal(await service.resolve(input), null);
+    const answer = await service.resolve(input);
+    assert.equal(answer, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT);
     assert.equal(adminMessages.length, 1);
     assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("resolve: admin sua cau tra loi ngoai pham vi tren /admin/settings -> gui ban da sua", async () => {
+  const { service, ledgerStore, input, cleanup } = setup(fakeClassifier([]));
+  try {
+    ledgerStore.setSetting(SETTINGS_KEYS.faqOutOfScopeReply, "Chờ admin xíu nha");
+    assert.equal(await service.resolve(input), "Chờ admin xíu nha");
   } finally {
     cleanup();
   }
@@ -148,10 +165,27 @@ test("resolve: sau 1 cau khong nhan ra, cau FAQ hop le tiep theo VAN duoc tra lo
     classify: async (question: string) => (question.includes("sàn nào") ? ["san_ho_tro"] : []),
   });
   try {
-    assert.equal(await service.resolve({ ...input, question: "câu gì đó lạ hoắc" }), null);
+    assert.equal(
+      await service.resolve({ ...input, question: "câu gì đó lạ hoắc" }),
+      FAQ_OUT_OF_SCOPE_REPLY_DEFAULT
+    );
     const answer = await service.resolve({ ...input, question: "bot hỗ trợ sàn nào" });
     const topic = FAQ_TOPICS.find((t) => t.id === "san_ho_tro");
     assert.equal(answer, topic?.defaultAnswer);
+  } finally {
+    cleanup();
+  }
+});
+
+// Yeu cau truc tiep cua user: cau tra loi co dinh nay KHONG ap dung khi thread dang bi khoa (admin
+// dang go tay / lenh /im) - resolve() phai IM LANG (null) dung nhu truoc gio, khong phai gui cau
+// "doi admin" lan 2. Dung nho isFaqThreadMuted() la buoc kiem tra DAU TIEN trong resolve(), truoc
+// ca buoc goi classifier.
+test("resolve: thread dang bi khoa -> IM LANG (khong gui cau cho doi admin), du cau hoi ngoai pham vi", async () => {
+  const { service, ledgerStore, input, cleanup } = setup(fakeClassifier([]));
+  try {
+    ledgerStore.muteFaqThread("zalo", "user-1", null, "admin_command");
+    assert.equal(await service.resolve(input), null);
   } finally {
     cleanup();
   }
@@ -242,7 +276,7 @@ test("notifyAdmin that bai -> khong lam hong resolve (best-effort)", async () =>
         userDisplayName: "A",
         dashboardUrl: "http://x/d/t",
       }),
-      null
+      FAQ_OUT_OF_SCOPE_REPLY_DEFAULT
     );
   } finally {
     rateLimiter.stop();

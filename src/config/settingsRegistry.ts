@@ -3,6 +3,7 @@ import {
   FAQ_TOPICS,
   FAQ_MUTE_MINUTES_DEFAULT,
   FAQ_ANSWER_PLACEHOLDERS,
+  FAQ_OUT_OF_SCOPE_REPLY_DEFAULT,
 } from "../core/faq/faqTopics.js";
 import {
   USAGE_TEXT,
@@ -132,6 +133,16 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     max: 1440,
     helpText:
       'Khi admin tự nhắn tay cho user trong Zalo DM, bot ngừng trả lời FAQ trong thread đó bằng đúng số phút này (không ảnh hưởng việc xử lý link sản phẩm và lệnh "xemhh" — 2 thứ đó luôn chạy). Gõ "/im" trong thread để khoá vô thời hạn, "/noi" để mở lại.',
+  },
+  {
+    key: SETTINGS_KEYS.faqOutOfScopeReply,
+    label: "FAQ — Câu trả lời khi ngoài phạm vi",
+    type: "textarea",
+    default: FAQ_OUT_OF_SCOPE_REPLY_DEFAULT,
+    helpText:
+      `Bot gửi câu này khi KHÔNG nhận ra chủ đề của câu hỏi (thay vì im lặng hoàn toàn). ` +
+      `Placeholder dùng được: ${FAQ_ANSWER_PLACEHOLDERS.map((p) => `{{${p}}}`).join(", ")}. ` +
+      `Không áp dụng khi thread đang bị khoá (admin đang tự nhắn tay, hoặc đã gõ "/im") — lúc đó bot vẫn im lặng như cũ.`,
   },
   // 8 o textarea cho 8 chu de FAQ - sinh tu FAQ_TOPICS thay vi liet ke tay, de them chu de moi chi
   // phai sua faqTopics.ts (form /admin/settings tu hien them o tuong ung).
