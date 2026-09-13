@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FAQ_TOPICS, FAQ_ANSWER_PLACEHOLDERS } from "../faqTopics.js";
 
-test("FAQ_TOPICS: du 8 chu de, id khong trung", () => {
-  assert.equal(FAQ_TOPICS.length, 8);
+test("FAQ_TOPICS: du 9 chu de, id khong trung", () => {
+  assert.equal(FAQ_TOPICS.length, 9);
   const ids = FAQ_TOPICS.map((t) => t.id);
   assert.equal(new Set(ids).size, ids.length);
 });

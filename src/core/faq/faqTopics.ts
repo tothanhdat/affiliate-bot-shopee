@@ -135,4 +135,15 @@ export const FAQ_TOPICS: FaqTopic[] = [
       `Các sàn khác em chưa hỗ trợ, bạn gửi link vào em sẽ báo không nhận diện được nha.\n\n` +
       `Có thêm sàn mới em sẽ báo trong group liền!`,
   },
+  {
+    id: "lich_cap_nhat_trang_thai",
+    label: "Lịch cập nhật trạng thái đơn hàng",
+    description:
+      "User hoi trang thai don hang duoc cap nhat khi nao, bao lau thi cap nhat, lich cap nhat don hang, tai sao don van chua doi trang thai",
+    defaultAnswer:
+      `Lịch cập nhật trạng thái đơn hàng khác nhau theo từng sàn nha 📅\n\n` +
+      `• **Shopee**: cập nhật mỗi ngày.\n` +
+      `• **TikTok Shop**: cập nhật vào thứ 2 hằng tuần.\n\n` +
+      `Nên nếu đơn TikTok Shop của bạn chưa thấy đổi trạng thái ngay thì đừng lo, cứ đợi tới đợt cập nhật thứ 2 gần nhất là có nha!`,
+  },
 ];
