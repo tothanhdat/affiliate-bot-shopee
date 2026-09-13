@@ -10,6 +10,7 @@ import { LedgerStore } from "../../core/ledgerStore.js";
 import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
+import { SETTINGS_REGISTRY } from "../../config/settingsRegistry.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
 import { yesterdayVnDdMm } from "../../core/vietnamDate.js";
 
@@ -771,6 +772,17 @@ test("GET /admin/settings tra ve form voi gia tri mac dinh khi chua tung luu set
   }
 });
 
+/**
+ * Form /admin/settings luon submit TAT CA field (route tu choi 422 neu thieu bat ky field nao), nen
+ * body test phai du field. Dung mac dinh tu SETTINGS_REGISTRY roi ghi de dung field can kiem tra -
+ * them setting moi sau nay khong lam gay cac test nay nua.
+ */
+function settingsFormBody(overrides: Record<string, string> = {}): string {
+  const body: Record<string, string> = {};
+  for (const field of SETTINGS_REGISTRY) body[field.key] = field.default;
+  return new URLSearchParams({ ...body, ...overrides }).toString();
+}
+
 test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri moi", async () => {
   const { ledgerStore, baseUrl, cleanup } = setup();
   try {
@@ -778,19 +790,11 @@ test("POST /admin/settings luu thanh cong -> GET sau do phan anh dung gia tri mo
     const res = await fetch(`${baseUrl}/admin/settings`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
-      body: new URLSearchParams({
+      body: settingsFormBody({
         commission_user_share_percent: "70",
         withdrawal_threshold_vnd: "99000",
         usage_text: "usage moi",
-        welcome_message_template: "welcome moi {{userSharePercent}}",
-        success_reply_template: "success moi {{link}}",
-        group_join_welcome_template: "group join moi",
-        dashboard_link_reply_template: "dashboard moi {{dashboardUrl}}",
-        orders_confirmed_template: "orders moi {{summaryLine}}",
-        withdrawal_requested_template: "withdrawal requested moi {{amount}}",
-        withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
-        group_report_updated_template: "group report moi {{date}}",
-      }).toString(),
+      }),
       redirect: "manual",
     });
     assert.equal(res.status, 303);
@@ -870,19 +874,9 @@ test("POST /admin/settings: xuong dong CRLF cua textarea duoc normalize ve LF tr
     const res = await fetch(`${baseUrl}/admin/settings`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
-      body: new URLSearchParams({
-        commission_user_share_percent: "90",
-        withdrawal_threshold_vnd: "50000",
-        usage_text: "usage moi",
-        welcome_message_template: "welcome moi",
+      body: settingsFormBody({
         success_reply_template: "Link đây ạ: {{link}}\r\n\r\n{{commissionLine}}\r\n\r\nCuoi cung",
-        group_join_welcome_template: "group join moi",
-        dashboard_link_reply_template: "dashboard moi {{dashboardUrl}}",
-        orders_confirmed_template: "orders moi {{summaryLine}}",
-        withdrawal_requested_template: "withdrawal requested moi {{amount}}",
-        withdrawal_paid_template: "withdrawal paid moi {{dashboardUrl}}",
-        group_report_updated_template: "group report moi {{date}}",
-      }).toString(),
+      }),
       redirect: "manual",
     });
     assert.equal(res.status, 303);

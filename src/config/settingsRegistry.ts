@@ -1,4 +1,9 @@
-import { SETTINGS_KEYS } from "../core/settingsKeys.js";
+import { SETTINGS_KEYS, faqAnswerKey } from "../core/settingsKeys.js";
+import {
+  FAQ_TOPICS,
+  FAQ_MUTE_MINUTES_DEFAULT,
+  FAQ_ANSWER_PLACEHOLDERS,
+} from "../core/faq/faqTopics.js";
 import {
   USAGE_TEXT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
@@ -118,4 +123,26 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     helpText:
       'Gửi vào các group Zalo được tick ở mục "Group Zalo nhận thông báo" bên dưới, mỗi lần import báo cáo Shopee thành công (kể cả khi không có đơn mới). Placeholder hợp lệ: {{date}} (ngày hôm qua theo giờ VN, dạng dd/mm). Đây là tin nhắn CHUNG cho cả group — đừng đưa số tiền/tên đơn của cá nhân vào đây.',
   },
+  {
+    key: SETTINGS_KEYS.faqMuteMinutes,
+    label: "Số phút bot im lặng sau khi admin nhắn tay",
+    type: "number",
+    default: String(FAQ_MUTE_MINUTES_DEFAULT),
+    min: 1,
+    max: 1440,
+    helpText:
+      'Khi admin tự nhắn tay cho user trong Zalo DM, bot ngừng trả lời FAQ trong thread đó bằng đúng số phút này (không ảnh hưởng việc xử lý link sản phẩm và lệnh "xemhh" — 2 thứ đó luôn chạy). Gõ "/im" trong thread để khoá vô thời hạn, "/noi" để mở lại.',
+  },
+  // 8 o textarea cho 8 chu de FAQ - sinh tu FAQ_TOPICS thay vi liet ke tay, de them chu de moi chi
+  // phai sua faqTopics.ts (form /admin/settings tu hien them o tuong ung).
+  ...FAQ_TOPICS.map((topic) => ({
+    key: faqAnswerKey(topic.id),
+    label: `FAQ — ${topic.label}`,
+    type: "textarea" as const,
+    default: topic.defaultAnswer,
+    helpText:
+      `Câu trả lời bot gửi khi nhận ra user đang hỏi về: ${topic.description}. ` +
+      `Placeholder dùng được: ${FAQ_ANSWER_PLACEHOLDERS.map((p) => `{{${p}}}`).join(", ")}. ` +
+      `Lưu ý: sửa nội dung thì giữ đúng chủ đề — phần mô tả để AI nhận diện câu hỏi nằm trong code, không đổi theo ô này.`,
+  })),
 ];

@@ -15,4 +15,13 @@ export const SETTINGS_KEYS = {
   withdrawalRequestedTemplate: "withdrawal_requested_template",
   withdrawalPaidTemplate: "withdrawal_paid_template",
   groupReportUpdatedTemplate: "group_report_updated_template",
+  faqMuteMinutes: "faq_mute_minutes",
 } as const;
+
+/**
+ * Key luu cau tra loi FAQ cua 1 chu de (2026-09-13). Tach ham thay vi liet ke tay trong SETTINGS_KEYS
+ * vi danh sach chu de nam trong FAQ_TOPICS (core/faq/faqTopics.ts) - them chu de moi chi sua 1 noi.
+ */
+export function faqAnswerKey(topicId: string): string {
+  return `faq_answer_${topicId}`;
+}
