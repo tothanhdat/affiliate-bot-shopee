@@ -330,6 +330,17 @@ export function renderDashboardPage(input: {
   const bankOptions = VIETNAM_BANKS.map((b) => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join(
     "\n"
   );
+
+  // 2026-08-20 (yeu cau truc tiep cua user): the rieng cho tong hoa hong cac don dang "pending"
+  // (Accesstrade con hold/chua chot, xem accesstradeSync.ts) - CHI de hien thi, KHONG cong vao
+  // availableBalance/pendingBalance nao ca, tranh nham lan voi "Dang cho rut" (tien da confirmed,
+  // dang bi giu boi 1 yeu cau rut tien). Khai bao truoc withdrawBlock vi progress-hint ben duoi
+  // can dung gia tri nay (2026-09-16: tich luy con thieu tinh tren "Cho xac nhan", KHONG phai
+  // "Kha dung" - nut Rut tien van giu nguyen logic cu dung availableBalance).
+  const pendingConfirmationTotal = input.entries
+    .filter((e) => e.status === "pending")
+    .reduce((sum, e) => sum + e.userShareAmount, 0);
+
   const withdrawBlock = input.pendingWithdrawal
     ? `<div class="pending-notice">💸 Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.</div>`
     : input.availableBalance >= input.thresholdVnd
@@ -351,7 +362,7 @@ export function renderDashboardPage(input: {
   </div>
   <button type="submit">Yêu cầu rút ${formatVnd(input.availableBalance)}</button>
 </form>`
-      : `<p class="progress-hint">Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - input.availableBalance))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).</p>`;
+      : `<p class="progress-hint">Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - pendingConfirmationTotal))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).</p>`;
 
   const platformLabel = PLATFORM_LABELS[input.platform];
   const identityLine = input.displayName
@@ -367,14 +378,6 @@ export function renderDashboardPage(input: {
   const reversalWarning = hasPendingEntry
     ? `<p class="warning-note">⚠️ Đơn đang "Chờ xác nhận" có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn.</p>`
     : "";
-
-  // 2026-08-20 (yeu cau truc tiep cua user): the rieng cho tong hoa hong cac don dang "pending"
-  // (Accesstrade con hold/chua chot, xem accesstradeSync.ts) - CHI de hien thi, KHONG cong vao
-  // availableBalance/pendingBalance nao ca, tranh nham lan voi "Dang cho rut" (tien da confirmed,
-  // dang bi giu boi 1 yeu cau rut tien).
-  const pendingConfirmationTotal = input.entries
-    .filter((e) => e.status === "pending")
-    .reduce((sum, e) => sum + e.userShareAmount, 0);
 
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
