@@ -6,6 +6,7 @@ import {
   renderAccesstradePaymentsPage,
   renderAdminLoginPage,
   renderOrdersPage,
+  ORDERS_PAGE_SIZE,
   renderRecordOrdersPage,
   renderReverseConfirmPage,
   renderSettingsPage,
@@ -46,6 +47,26 @@ const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
 const VALID_STATUSES: CommissionStatus[] = ["pending", "confirmed", "paid", "reversed"];
 const ADMIN_SESSION_COOKIE = "admin_session";
+
+/**
+ * Doc bo loc trang thai tu query /admin/orders. Form dung checkbox nen Express tra ve string khi tick
+ * 1 o va MANG khi tick nhieu o - phai nhan ca 2 dang. Gia tri la/trung lap bi loai bo (query do nguoi
+ * dung go tay), mang rong = khong loc.
+ */
+function parseStatusFilter(raw: unknown): CommissionStatus[] {
+  const values = Array.isArray(raw) ? raw : [raw];
+  const valid = values.filter(
+    (v): v is CommissionStatus => typeof v === "string" && VALID_STATUSES.includes(v as CommissionStatus)
+  );
+  return [...new Set(valid)];
+}
+
+/** So trang tu query: chi nhan so nguyen duong, moi gia tri khac (rac, 0, am, so le) ve trang 1. */
+function parsePageParam(raw: unknown): number {
+  if (typeof raw !== "string") return 1;
+  const page = Number(raw);
+  return Number.isInteger(page) && page >= 1 ? page : 1;
+}
 
 /** Doc tay tu header Cookie - khong them dependency cookie-parser chi de doc 1 cookie. */
 function parseCookies(header: string | undefined): Record<string, string> {
@@ -496,13 +517,21 @@ export function createServer(
         typeof req.query.merchant === "string" && VALID_MERCHANTS.includes(req.query.merchant as MerchantId)
           ? (req.query.merchant as MerchantId)
           : undefined,
-      status:
-        typeof req.query.status === "string" && VALID_STATUSES.includes(req.query.status as CommissionStatus)
-          ? (req.query.status as CommissionStatus)
-          : undefined,
+      statuses: parseStatusFilter(req.query.status),
     };
-    const entries = ledgerStore.listCommissionEntries(filters);
-    res.type("html").send(renderOrdersPage(entries, filters, ledgerStore.getDisplayNamesMap()));
+
+    // Tong so don phai dem TRUOC khi lay trang, vi so trang quyet dinh viec kep "page" ve khoang hop le
+    // (vd admin dang o trang 5 roi doi bo loc con 1 trang -> ?page=5 phai ve trang 1, khong duoc tra bang rong).
+    const totalEntries = ledgerStore.countCommissionEntries(filters);
+    const totalPages = Math.max(1, Math.ceil(totalEntries / ORDERS_PAGE_SIZE));
+    const page = Math.min(parsePageParam(req.query.page), totalPages);
+    const entries = ledgerStore.listCommissionEntries(filters, {
+      limit: ORDERS_PAGE_SIZE,
+      offset: (page - 1) * ORDERS_PAGE_SIZE,
+    });
+    res
+      .type("html")
+      .send(renderOrdersPage(entries, filters, ledgerStore.getDisplayNamesMap(), { page, totalPages, totalEntries }));
   });
 
   app.get("/admin/orders/:id/reverse", requireAdminAuth, (req: Request, res: Response) => {

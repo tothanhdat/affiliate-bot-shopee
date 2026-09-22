@@ -885,3 +885,125 @@ test("faq mute: khoa theo tung thread, khong anh huong thread khac", () => {
     store.close();
   }
 });
+
+// --- Phan trang + loc nhieu trang thai cho /admin/orders (2026-09-22) ---
+
+/** Ghi n don theo thu tu order-1..order-n, dung cho cac test phan trang. */
+function recordManySamples(store: LedgerStore, n: number, status?: "pending" | "confirmed") {
+  for (let i = 1; i <= n; i++) {
+    store.recordConversion({
+      subId: `telegram-user-a-${i}`,
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: `order-${i}`,
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status,
+    });
+  }
+}
+
+test("LedgerStore: listCommissionEntries cat dung trang theo limit/offset, khong trung khong sot", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordManySamples(store, 5);
+
+    // Moi nhat truoc. 5 don ghi trong cung mili-giay van phai ra thu tu on dinh (tiebreak rowid).
+    const page1 = store.listCommissionEntries({}, { limit: 2, offset: 0 });
+    const page2 = store.listCommissionEntries({}, { limit: 2, offset: 2 });
+    const page3 = store.listCommissionEntries({}, { limit: 2, offset: 4 });
+
+    assert.deepEqual(
+      page1.map((e) => e.orderId),
+      ["order-5", "order-4"]
+    );
+    assert.deepEqual(
+      page2.map((e) => e.orderId),
+      ["order-3", "order-2"]
+    );
+    assert.deepEqual(
+      page3.map((e) => e.orderId),
+      ["order-1"]
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: listCommissionEntries khong con chot cung 300 don khi khong truyen paging", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordManySamples(store, 305);
+    assert.equal(store.listCommissionEntries({}).length, 305);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: listCommissionEntries loc duoc NHIEU trang thai cung luc", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordSample(store, { orderId: "order-confirmed" });
+    const pending = store.recordConversion({
+      subId: "telegram-user-a-p",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-pending",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    store.recordConversion({
+      subId: "telegram-user-a-r",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-reversed",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    store.reverseCommissionEntry(store.getEntryByOrderId("shopee", "order-reversed")!.id, "test");
+    assert.equal(pending.status, "pending");
+
+    const ids = store
+      .listCommissionEntries({ statuses: ["pending", "reversed"] })
+      .map((e) => e.orderId)
+      .sort();
+    assert.deepEqual(ids, ["order-pending", "order-reversed"]);
+
+    // Mang rong = khong loc gi (giong khong truyen), de form khong tick o nao van ra tat ca.
+    assert.equal(store.listCommissionEntries({ statuses: [] }).length, 3);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: countCommissionEntries dem theo dung bo loc dang ap dung", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordManySamples(store, 4, "pending");
+    recordSample(store, { orderId: "order-khac" });
+
+    assert.equal(store.countCommissionEntries({}), 5);
+    assert.equal(store.countCommissionEntries({ statuses: ["pending"] }), 4);
+    assert.equal(store.countCommissionEntries({ statuses: ["confirmed"] }), 1);
+    assert.equal(store.countCommissionEntries({ merchant: "lazada" }), 0);
+  } finally {
+    store.close();
+  }
+});

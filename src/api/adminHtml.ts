@@ -141,9 +141,45 @@ function shellStyles(): string {
   button.primary:hover { filter: brightness(1.08); }
   .filters { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: flex-end; }
   .filters label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
-  .filters select, .filters input[type="text"] {
+  .filters select, .filters input[type="text"], .filters input[type="search"] {
     padding: 0.45rem 0.6rem; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.85rem; min-width: 140px;
   }
+  .filters .search-input { min-width: 280px; }
+  /* Dropdown chon nhieu gia tri (bo loc "Trang thai" o /admin/orders): <details> dong vai tro nut
+     xo xuong, panel ben trong la danh sach checkbox. HTML khong co san multi-select dang dropdown
+     (<select multiple> la o danh sach trai dai, phai giu Ctrl de chon) nen phai dung cach nay. */
+  .dropdown-check { position: relative; display: inline-block; }
+  .dropdown-check > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    padding: 0.45rem 2rem 0.45rem 0.6rem; border: 1px solid var(--card-border); border-radius: 8px;
+    font-size: 0.85rem; min-width: 190px; background: #fff; color: var(--text); position: relative;
+  }
+  .dropdown-check > summary::-webkit-details-marker { display: none; }
+  .dropdown-check > summary::after {
+    content: "▾"; position: absolute; right: 0.7rem; top: 50%; transform: translateY(-50%);
+    color: var(--text-muted); font-size: 0.75rem;
+  }
+  .dropdown-check[open] > summary { border-color: var(--accent); }
+  .dropdown-panel {
+    position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 100%; white-space: nowrap;
+    background: #fff; border: 1px solid var(--card-border); border-radius: 10px; padding: 0.35rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  .dropdown-panel label {
+    display: flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.4rem 0.5rem; border-radius: 6px;
+    font-size: 0.85rem; text-transform: none; letter-spacing: normal; color: var(--text); cursor: pointer;
+  }
+  .dropdown-panel label:hover { background: var(--content-bg); }
+  .dropdown-panel input[type="checkbox"] { margin: 0; cursor: pointer; }
+  .pagination { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; margin-top: 1.1rem; }
+  .pagination a, .pagination span {
+    display: inline-block; min-width: 34px; text-align: center; padding: 0.35rem 0.6rem;
+    border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.82rem; font-weight: 600;
+    color: var(--accent); text-decoration: none;
+  }
+  .pagination a:hover { background: var(--content-bg); }
+  .pagination .current { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pagination .disabled, .pagination .gap { color: var(--text-muted); border-color: transparent; font-weight: 400; }
   .error { background: var(--danger-soft); color: var(--danger); padding: 0.85rem 1rem; border-radius: 12px; margin-bottom: 1.25rem; font-size: 0.9rem; }
   .success { background: var(--success-soft); color: var(--success); padding: 0.85rem 1rem; border-radius: 12px; margin-bottom: 1.25rem; font-size: 0.9rem; }
   .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--content-bg); }
@@ -448,7 +484,7 @@ export function renderUsersPage(
 ): string {
   const rows = list
     .map(
-      (u) => `<tr>
+      (u) => `<tr data-search="${escapeHtml(`${u.displayName ?? ""} ${u.userId}`.toLowerCase())}">
   <td>${escapeHtml(u.platform)}</td>
   <td>${escapeHtml(u.userId)}</td>
   <td>${nameCell(u.displayName)}</td>
@@ -461,14 +497,47 @@ export function renderUsersPage(
     )
     .join("\n");
 
+  // Loc client-side (khong reload trang): moi <tr> mang san data-search = "ten userId" da viet thuong,
+  // JS chi can so khop chuoi con. Danh sach user nam tron trong 1 trang nen khong can query server.
+  // Logic ben trong duoc test qua src/api/__tests__/usersSearchScript.test.ts (chay script nay tren
+  // DOM gia) - sua o day thi chay lai test do.
+  const searchScript = `<script>
+(function () {
+  var input = document.getElementById("user-search");
+  if (!input) return;
+  var rows = Array.prototype.slice.call(document.querySelectorAll("#users-table tbody tr"));
+  var counter = document.getElementById("users-count");
+  var emptyHint = document.getElementById("users-no-match");
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (row) {
+      var match = q === "" || (row.dataset.search || "").indexOf(q) !== -1;
+      row.hidden = !match;
+      if (match) shown++;
+    });
+    if (counter) counter.textContent = String(shown);
+    if (emptyHint) emptyHint.hidden = shown !== 0;
+  });
+})();
+</script>`;
+
   const body = `<div class="card">
-<h2>Người dùng (${list.length})</h2>
+<h2>Người dùng (<span id="users-count">${list.length}</span>)</h2>
 ${
   list.length > 0
-    ? `<div class="table-scroll"><table>
+    ? `<div class="filters">
+  <div>
+    <label for="user-search">Tìm kiếm</label>
+    <input type="search" id="user-search" class="search-input" placeholder="Nhập tên hoặc User ID..." autocomplete="off">
+  </div>
+</div>
+<div class="table-scroll"><table id="users-table">
 <thead><tr><th>Kênh</th><th>User ID</th><th>Tên</th><th>Khả dụng</th><th>Đang chờ rút</th><th>Đã nhận</th><th>Số đơn</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
-</table></div>`
+</table></div>
+<p class="empty" id="users-no-match" hidden>Không có user nào khớp từ khoá.</p>
+${searchScript}`
     : `<p class="empty">Chưa có user nào có đơn hàng.</p>`
 }
 </div>`;
@@ -480,7 +549,68 @@ export interface OrdersFilters {
   platform?: Platform;
   userId?: string;
   merchant?: MerchantId;
-  status?: CommissionStatus;
+  /** Nhieu trang thai cung luc (form dung checkbox). Rong = khong loc, hien tat ca. */
+  statuses?: CommissionStatus[];
+}
+
+/** So don hien tren 1 trang /admin/orders. */
+export const ORDERS_PAGE_SIZE = 50;
+
+export interface OrdersPagination {
+  /** Trang dang xem, 1-based - da duoc route kep ve khoang hop le truoc khi truyen vao day. */
+  page: number;
+  totalPages: number;
+  totalEntries: number;
+}
+
+/**
+ * Dung lai URL /admin/orders giu NGUYEN bo loc hien tai, chi doi so trang - moi link phan trang deu
+ * di qua day, neu khong thi bam sang trang 2 se mat sach bo loc admin vua chon.
+ */
+function ordersPageHref(filters: OrdersFilters, page: number): string {
+  const params = new URLSearchParams();
+  if (filters.platform) params.set("platform", filters.platform);
+  if (filters.merchant) params.set("merchant", filters.merchant);
+  if (filters.userId) params.set("userId", filters.userId);
+  for (const status of filters.statuses ?? []) params.append("status", status);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query === "" ? "/admin/orders" : `/admin/orders?${query}`;
+}
+
+/** Day so trang hien tren thanh phan trang: luon co trang dau/cuoi + 1 trang ke hien tai, con lai la "…". */
+function paginationItems(page: number, totalPages: number): Array<number | "gap"> {
+  const wanted = new Set<number>([1, totalPages, page - 1, page, page + 1]);
+  const pages = [...wanted].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
+  const items: Array<number | "gap"> = [];
+  pages.forEach((n, i) => {
+    if (i > 0 && n - pages[i - 1] > 1) items.push("gap");
+    items.push(n);
+  });
+  return items;
+}
+
+function renderPagination(filters: OrdersFilters, pagination: OrdersPagination): string {
+  if (pagination.totalPages <= 1) return "";
+  const { page, totalPages } = pagination;
+  const prev =
+    page > 1
+      ? `<a href="${escapeHtml(ordersPageHref(filters, page - 1))}">‹ Trước</a>`
+      : `<span class="disabled">‹ Trước</span>`;
+  const next =
+    page < totalPages
+      ? `<a href="${escapeHtml(ordersPageHref(filters, page + 1))}">Sau ›</a>`
+      : `<span class="disabled">Sau ›</span>`;
+  const middle = paginationItems(page, totalPages)
+    .map((item) =>
+      item === "gap"
+        ? `<span class="gap">…</span>`
+        : item === page
+          ? `<span class="current">${item}</span>`
+          : `<a href="${escapeHtml(ordersPageHref(filters, item))}">${item}</a>`
+    )
+    .join("");
+  return `<div class="pagination">${prev}${middle}${next}</div>`;
 }
 
 const STATUS_OPTIONS: CommissionStatus[] = ["pending", "confirmed", "paid", "reversed"];
@@ -504,10 +634,18 @@ function selectOptions<T extends string>(
   return all + rest;
 }
 
+/** Nhan tom tat hien tren nut dropdown "Trang thai" - giu dong bo voi refresh() trong statusDropdownScript. */
+function statusSummaryLabel(checked: readonly CommissionStatus[]): string {
+  if (checked.length === 0 || checked.length === STATUS_OPTIONS.length) return "Tất cả";
+  if (checked.length === 1) return STATUS_LABELS[checked[0]];
+  return `${checked.length} trạng thái`;
+}
+
 export function renderOrdersPage(
   entries: CommissionEntry[],
   filters: OrdersFilters,
-  displayNames: Map<string, string>
+  displayNames: Map<string, string>,
+  pagination: OrdersPagination
 ): string {
   const rows = entries
     .map((e) => {
@@ -540,6 +678,33 @@ export function renderOrdersPage(
     })
     .join("\n");
 
+  // Chua loc gi = tick san TAT CA (yeu cau truc tiep cua user 2026-09-22). Bo tick het cung tuong
+  // duong "tat ca" o phia server (statuses rong = khong loc), nen 2 trang thai nay cung mot nhan.
+  const checkedStatuses = filters.statuses && filters.statuses.length > 0 ? filters.statuses : STATUS_OPTIONS;
+
+  // Dropdown thu gon (<details> + panel) thay cho hang checkbox trai ngang - logic ben trong duoc
+  // test qua src/api/__tests__/ordersStatusDropdown.test.ts (chay script nay tren DOM gia).
+  const statusDropdownScript = `<script>
+(function () {
+  var dropdown = document.getElementById("status-dropdown");
+  if (!dropdown) return;
+  var summary = document.getElementById("status-summary");
+  var boxes = Array.prototype.slice.call(dropdown.querySelectorAll("input[type=checkbox]"));
+  function refresh() {
+    var checked = boxes.filter(function (b) { return b.checked; });
+    if (checked.length === 0 || checked.length === boxes.length) summary.textContent = "Tất cả";
+    else if (checked.length === 1) summary.textContent = checked[0].dataset.label;
+    else summary.textContent = checked.length + " trạng thái";
+  }
+  boxes.forEach(function (b) { b.addEventListener("change", refresh); });
+  // <details> khong tu dong dong khi bam ra ngoai - phai tu xu ly, neu khong panel se che mat bang.
+  document.addEventListener("click", function (e) {
+    if (dropdown.open && !dropdown.contains(e.target)) dropdown.open = false;
+  });
+  refresh();
+})();
+</script>`;
+
   const filterForm = `<form method="GET" action="/admin/orders" class="filters">
   <div>
     <label>Platform</label>
@@ -555,21 +720,36 @@ export function renderOrdersPage(
   </div>
   <div>
     <label>Trạng thái</label>
-    <select name="status">${selectOptions(STATUS_OPTIONS, (v) => STATUS_LABELS[v], filters.status)}</select>
+    <details class="dropdown-check" id="status-dropdown">
+      <summary><span id="status-summary">${escapeHtml(statusSummaryLabel(checkedStatuses))}</span></summary>
+      <div class="dropdown-panel">${STATUS_OPTIONS.map(
+        (s) =>
+          `<label><input type="checkbox" name="status" value="${s}" data-label="${escapeHtml(
+            STATUS_LABELS[s]
+          )}"${checkedStatuses.includes(s) ? " checked" : ""}> ${STATUS_LABELS[s]}</label>`
+      ).join("")}</div>
+    </details>
   </div>
   ${filters.userId ? `<input type="hidden" name="userId" value="${escapeHtml(filters.userId)}">` : ""}
   <div><button type="submit" class="primary">Lọc</button></div>
 </form>`;
 
+  const heading =
+    pagination.totalPages > 1
+      ? `Đơn hàng (${pagination.totalEntries} đơn — trang ${pagination.page}/${pagination.totalPages})`
+      : `Đơn hàng (${pagination.totalEntries})`;
+
   const body = `<div class="card">
-<h2>Đơn hàng (tối đa 300 đơn gần nhất)</h2>
+<h2>${heading}</h2>
 ${filterForm}
+${statusDropdownScript}
 ${
   entries.length > 0
     ? `<div class="table-scroll"><table>
 <thead><tr><th>Mã đơn</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Merchant</th><th>Sản phẩm</th><th>Khách nhận</th><th>Admin nhận</th><th>Trạng thái</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
-</table></div>`
+</table></div>
+${renderPagination(filters, pagination)}`
     : `<p class="empty">Không có đơn hàng nào khớp bộ lọc.</p>`
 }
 </div>`;

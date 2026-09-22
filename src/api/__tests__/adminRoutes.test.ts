@@ -1054,3 +1054,157 @@ test("POST /admin/settings/zalo-groups yeu cau dang nhap admin", async () => {
     cleanup();
   }
 });
+
+// --- Search trang Nguoi dung + phan trang/loc nhieu trang thai trang Don hang (2026-09-22) ---
+
+/** Ghi n don "bulk-1".."bulk-n" cho cac test phan trang. */
+function seedOrders(ledgerStore: LedgerStore, n: number, overrides: Partial<{ merchant: "shopee" | "lazada"; status: "pending" | "confirmed" }> = {}) {
+  for (let i = 1; i <= n; i++) {
+    ledgerStore.recordConversion({
+      subId: `telegram-user-a-bulk-${i}`,
+      platform: "telegram",
+      userId: "user-a",
+      merchant: overrides.merchant ?? "shopee",
+      orderId: `bulk-${i}`,
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: overrides.status,
+    });
+  }
+}
+
+/** Dem so dong don hang hien tren 1 trang HTML (moi don hien ma don dung 1 lan trong o "Ma don"). */
+function countOrderRows(html: string): number {
+  return (html.match(/>bulk-\d+</g) ?? []).length;
+}
+
+test("/admin/users co o search va moi dong mang san du lieu tim theo ca Ten lan User ID", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrders(ledgerStore, 1);
+    ledgerStore.upsertUserProfile("telegram", "user-a", "Nguyễn Văn A");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/users`, { headers: { cookie: cookie! } })).text();
+
+    assert.match(html, /id="user-search"/);
+    // Chuoi tim kiem viet thuong san trong data-search de JS client chi can so khop chuoi con.
+    assert.match(html, /data-search="[^"]*nguyễn văn a[^"]*"/);
+    assert.match(html, /data-search="[^"]*user-a[^"]*"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders loc duoc NHIEU trang thai cung luc qua checkbox (status=pending&status=reversed)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrders(ledgerStore, 1); // bulk-1: confirmed
+    seedOrders(ledgerStore, 0);
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-p",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "don-pending",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-r",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "don-reversed",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      status: "pending",
+    });
+    ledgerStore.reverseCommissionEntry(ledgerStore.getEntryByOrderId("shopee", "don-reversed")!.id, "test");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders?status=pending&status=reversed`, { headers: { cookie: cookie! } })
+    ).text();
+
+    assert.match(html, /don-pending/);
+    assert.match(html, /don-reversed/);
+    assert.doesNotMatch(html, />bulk-1</);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders phan trang 50 don/trang, trang cuoi chi con phan du", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrders(ledgerStore, 55);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const page1 = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    const page2 = await (await fetch(`${baseUrl}/admin/orders?page=2`, { headers: { cookie: cookie! } })).text();
+
+    assert.equal(countOrderRows(page1), 50);
+    assert.equal(countOrderRows(page2), 5);
+    assert.match(page1, /href="[^"]*page=2[^"]*"/);
+    // Don moi nhat nam trang 1, don cu nhat nam trang cuoi - khong trung nhau.
+    assert.match(page1, />bulk-55</);
+    assert.doesNotMatch(page1, />bulk-1</);
+    assert.match(page2, />bulk-1</);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders link sang trang khac GIU NGUYEN bo loc dang ap dung", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrders(ledgerStore, 55, { status: "pending" });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders?merchant=shopee&status=pending&userId=user-a`, {
+        headers: { cookie: cookie! },
+      })
+    ).text();
+
+    const nextLink = html.match(/href="(\/admin\/orders\?[^"]*page=2[^"]*)"/)?.[1];
+    assert.ok(nextLink, "phai co link sang trang 2");
+    const decoded = nextLink.replace(/&amp;/g, "&");
+    assert.match(decoded, /merchant=shopee/);
+    assert.match(decoded, /status=pending/);
+    assert.match(decoded, /userId=user-a/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders tham so page rac/vuot gioi han khong lam vo trang", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrders(ledgerStore, 3);
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    for (const query of ["page=abc", "page=0", "page=-5", "page=999", "page=1.5"]) {
+      const res = await fetch(`${baseUrl}/admin/orders?${query}`, { headers: { cookie: cookie! } });
+      assert.equal(res.status, 200, `query=${query}`);
+      const html = await res.text();
+      assert.equal(countOrderRows(html), 3, `query=${query} phai ve trang hop le gan nhat`);
+    }
+  } finally {
+    cleanup();
+  }
+});

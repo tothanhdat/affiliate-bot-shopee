@@ -65,6 +65,41 @@ export interface UserLedgerSummary {
   paidTotal: number;
 }
 
+/** Bo loc dung chung boi listCommissionEntries() va countCommissionEntries() (trang /admin/orders). */
+export interface CommissionEntryFilters {
+  platform?: Platform;
+  userId?: string;
+  merchant?: MerchantId;
+  /** Nhieu trang thai cung luc (form admin dung checkbox). Rong/undefined = khong loc theo trang thai. */
+  statuses?: CommissionStatus[];
+}
+
+/**
+ * Dung menh de WHERE dung chung cho listCommissionEntries/countCommissionEntries - 2 ham nay BAT BUOC
+ * phai loc y het nhau, neu khong thi tong so trang se khong khop voi so don that su hien ra.
+ */
+function buildCommissionEntriesWhere(filters?: CommissionEntryFilters): { where: string; params: (string | number)[] } {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters?.platform) {
+    conditions.push("platform = ?");
+    params.push(filters.platform);
+  }
+  if (filters?.userId) {
+    conditions.push("user_id = ?");
+    params.push(filters.userId);
+  }
+  if (filters?.merchant) {
+    conditions.push("merchant = ?");
+    params.push(filters.merchant);
+  }
+  if (filters?.statuses && filters.statuses.length > 0) {
+    conditions.push(`status IN (${filters.statuses.map(() => "?").join(", ")})`);
+    params.push(...filters.statuses);
+  }
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
 export class LedgerStore {
   private readonly db: DatabaseSync;
 
@@ -751,37 +786,32 @@ export class LedgerStore {
     }));
   }
 
-  /** Danh sach don hang cho trang admin /admin/orders, loc tuy chon. Gioi han 300 ban ghi gan nhat. */
-  listCommissionEntries(filters?: {
-    platform?: Platform;
-    userId?: string;
-    merchant?: MerchantId;
-    status?: CommissionStatus;
-  }): CommissionEntry[] {
-    const conditions: string[] = [];
-    const params: (string | number)[] = [];
-    if (filters?.platform) {
-      conditions.push("platform = ?");
-      params.push(filters.platform);
-    }
-    if (filters?.userId) {
-      conditions.push("user_id = ?");
-      params.push(filters.userId);
-    }
-    if (filters?.merchant) {
-      conditions.push("merchant = ?");
-      params.push(filters.merchant);
-    }
-    if (filters?.status) {
-      conditions.push("status = ?");
-      params.push(filters.status);
-    }
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-    const rows = this.db
-      .prepare(`SELECT * FROM commission_entries ${where} ORDER BY created_at DESC LIMIT 300`)
-      .all(...params);
+  /**
+   * Danh sach don hang cho trang admin /admin/orders, loc tuy chon.
+   * Truyen paging (limit/offset) de lay 1 trang; khong truyen thi tra ve TAT CA ban ghi khop bo loc
+   * (2026-09-22: bo gioi han cung 300 ban ghi cu, vi trang web gio phan trang 50 don/trang nen
+   * khong con tai ca danh sach mot luc nua - xem countCommissionEntries de biet tong so trang).
+   */
+  listCommissionEntries(filters?: CommissionEntryFilters, paging?: { limit: number; offset: number }): CommissionEntry[] {
+    const { where, params } = buildCommissionEntriesWhere(filters);
+    // Tiebreak rowid DESC: created_at chi phan giai toi mili-giay nen nhieu don ghi cung luc
+    // (vd 1 lan import bao cao Shopee) co thu tu KHONG on dinh neu chi sap theo created_at -
+    // phan trang se bi trung/sot don giua cac trang. Giong listImportHistory().
+    const sql = `SELECT * FROM commission_entries ${where} ORDER BY created_at DESC, rowid DESC${
+      paging ? " LIMIT ? OFFSET ?" : ""
+    }`;
+    const allParams = paging ? [...params, paging.limit, paging.offset] : params;
+    const rows = this.db.prepare(sql).all(...allParams);
     return rows.map(rowToCommissionEntry);
+  }
+
+  /** Tong so don khop bo loc - dung de tinh so trang cho /admin/orders. */
+  countCommissionEntries(filters?: CommissionEntryFilters): number {
+    const { where, params } = buildCommissionEntriesWhere(filters);
+    const row = this.db.prepare(`SELECT COUNT(*) AS total FROM commission_entries ${where}`).get(...params) as {
+      total: number;
+    };
+    return row.total;
   }
 
   /** Dung boi trang xac nhan huy don tren admin. */
