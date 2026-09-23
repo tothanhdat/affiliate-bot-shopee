@@ -95,8 +95,18 @@ export const env = {
      * thi dat = 8 la dung. Luon kiem tra timezone thuc te cua moi truong dang deploy truoc khi doi so nay.
      */
     hour: optionalInt("ACCESSTRADE_SYNC_HOUR", 8),
-    /** So ngay nhin lai moi lan chay - du dai de bat duoc don duyet tre, khong chi "hom qua". */
-    lookbackDays: optionalInt("ACCESSTRADE_SYNC_LOOKBACK_DAYS", 30),
+    /**
+     * So ngay nhin lai moi lan chay - du dai de bat duoc don duyet tre, khong chi "hom qua". Cua so
+     * nay TRUOT theo "hom nay" (since = now - lookbackDays, xem syncAccesstradeTransactions) chu
+     * KHONG neo theo ngay tao don - don nao qua lookbackDays van chua duoc Accesstrade duyet se
+     * VINH VIEN roi khoi cua so quet va khong bao gio duoc cap nhat tu dong nua (bug that phat hien
+     * 2026-09-23: 2 don TikTok Shop mua 19/08 van "pending" trong bot dua da "Duoc duyet" tren
+     * Accesstrade tu truoc 18/09 - "Ngay duyet du kien" TikTok Shop hien thi ~30 ngay sau ngay mua,
+     * tuc la NAM SAT RIA cua so 30 ngay cu, khien phan lon don TikTok Shop co nguy co rot khoi cua so
+     * dung luc sap duoc duyet). Tang 30->60 de co bien do an toan. Fix tay cho don da bi ket: chay
+     * `npx tsx src/scripts/ledgerAdmin.ts sync-accesstrade --lookbackDays=<so lon hon>`.
+     */
+    lookbackDays: optionalInt("ACCESSTRADE_SYNC_LOOKBACK_DAYS", 60),
   },
 
   /** Chi dung khi AFFILIATE_PROVIDER=shopee_direct (xem ShopeeAffiliateProvider). */

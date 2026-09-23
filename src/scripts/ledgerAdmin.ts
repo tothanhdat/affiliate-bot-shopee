@@ -28,7 +28,7 @@
  *   list-pending-withdrawals
  *   record-accesstrade-payment --amount= [--note=]   (Accesstrade CHUYEN KHOAN THAT cho chu bot, doi chieu dong tien)
  *   reconciliation-summary                            (da nhan that vs da tra that cho user, canh bao neu am)
- *   sync-accesstrade [--lookbackDays=30]              (T2.1, 2026-08-20: goi that GET /v1/transactions, tu ghi nhan
+ *   sync-accesstrade [--lookbackDays=60]              (T2.1, 2026-08-20: goi that GET /v1/transactions, tu ghi nhan
  *     don da duoc Accesstrade duyet (status=1 + is_confirmed=1) va tu huy don bi tra ve rejected (status=2).
  *     CHI ap dung merchant di qua Accesstrade (TikTok Shop/Lazada) - Shopee KHONG xuat hien o day, van
  *     phai doi soat thu cong nhu cu. Server production tu chay lenh nay dinh ky (ACCESSTRADE_SYNC_ENABLED=true,
