@@ -9,6 +9,9 @@ import { RateLimiter } from "../../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../../core/providers/mockProvider.js";
 import { FaqService } from "../../../core/faq/faqService.js";
 import { faqAnswerKey } from "../../../core/settingsKeys.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const PRODUCT_URL = "https://shopee.vn/giay-cau-long-i.123.456";
 
@@ -68,15 +71,22 @@ function setup() {
         gridInfoMap: Object.fromEntries(ids.map((id) => [id, { name: groupNames.get(id) ?? "" }])),
       };
     },
+    // connect() gan listener roi start() ngay - fake vua du de khong no, test khong dung toi event.
+    listener: { on: () => {}, start: () => {}, stop: () => {} },
   } as unknown as API;
+
+  // connect() chi thu dang nhap bang session khi doc duoc file session - phai co file that.
+  const sessionDir = mkdtempSync(join(tmpdir(), "zalo-bot-test-"));
+  const sessionPath = join(sessionDir, "session.json");
+  writeFileSync(sessionPath, JSON.stringify({ imei: "x", cookie: "y", userAgent: "z" }), "utf-8");
 
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   const rateLimiter = new RateLimiter(100, 60_000);
   const resolver = new LinkResolverService(new MockAffiliateProvider(), logStore, rateLimiter);
   const bot = new ZaloGroupBot(resolver, {
-    sessionPath: "/tmp/khong-dung-toi.json",
-    qrPath: "/tmp/khong-dung-toi.png",
+    sessionPath,
+    qrPath: join(sessionDir, "qr.png"),
     maxLinksPerMessage: 3,
     promotionsLimit: 0,
     ledgerStore,
@@ -95,7 +105,23 @@ function setup() {
     faqRateLimiter.stop();
     logStore.close();
     ledgerStore.close();
+    rmSync(sessionDir, { recursive: true, force: true });
   }
+
+  /**
+   * Chay connect() that voi 1 Zalo gia - dong thoi vo hieu hoa delay giua cac lan retry de test
+   * khong phai cho that ~1 phut.
+   */
+  const connectWithZalo = async (fakeZalo: unknown): Promise<void> => {
+    const internals = bot as unknown as {
+      createZalo(): unknown;
+      delay(ms: number): Promise<void>;
+      connect(): Promise<void>;
+    };
+    internals.createZalo = () => fakeZalo;
+    internals.delay = async () => {};
+    await internals.connect();
+  };
 
   const syncKnownGroups = (): Promise<void> =>
     (bot as unknown as { syncKnownGroups(api: API): Promise<void> }).syncKnownGroups(api);
@@ -136,6 +162,7 @@ function setup() {
     },
     syncKnownGroups,
     handleGroupEvent,
+    connectWithZalo,
     friendRequests,
     reactions,
     timeline,
@@ -622,6 +649,75 @@ test("Zalo DM: gui link san pham -> KHONG tha tim (chi lam trong group)", async 
     await handleMessage(makeMessage(ThreadType.User, PRODUCT_URL));
 
     assert.equal(reactions.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2026-09-24 (su co that tren sanhoantien2): container vua boot, mang egress chua san sang ->
+// zalo.login(session) nem "fetch failed" -> code cu ket luan ngay "session het han" va rot xuong
+// dang nhap QR, ma QR thi khong ai quet duoc tren server -> bot im lang cho toi khi restart tay.
+// Session that ra van con tot nguyen (restart la vao lai duoc).
+// ---------------------------------------------------------------------------
+
+/** Zalo gia: login() that bai/thanh cong theo kich ban, dem so lan roi xuong loginQR(). */
+function makeFakeZalo(loginOutcomes: boolean[], api: API) {
+  const calls = { login: 0, loginQR: 0 };
+  return {
+    calls,
+    zalo: {
+      login: async () => {
+        const ok = loginOutcomes[calls.login] ?? false;
+        calls.login += 1;
+        if (!ok) throw new Error("fetch failed");
+        return api;
+      },
+      loginQR: async () => {
+        calls.loginQR += 1;
+        return api;
+      },
+    },
+  };
+}
+
+test("Zalo login: session loi mang vai lan dau roi vao duoc -> dung session, KHONG dung QR", async () => {
+  const { api, connectWithZalo, cleanup } = setup();
+  try {
+    const { zalo, calls } = makeFakeZalo([false, false, true], api);
+
+    await connectWithZalo(zalo);
+
+    assert.equal(calls.login, 3, "phai thu lai cho toi khi vao duoc");
+    assert.equal(calls.loginQR, 0, "khong duoc dong vao QR khi session van con tot");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo login: session that bai het so lan cho phep -> moi rot xuong QR", async () => {
+  const { api, connectWithZalo, cleanup } = setup();
+  try {
+    const { zalo, calls } = makeFakeZalo([], api);
+
+    await connectWithZalo(zalo);
+
+    assert.ok(calls.login > 1, "phai thu lai nhieu lan truoc khi bo cuoc");
+    assert.equal(calls.loginQR, 1, "het cach roi thi van phai cho setup lai bang QR");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo login: session vao duoc ngay lan dau -> chi goi login 1 lan", async () => {
+  const { api, connectWithZalo, cleanup } = setup();
+  try {
+    const { zalo, calls } = makeFakeZalo([true], api);
+
+    await connectWithZalo(zalo);
+
+    assert.equal(calls.login, 1);
+    assert.equal(calls.loginQR, 0);
   } finally {
     cleanup();
   }

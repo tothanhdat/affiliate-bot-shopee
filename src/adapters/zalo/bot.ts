@@ -7,6 +7,7 @@ import {
   type Message,
   type GroupEvent,
   type API,
+  type Credentials,
   type TAttachmentContent,
 } from "zca-js";
 import { AppError } from "../../core/errors.js";
@@ -64,6 +65,10 @@ export interface ZaloGroupBotOptions {
  */
 /** Cho lan thu dang nhap lai khi listener bao "closed" ma khong phai do stop() chu dich. */
 const RECONNECT_DELAY_MS = 10_000;
+/** So lan thu dang nhap bang session da luu truoc khi chiu thua va chuyen sang QR - xem loginWithSavedSession. */
+const SESSION_LOGIN_MAX_ATTEMPTS = 5;
+/** Delay lan retry dau, cac lan sau nhan doi: 4s + 8s + 16s + 32s = ~1 phut cho ca 5 lan thu. */
+const SESSION_LOGIN_RETRY_DELAY_MS = 4_000;
 
 export class ZaloGroupBot {
   private api: API | null = null;
@@ -92,20 +97,11 @@ export class ZaloGroupBot {
     // - rat pho bien vi tai khoan bot cung la tai khoan Zalo ca nhan chu bot dung hang ngay). Neu
     // khong bat co nay, DM chao mung group-join se im lang tuyet doi trong dung truong hop test
     // thuc te nhat (phat hien 2026-09-07 tu bao cao that cua user, xem handleGroupEvent).
-    const zalo = new Zalo({ selfListen: true });
+    const zalo = this.createZalo();
     const saved = loadZaloCredentials(this.options.sessionPath);
 
     if (saved) {
-      try {
-        this.api = await zalo.login(saved);
-        console.log("[zalo] Dang nhap thanh cong bang session da luu.");
-      } catch (err) {
-        console.warn(
-          "[zalo] Session da luu khong con hop le, can dang nhap lai qua QR:",
-          (err as Error).message
-        );
-        this.api = null;
-      }
+      this.api = await this.loginWithSavedSession(zalo, saved);
     }
 
     if (!this.api) {
@@ -181,6 +177,53 @@ export class ZaloGroupBot {
         this.scheduleReconnect();
       });
     }, RECONNECT_DELAY_MS);
+  }
+
+  /** Tach ra de test thay duoc bang Zalo gia - connect() khong tu new Zalo() nua. */
+  private createZalo(): Zalo {
+    return new Zalo({ selfListen: true });
+  }
+
+  /** Tach ra de test vo hieu hoa duoc, khoi phai cho that giua cac lan retry. */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Dang nhap bang session da luu, CO RETRY (2026-09-24, su co that tren sanhoantien2: bot nam im
+   * ~7 phut sau 1 lan deploy). Container vua boot thi mang egress chua san sang, zalo.login() nem
+   * "fetch failed" - loi TANG MANG, khong phai Zalo tu choi session. Code cu bat moi loi roi ket
+   * luan ngay "session het han" va rot xuong QR, ma QR thi khong ai quet duoc tren server: bot im
+   * lang vinh vien cho toi khi co nguoi restart tay, trong khi session that ra van con tot nguyen
+   * (restart mot cai la vao lai duoc ngay).
+   * CO CHU DICH khong phan loai loi mang vs session het han: phan loai theo text loi rat de sai,
+   * con retry mot session da chet that thi cung chi ton them ~1 phut roi van rot xuong QR nhu cu.
+   * Tra null = da het cach, caller tu quyet dinh chuyen sang QR.
+   */
+  private async loginWithSavedSession(zalo: Zalo, saved: Credentials): Promise<API | null> {
+    for (let attempt = 1; attempt <= SESSION_LOGIN_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const api = await zalo.login(saved);
+        console.log("[zalo] Dang nhap thanh cong bang session da luu.");
+        return api;
+      } catch (err) {
+        const detail = (err as Error).message;
+        if (attempt === SESSION_LOGIN_MAX_ATTEMPTS) {
+          console.warn(
+            `[zalo] Dang nhap bang session that bai ${attempt}/${SESSION_LOGIN_MAX_ATTEMPTS} lan, bo cuoc - can dang nhap lai qua QR:`,
+            detail
+          );
+          return null;
+        }
+        const waitMs = SESSION_LOGIN_RETRY_DELAY_MS * 2 ** (attempt - 1);
+        console.warn(
+          `[zalo] Dang nhap bang session that bai (lan ${attempt}/${SESSION_LOGIN_MAX_ATTEMPTS}), thu lai sau ${waitMs / 1000}s:`,
+          detail
+        );
+        await this.delay(waitMs);
+      }
+    }
+    return null;
   }
 
   private async loginWithQr(zalo: Zalo): Promise<API> {
