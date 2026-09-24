@@ -10,6 +10,8 @@ import {
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
+  FRIEND_REQUEST_MESSAGE_DEFAULT,
   DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
@@ -79,6 +81,21 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
     helpText: "Không có placeholder động.",
+  },
+  {
+    key: SETTINGS_KEYS.groupJoinBlockedReplyTemplate,
+    label: "Tin nhắn chào bù trong group khi user chặn tin nhắn từ người lạ (Zalo)",
+    type: "textarea",
+    default: GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
+    helpText:
+      "Dùng khi DM chào mừng bị Zalo từ chối vì user bật 'không nhận tin nhắn từ người lạ' — bot nhắn vào group và gửi luôn lời mời kết bạn. Placeholder hợp lệ: {{name}} (tên người mới, bot tự tag @, đừng tự thêm dấu @).",
+  },
+  {
+    key: SETTINGS_KEYS.friendRequestMessage,
+    label: "Lời nhắn kèm lời mời kết bạn (Zalo)",
+    type: "textarea",
+    default: FRIEND_REQUEST_MESSAGE_DEFAULT,
+    helpText: "Không có placeholder động. Nên viết ngắn — Zalo giới hạn độ dài lời nhắn kết bạn.",
   },
   {
     key: SETTINGS_KEYS.successReplyTemplate,

@@ -7,12 +7,14 @@ import {
   formatWithdrawalRequestedReply,
   formatWithdrawalPaidReply,
   formatGroupJoinWelcomeReply,
+  formatGroupJoinBlockedGroupReply,
   formatDashboardLinkReply,
   formatOrdersConfirmedReply,
   formatGroupReportUpdatedReply,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
   DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
@@ -182,5 +184,21 @@ test("formatGroupReportUpdatedReply: template default co {{date}} va huong dan '
   const body = formatGroupReportUpdatedReply(GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT, "10/09");
   assert.ok(body.includes("10/09"));
   assert.ok(body.includes("xemhh"), "phai chi cho user cach lay lai link dashboard");
+  assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
+});
+
+// 2026-09-24 (yeu cau truc tiep cua user): user bat "khong nhan tin nhan tu nguoi la" thi DM chao
+// mung luc join group bi Zalo tu choi - bot chao bu trong group, tag ten nguoi moi.
+test("formatGroupJoinBlockedGroupReply: dien ten nguoi moi vao {{name}}", () => {
+  const body = formatGroupJoinBlockedGroupReply("Chào {{name}} nha, em la bot.", "@Tô Diễm");
+  assert.equal(body, "Chào @Tô Diễm nha, em la bot.");
+});
+
+test("formatGroupJoinBlockedGroupReply: template default co {{name}} va link So tay", () => {
+  assert.ok(GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT.includes("{{name}}"), "default phai co cho chen ten");
+  const body = formatGroupJoinBlockedGroupReply(GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT, "@Tô Diễm");
+  assert.ok(body.includes("@Tô Diễm"));
+  assert.ok(body.includes("kết bạn"), "phai xin user chap nhan loi moi ket ban");
+  assert.ok(body.includes("docs.google.com"), "phai kem link So tay hoan tien");
   assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
 });

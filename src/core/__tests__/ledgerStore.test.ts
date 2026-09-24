@@ -832,6 +832,22 @@ test("LedgerStore: getGroupReportUpdatedTemplate tra default khi admin chua tuy 
   store.close();
 });
 
+test("LedgerStore: getGroupJoinBlockedReplyTemplate tra default khi admin chua tuy chinh", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getGroupJoinBlockedReplyTemplate("mặc định"), "mặc định");
+  store.setSetting("group_join_blocked_reply_template", "Chào {{name}} nha");
+  assert.equal(store.getGroupJoinBlockedReplyTemplate("mặc định"), "Chào {{name}} nha");
+  store.close();
+});
+
+test("LedgerStore: getFriendRequestMessage tra default khi admin chua tuy chinh", () => {
+  const store = new LedgerStore(":memory:");
+  assert.equal(store.getFriendRequestMessage("mặc định"), "mặc định");
+  store.setSetting("friend_request_message", "Kết bạn với em nha");
+  assert.equal(store.getFriendRequestMessage("mặc định"), "Kết bạn với em nha");
+  store.close();
+});
+
 test("faq mute: chua khoa thi isFaqThreadMuted tra false", () => {
   const store = new LedgerStore(":memory:");
   try {

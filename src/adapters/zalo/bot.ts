@@ -3,6 +3,7 @@ import {
   LoginQRCallbackEventType,
   ThreadType,
   GroupEventType,
+  Reactions,
   type Message,
   type GroupEvent,
   type API,
@@ -21,6 +22,8 @@ import {
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
+  GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
+  FRIEND_REQUEST_MESSAGE_DEFAULT,
   DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   formatSuccessReply,
   formatErrorReply,
@@ -29,6 +32,7 @@ import {
   formatDashboardLinkReply,
   formatWelcomeReply,
   formatGroupJoinWelcomeReply,
+  formatGroupJoinBlockedGroupReply,
 } from "../shared/replyText.js";
 
 export interface ZaloGroupBotOptions {
@@ -304,6 +308,11 @@ export class ZaloGroupBot {
       return;
     }
 
+    // 2026-09-24 (yeu cau truc tiep cua user): tha tim NGAY khi nhan ra co link san pham, TRUOC
+    // khi goi API tao link - de user thay bot da nhan duoc tin trong luc cho. Co chu dich tha ca
+    // khi link hoa ra khong tao duoc (vd Shopee Video): user da chap nhan doi lay phan hoi tuc thi.
+    await this.reactHeart(api, message);
+
     // 2026-08-20 (yeu cau truc tiep cua user): DM chao mung LAN DAU user gui link san pham trong
     // group - best-effort, khong duoc lam gian doan viec xu ly link nghiep vu chinh du DM that bai
     // (vd user chan tin nhan tu nguoi la).
@@ -433,6 +442,24 @@ export class ZaloGroupBot {
     await this.sendTrackedDirect(api, message.threadId, answer);
   }
 
+  /**
+   * Tha tim len chinh tin nhan user vua gui trong group (2026-09-24). Reaction ve qua listener
+   * event "reaction" rieng, KHONG phai event "message", nen tim bot tu tha khong bi handleSelfMessage
+   * hieu nham la admin go tay roi tu khoa FAQ (xem CLAUDE.md cua thu muc nay).
+   * Best-effort: that bai chi log, tuyet doi khong chan viec tra link.
+   */
+  private async reactHeart(api: API, message: Message): Promise<void> {
+    try {
+      await api.addReaction(Reactions.HEART, {
+        data: { msgId: message.data.msgId, cliMsgId: message.data.cliMsgId },
+        threadId: message.threadId,
+        type: message.type,
+      });
+    } catch (err) {
+      console.warn(`[zalo] tha tim tin nhan ${message.data.msgId} that bai:`, (err as Error).message);
+    }
+  }
+
   private async sendGroupReply(api: API, message: Message, body: string): Promise<void> {
     const dName = message.data.dName?.trim();
     if (!dName) {
@@ -494,7 +521,7 @@ export class ZaloGroupBot {
     const ownUid = api.getOwnId();
     for (const member of event.data.updateMembers) {
       if (member.id === ownUid) continue;
-      await this.maybeSendGroupJoinWelcome(api, member.id);
+      await this.maybeSendGroupJoinWelcome(api, member.id, member.dName ?? "", event.threadId);
     }
   }
 
@@ -505,7 +532,12 @@ export class ZaloGroupBot {
    * user (bang RIENG voi welcome_messages, xem ledgerStore.ts). Best-effort giong maybeSendWelcomeMessage
    * o tren: loi gui (vd user chan tin nhan tu nguoi la) chi log canh bao, khong throw len tren.
    */
-  private async maybeSendGroupJoinWelcome(api: API, userId: string): Promise<void> {
+  private async maybeSendGroupJoinWelcome(
+    api: API,
+    userId: string,
+    displayName: string,
+    groupId: string
+  ): Promise<void> {
     const isFirstTime = this.options.ledgerStore.tryClaimGroupJoinMessage("zalo", userId);
     if (!isFirstTime) return;
 
@@ -513,7 +545,58 @@ export class ZaloGroupBot {
       const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
       await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template));
     } catch (err) {
-      console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai:`, (err as Error).message);
+      const detail = (err as Error).message;
+      // code cua ZaloApiError (neu co) - hien chua biet ma so that cua loi "chan nguoi la" nen van
+      // phai nhan dien bang text, log them code de sau nay siet lai theo ma so cho chac.
+      const code = (err as { code?: number | null }).code ?? "";
+      console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai (code=${code}):`, detail);
+      if (isStrangerBlockedError(detail)) {
+        await this.greetBlockedUserInGroup(api, userId, displayName, groupId);
+      }
+    }
+  }
+
+  /**
+   * User bat "khong nhan tin nhan tu nguoi la" nen DM chao mung o tren bi Zalo tu choi (2026-09-24,
+   * yeu cau truc tiep cua user sau su co that - rat nhieu nguoi bat cai dat nay). Chao bu ngay
+   * trong group kem tag @ten, va gui LUON loi moi ket ban: ket ban la cach duy nhat de ve sau bot
+   * DM bao don hang cho ho duoc.
+   * CHI chay khi dung loi bi chan - loi khac (mang/timeout) giu nguyen hanh vi cu la im lang, vi
+   * noi "ban dang chan tin nhan cua em" khi that ra la loi mang thi con te hon khong noi gi.
+   * Ca 2 buoc deu best-effort, loi chi log - day la nhanh phu, khong duoc lam hong gi them.
+   */
+  private async greetBlockedUserInGroup(
+    api: API,
+    userId: string,
+    displayName: string,
+    groupId: string
+  ): Promise<void> {
+    try {
+      const friendRequestMessage = this.options.ledgerStore.getFriendRequestMessage(FRIEND_REQUEST_MESSAGE_DEFAULT);
+      await api.sendFriendRequest(friendRequestMessage, userId);
+    } catch (err) {
+      console.warn(`[zalo] gui loi moi ket ban toi ${userId} that bai:`, (err as Error).message);
+    }
+
+    try {
+      const template = this.options.ledgerStore.getGroupJoinBlockedReplyTemplate(
+        GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT
+      );
+      const name = displayName.trim();
+      // Khong co dName (hiem) -> gui van ban thuan, khong tag: tranh hien thi "@" tro tren.
+      if (name === "") {
+        await api.sendMessage(formatGroupJoinBlockedGroupReply(template, "bạn"), groupId, ThreadType.Group);
+        return;
+      }
+      const mentionLabel = `@${name}`;
+      const body = formatGroupJoinBlockedGroupReply(template, mentionLabel);
+      await api.sendMessage(
+        { msg: body, mentions: [{ pos: body.indexOf(mentionLabel), uid: userId, len: mentionLabel.length }] },
+        groupId,
+        ThreadType.Group
+      );
+    } catch (err) {
+      console.warn(`[zalo] chao bu trong group ${groupId} cho ${userId} that bai:`, (err as Error).message);
     }
   }
 
@@ -561,6 +644,18 @@ function extractMessageText(content: string | TAttachmentContent | Record<string
     return (content as TAttachmentContent).href;
   }
   return null;
+}
+
+/**
+ * Zalo tu choi DM vi nguoi nhan bat "khong nhan tin nhan tu nguoi la" - thong bao that quan sat
+ * duoc (2026-09-24): "Bạn chưa thể gửi tin nhắn đến người này vì người này chặn không nhận tin
+ * nhắn từ người lạ.". ZaloApiError co mang theo `code` so nhung chua biet ma so cua rieng loi nay
+ * (log cu chi in message), nen tam nhan dien bang text - doi lay duoc ma so that thi siet lai.
+ * Chi bat dung cum "nguoi la": cum "chan" khong thoi con trung ca case user chan han bot, luc do
+ * gui loi moi ket ban chi la lam phien.
+ */
+function isStrangerBlockedError(message: string): boolean {
+  return message.normalize("NFC").toLowerCase().includes("người lạ");
 }
 
 export function createZaloGroupBot(resolver: LinkResolverService, options: ZaloGroupBotOptions): ZaloGroupBot {

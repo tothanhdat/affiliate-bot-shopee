@@ -1138,6 +1138,14 @@ export class LedgerStore {
     return this.getSetting(SETTINGS_KEYS.groupJoinWelcomeTemplate, defaultValue);
   }
 
+  getGroupJoinBlockedReplyTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.groupJoinBlockedReplyTemplate, defaultValue);
+  }
+
+  getFriendRequestMessage(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.friendRequestMessage, defaultValue);
+  }
+
   getDashboardLinkReplyTemplate(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.dashboardLinkReplyTemplate, defaultValue);
   }

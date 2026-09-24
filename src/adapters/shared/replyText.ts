@@ -195,6 +195,34 @@ export function formatGroupJoinWelcomeReply(template: string): string {
 }
 
 /**
+ * Chao bu NGAY TRONG GROUP khi DM chao mung o tren bi Zalo tu choi vi user bat "khong nhan tin nhan
+ * tu nguoi la" (2026-09-24, yeu cau truc tiep cua user sau su co that: user "To Diem" join group
+ * nhung khong nhan duoc DM nao - rat nhieu nguoi bat cai dat nay nen day khong phai edge case).
+ * Khac moi template khac: {{name}} duoc thay bang chuoi mention "@ten" o zalo/bot.ts de tag bam
+ * duoc, nen TUYET DOI khong tu them "@" vao template - se thanh "@@ten" va lech offset mention.
+ * Noi dung phai xin user chap nhan loi moi ket ban: do la cach DUY NHAT de bot DM bao don hang
+ * cho ho ve sau (bot gui loi moi ket ban ngay cung luc voi tin nay, xem maybeSendGroupJoinWelcome).
+ */
+/** Default cho setting "group_join_blocked_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT =
+  `Chào {{name}} nha,\n` +
+  `Em là Bot săn sale hoàn tiền. Do bạn đang cài đặt không nhận tin nhắn từ người lạ nên em không nhắn tin được nên chào luôn ở đây.\n` +
+  `Do việc chăm sóc khách hàng em cần nhắn tin để thông báo khi có đơn hàng thành công nên bạn vui lòng chấp nhận lời mời kết bạn với em nha.\n` +
+  `Bạn có thể xem qua Sổ tay hoàn tiền ở đây có ghi rõ chính sách và cách sử dụng nhen: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk`;
+
+export function formatGroupJoinBlockedGroupReply(template: string, name: string): string {
+  return renderTemplate(template, { name });
+}
+
+/**
+ * Loi nhan kem LOI MOI KET BAN gui cung luc voi tin chao trong group o tren. Tach rieng khoi
+ * template kia vi Zalo gioi han do dai loi nhan ket ban - khong nhet ca doan dai vao day duoc.
+ */
+/** Default cho setting "friend_request_message" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+export const FRIEND_REQUEST_MESSAGE_DEFAULT =
+  `Em là Bot săn sale hoàn tiền nè, kết bạn để em báo đơn hoàn tiền cho mình nha!`;
+
+/**
  * Tin nhan bot gui VAO GROUP sau khi admin import xong file bao cao Shopee tren /admin/record-orders
  * (2026-09-11, yeu cau truc tiep cua user) - khac moi template khac trong file nay o cho day la tin
  * gui cho CA GROUP, khong phai DM cho 1 user, nen tuyet doi khong chua so lieu ca nhan (so tien,

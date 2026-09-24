@@ -10,6 +10,10 @@ export const SETTINGS_KEYS = {
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",
   groupJoinWelcomeTemplate: "group_join_welcome_template",
+  /** Chao bu trong group khi DM chao mung bi user chan (2026-09-24) - xem zalo/bot.ts. */
+  groupJoinBlockedReplyTemplate: "group_join_blocked_reply_template",
+  /** Loi nhan kem loi moi ket ban gui cung luc voi tin chao bu o tren (2026-09-24). */
+  friendRequestMessage: "friend_request_message",
   dashboardLinkReplyTemplate: "dashboard_link_reply_template",
   ordersConfirmedTemplate: "orders_confirmed_template",
   withdrawalRequestedTemplate: "withdrawal_requested_template",
