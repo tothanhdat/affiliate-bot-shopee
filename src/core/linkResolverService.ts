@@ -1,16 +1,11 @@
-import { randomBytes } from "node:crypto";
 import type { AffiliateProvider, PromotionItem } from "./affiliateProvider.js";
 import { AppError, RateLimitedError } from "./errors.js";
 import { LogStore } from "./logStore.js";
 import { parseProductLink } from "./linkValidator.js";
 import type { MerchantId } from "./merchants.js";
 import { RateLimiter } from "./rateLimiter.js";
-import type { Platform, ResolveLinkRequest, ResolveLinkResult } from "./types.js";
-
-function generateSubId(platform: Platform, userId: string): string {
-  const rand = randomBytes(3).toString("hex");
-  return `${platform}-${userId}-${Date.now().toString(36)}-${rand}`;
-}
+import { generateSubId } from "./subId.js";
+import type { ResolveLinkRequest, ResolveLinkResult } from "./types.js";
 
 function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
