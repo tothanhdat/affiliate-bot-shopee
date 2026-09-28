@@ -63,14 +63,28 @@ test("formatWelcomeReply: template tuy chinh chi con placeholder duoc thay dung"
   assert.equal(result, "Ban nhan 80%, bot giu 20%, nguong rut 50.000đ, dashboard https://example.com/d/xyz.");
 });
 
-test("formatGroupJoinWelcomeReply: template mac dinh co link so tay", () => {
-  const result = formatGroupJoinWelcomeReply(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
+test("formatGroupJoinWelcomeReply: template mac dinh tro toi So tay tu host, khong con Google Docs", () => {
+  const result = formatGroupJoinWelcomeReply(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT, "https://bot.example.com/so-tay");
   assert.match(result, /Chào mừng vào nhà tụi mình nha/);
-  assert.match(result, /docs\.google\.com\/document\/d\/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk/);
+  assert.ok(result.includes("https://bot.example.com/so-tay"), "phai kem link So tay cua chinh instance nay");
+  assert.ok(!result.includes("docs.google.com"), "khong duoc con tro ve ban Google Docs cu");
+  assert.ok(!result.includes("{{"), "khong duoc con placeholder chua thay the");
 });
 
-test("formatGroupJoinWelcomeReply: tra nguyen template, khong xu ly placeholder", () => {
-  const result = formatGroupJoinWelcomeReply("Chao ban moi!");
+test("formatGroupJoinWelcomeReply: thay {{handbookUrl}} theo domain cua tung instance", () => {
+  const template = "Chao ban moi! So tay: {{handbookUrl}}";
+  assert.equal(
+    formatGroupJoinWelcomeReply(template, "https://a.example.com/so-tay"),
+    "Chao ban moi! So tay: https://a.example.com/so-tay"
+  );
+  assert.equal(
+    formatGroupJoinWelcomeReply(template, "https://b.example.com/so-tay"),
+    "Chao ban moi! So tay: https://b.example.com/so-tay"
+  );
+});
+
+test("formatGroupJoinWelcomeReply: template admin tu soan khong co placeholder thi giu nguyen", () => {
+  const result = formatGroupJoinWelcomeReply("Chao ban moi!", "https://bot.example.com/so-tay");
   assert.equal(result, "Chao ban moi!");
 });
 
@@ -190,15 +204,33 @@ test("formatGroupReportUpdatedReply: template default co {{date}} va huong dan '
 // 2026-09-24 (yeu cau truc tiep cua user): user bat "khong nhan tin nhan tu nguoi la" thi DM chao
 // mung luc join group bi Zalo tu choi - bot chao bu trong group, tag ten nguoi moi.
 test("formatGroupJoinBlockedGroupReply: dien ten nguoi moi vao {{name}}", () => {
-  const body = formatGroupJoinBlockedGroupReply("Chào {{name}} nha, em la bot.", "@Tô Diễm");
+  const body = formatGroupJoinBlockedGroupReply(
+    "Chào {{name}} nha, em la bot.",
+    "@Tô Diễm",
+    "https://bot.example.com/so-tay"
+  );
   assert.equal(body, "Chào @Tô Diễm nha, em la bot.");
+});
+
+test("formatGroupJoinBlockedGroupReply: thay ca {{name}} lan {{handbookUrl}}", () => {
+  const body = formatGroupJoinBlockedGroupReply(
+    "Chào {{name}}, xem {{handbookUrl}} nha.",
+    "@Tô Diễm",
+    "https://bot.example.com/so-tay"
+  );
+  assert.equal(body, "Chào @Tô Diễm, xem https://bot.example.com/so-tay nha.");
 });
 
 test("formatGroupJoinBlockedGroupReply: template default co {{name}} va link So tay", () => {
   assert.ok(GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT.includes("{{name}}"), "default phai co cho chen ten");
-  const body = formatGroupJoinBlockedGroupReply(GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT, "@Tô Diễm");
+  const body = formatGroupJoinBlockedGroupReply(
+    GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
+    "@Tô Diễm",
+    "https://bot.example.com/so-tay"
+  );
   assert.ok(body.includes("@Tô Diễm"));
   assert.ok(body.includes("kết bạn"), "phai xin user chap nhan loi moi ket ban");
-  assert.ok(body.includes("docs.google.com"), "phai kem link So tay hoan tien");
+  assert.ok(body.includes("https://bot.example.com/so-tay"), "phai kem link So tay hoan tien");
+  assert.ok(!body.includes("docs.google.com"), "khong duoc con tro ve ban Google Docs cu");
   assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
 });

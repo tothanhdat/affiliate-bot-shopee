@@ -178,8 +178,7 @@ export function formatWelcomeReply(
  * truc tiep cua user - truoc do phai doi den khi user tu gui link san pham dau tien moi co
  * formatWelcomeReply o tren, khien user moi khong biet cach dung phai nhan tin rieng hoi admin).
  * Ngan gon, tone GenZ, chi kem link So tay hoan tien - KHONG kem dashboard (dashboard chi co y
- * nghia sau khi user da co hoat dong, xem formatWelcomeReply). Khong co placeholder dong nao nen
- * khong can di qua renderTemplate, tra thang template. Xung "em" (sua 2026-09-07 cung ngay, dong
+ * nghia sau khi user da co hoat dong, xem formatWelcomeReply). Xung "em" (sua 2026-09-07 cung ngay, dong
  * bo voi WELCOME_MESSAGE_TEMPLATE_DEFAULT) - rieng "nha tụi mình" giu nguyen vi la so nhieu (chao
  * vao khong gian chung), khong phai bot tu xung ngoi thu nhat so it.
  */
@@ -187,11 +186,11 @@ export function formatWelcomeReply(
 export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
   `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee/TikTok Shop vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
-  `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk\n\n` +
+  `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: {{handbookUrl}}\n\n` +
   `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
 
-export function formatGroupJoinWelcomeReply(template: string): string {
-  return template;
+export function formatGroupJoinWelcomeReply(template: string, handbookUrl: string): string {
+  return renderTemplate(template, { handbookUrl });
 }
 
 /**
@@ -208,10 +207,10 @@ export const GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT =
   `Chào {{name}} nha,\n` +
   `Em là Bot săn sale hoàn tiền. Do bạn đang cài đặt không nhận tin nhắn từ người lạ nên em không nhắn tin được nên chào luôn ở đây.\n` +
   `Do việc chăm sóc khách hàng em cần nhắn tin để thông báo khi có đơn hàng thành công nên bạn vui lòng chấp nhận lời mời kết bạn với em nha.\n` +
-  `Bạn có thể xem qua Sổ tay hoàn tiền ở đây có ghi rõ chính sách và cách sử dụng nhen: https://docs.google.com/document/d/1-Dc7L6fHg350j3sVlpMPxZLgObspwov1gTY9eM4ajSk`;
+  `Bạn có thể xem qua Sổ tay hoàn tiền ở đây có ghi rõ chính sách và cách sử dụng nhen: {{handbookUrl}}`;
 
-export function formatGroupJoinBlockedGroupReply(template: string, name: string): string {
-  return renderTemplate(template, { name });
+export function formatGroupJoinBlockedGroupReply(template: string, name: string, handbookUrl: string): string {
+  return renderTemplate(template, { name, handbookUrl });
 }
 
 /**

@@ -80,7 +80,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     label: "Tin nhắn chào mừng khi vừa được thêm vào group (Zalo DM, gửi 1 lần/user)",
     type: "textarea",
     default: GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
-    helpText: "Không có placeholder động.",
+    helpText: "Placeholder hợp lệ: {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay).",
   },
   {
     key: SETTINGS_KEYS.groupJoinBlockedReplyTemplate,
@@ -88,7 +88,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
     helpText:
-      "Dùng khi DM chào mừng bị Zalo từ chối vì user bật 'không nhận tin nhắn từ người lạ' — bot nhắn vào group và gửi luôn lời mời kết bạn. Placeholder hợp lệ: {{name}} (tên người mới, bot tự tag @, đừng tự thêm dấu @).",
+      "Dùng khi DM chào mừng bị Zalo từ chối vì user bật 'không nhận tin nhắn từ người lạ' — bot nhắn vào group và gửi luôn lời mời kết bạn. Placeholder hợp lệ: {{name}} (tên người mới, bot tự tag @, đừng tự thêm dấu @), {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay).",
   },
   {
     key: SETTINGS_KEYS.friendRequestMessage,

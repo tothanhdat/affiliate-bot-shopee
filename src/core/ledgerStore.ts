@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
+import { computeCommissionBreakdown } from "./commissionMath.js";
 import {
   DuplicateConversionError,
   EntryAlreadyWithdrawnError,
@@ -306,11 +307,12 @@ export class LedgerStore {
     const createdAt = new Date().toISOString();
     const status: CommissionStatus = input.status ?? "confirmed";
 
-    const taxAmount = Math.round((input.commissionAmount * input.taxPercent) / 100);
-    const afterTaxOnly = input.commissionAmount - taxAmount;
-    const platformFeeAmount = Math.round((afterTaxOnly * input.platformFeePercent) / 100);
-    const afterTaxAmount = afterTaxOnly - platformFeeAmount;
-    const userShareAmount = Math.round((afterTaxAmount * input.userSharePercent) / 100);
+    const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
+      commissionAmount: input.commissionAmount,
+      taxPercent: input.taxPercent,
+      platformFeePercent: input.platformFeePercent,
+      userSharePercent: input.userSharePercent,
+    });
 
     try {
       this.db
@@ -402,11 +404,12 @@ export class LedgerStore {
       );
     }
 
-    const taxAmount = Math.round((input.commissionAmount * input.taxPercent) / 100);
-    const afterTaxOnly = input.commissionAmount - taxAmount;
-    const platformFeeAmount = Math.round((afterTaxOnly * input.platformFeePercent) / 100);
-    const afterTaxAmount = afterTaxOnly - platformFeeAmount;
-    const userShareAmount = Math.round((afterTaxAmount * input.userSharePercent) / 100);
+    const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
+      commissionAmount: input.commissionAmount,
+      taxPercent: input.taxPercent,
+      platformFeePercent: input.platformFeePercent,
+      userSharePercent: input.userSharePercent,
+    });
     const productName = input.productName ?? existing.productName;
 
     this.db
@@ -473,11 +476,12 @@ export class LedgerStore {
       );
     }
 
-    const taxAmount = Math.round((input.commissionAmount * input.taxPercent) / 100);
-    const afterTaxOnly = input.commissionAmount - taxAmount;
-    const platformFeeAmount = Math.round((afterTaxOnly * input.platformFeePercent) / 100);
-    const afterTaxAmount = afterTaxOnly - platformFeeAmount;
-    const userShareAmount = Math.round((afterTaxAmount * input.userSharePercent) / 100);
+    const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
+      commissionAmount: input.commissionAmount,
+      taxPercent: input.taxPercent,
+      platformFeePercent: input.platformFeePercent,
+      userSharePercent: input.userSharePercent,
+    });
     const productName = input.productName ?? existing.productName;
 
     this.db

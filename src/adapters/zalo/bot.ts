@@ -527,6 +527,16 @@ export class ZaloGroupBot {
    * welcome_messages) khong lam gi ca, khong gui lai. Best-effort: loi gui (vd user chan tin nhan
    * tu nguoi la) chi log canh bao, KHONG throw len tren de khong lam gian doan xu ly link chinh.
    */
+  /**
+   * URL trang So tay hoan tien cua CHINH instance nay (/so-tay, xem src/api/handbookHtml.ts) - suy
+   * ra tu dashboardBaseUrl chu khong hardcode, vi moi chu bot la 1 deployment rieng voi domain
+   * rieng (xem muc "Trien khai nhieu chu bot" trong CLAUDE.md). Truoc 2026-09-28 cho nay la 1 link
+   * Google Docs co dinh dung chung cho moi instance.
+   */
+  private handbookUrl(): string {
+    return `${this.options.dashboardBaseUrl}/so-tay`;
+  }
+
   private async maybeSendWelcomeMessage(api: API, userId: string): Promise<void> {
     const isFirstTime = this.options.ledgerStore.tryClaimWelcomeMessage("zalo", userId);
     if (!isFirstTime) return;
@@ -586,7 +596,7 @@ export class ZaloGroupBot {
 
     try {
       const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
-      await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template));
+      await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template, this.handbookUrl()));
     } catch (err) {
       const detail = (err as Error).message;
       // code cua ZaloApiError (neu co) - hien chua biet ma so that cua loi "chan nguoi la" nen van
@@ -628,11 +638,15 @@ export class ZaloGroupBot {
       const name = displayName.trim();
       // Khong co dName (hiem) -> gui van ban thuan, khong tag: tranh hien thi "@" tro tren.
       if (name === "") {
-        await api.sendMessage(formatGroupJoinBlockedGroupReply(template, "bạn"), groupId, ThreadType.Group);
+        await api.sendMessage(
+          formatGroupJoinBlockedGroupReply(template, "bạn", this.handbookUrl()),
+          groupId,
+          ThreadType.Group
+        );
         return;
       }
       const mentionLabel = `@${name}`;
-      const body = formatGroupJoinBlockedGroupReply(template, mentionLabel);
+      const body = formatGroupJoinBlockedGroupReply(template, mentionLabel, this.handbookUrl());
       await api.sendMessage(
         { msg: body, mentions: [{ pos: body.indexOf(mentionLabel), uid: userId, len: mentionLabel.length }] },
         groupId,

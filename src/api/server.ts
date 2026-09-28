@@ -15,6 +15,7 @@ import {
   type OrdersFilters,
 } from "./adminHtml.js";
 import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js";
+import { renderHandbookPage } from "./handbookHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
 import { AppError } from "../core/errors.js";
 import type { LedgerStore } from "../core/ledgerStore.js";
@@ -227,6 +228,21 @@ export function createServer(
   });
 
   // T2.3: dashboard ca nhan xem theo token. Token sai/khong ton tai -> 404 HTML, khong lo user khac.
+  // So tay hoan tien - trang CONG KHAI (khong requireAdminAuth, khong can token): bot gui link
+  // tran nay vao group Zalo cho user moi, ho chua tung dang nhap gi ca. Thay cho file Google Docs
+  // cu (2026-09-28) - moi con so tren trang doc LIVE tai day tu settings/env, nen admin doi % o
+  // /admin/settings la trang doi ngay, khong can sua tai lieu tay va khong can restart.
+  app.get("/so-tay", (_req: Request, res: Response) => {
+    res.type("html").send(
+      renderHandbookPage({
+        userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+        taxPercent: orderConfig.taxPercent,
+        platformFeePercent: orderConfig.platformFeePercent,
+        withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+      })
+    );
+  });
+
   app.get("/d/:token", (req: Request, res: Response) => {
     const identity = ledgerStore.getUserByToken(req.params.token);
     if (!identity) {
