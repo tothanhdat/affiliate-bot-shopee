@@ -1,6 +1,7 @@
 export type ErrorCode =
   | "INVALID_LINK"
   | "UNSUPPORTED_MERCHANT_LINK"
+  | "RETIRED_MERCHANT_LINK"
   | "MERCHANT_NOT_CONFIGURED"
   | "AFFILIATE_API_ERROR"
   | "AFFILIATE_API_TIMEOUT"
@@ -43,6 +44,20 @@ export class UnsupportedMerchantLinkError extends AppError {
     super(
       "UNSUPPORTED_MERCHANT_LINK",
       "Sàn này em chưa hỗ trợ được á, để em báo admin cập nhật thêm nha 🙏"
+    );
+  }
+}
+
+/**
+ * Link cua san TUNG duoc ho tro nhung da ngung (TikTok Shop, Lazada - 2026-09-29).
+ * KHONG dung lai UnsupportedMerchantLinkError: message cua no hua "de em bao admin cap nhat
+ * them", ma 2 san nay se khong bao gio duoc them lai - hua sai con te hon khong noi gi.
+ */
+export class RetiredMerchantLinkError extends AppError {
+  constructor() {
+    super(
+      "RETIRED_MERCHANT_LINK",
+      "Hiện em chỉ hỗ trợ Shopee thôi ạ 🛒 Bạn gửi link Shopee giúp em nha!"
     );
   }
 }

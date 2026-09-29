@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extractProductUrls, parseProductLink } from "../linkValidator.js";
-import { InvalidLinkError, NotAProductLinkError, UnsupportedMerchantLinkError } from "../errors.js";
+import {
+  InvalidLinkError,
+  NotAProductLinkError,
+  RetiredMerchantLinkError,
+  UnsupportedMerchantLinkError,
+} from "../errors.js";
 
 test("extractProductUrls: tim link Shopee trong tin nhan lan text khac", () => {
   const text =
@@ -46,11 +51,11 @@ test("parseProductLink: link Shopee khong co pattern id van hop le, id la null",
   assert.equal(result.canonicalUrl, "https://shopee.vn/some-shop-page");
 });
 
-test("parseProductLink: nhan dien merchant Lazada, chua co pattern tach id nen shopId/itemId la null", async () => {
-  const result = await parseProductLink("https://www.lazada.vn/products/ao-thun-i333.html");
-  assert.equal(result.merchant, "lazada");
-  assert.equal(result.shopId, null);
-  assert.equal(result.itemId, null);
+test("parseProductLink: nem RetiredMerchantLinkError voi link Lazada (san da ngung)", async () => {
+  await assert.rejects(
+    () => parseProductLink("https://www.lazada.vn/products/ao-thun-i333.html"),
+    RetiredMerchantLinkError
+  );
 });
 
 test("parseProductLink: nem UnsupportedMerchantLinkError voi domain khong duoc ho tro", async () => {
@@ -63,27 +68,37 @@ test("extractProductUrls: nhan dien link TikTok Shop (tiktok.com)", () => {
   assert.equal(urls.length, 1);
 });
 
-test("parseProductLink: tach dung product_id tu dang /view/product/{id} cua TikTok Shop", async () => {
-  const result = await parseProductLink("https://www.tiktok.com/view/product/1733294149780801469?region=VN&local=en");
-  assert.equal(result.merchant, "tiktokshop");
-  assert.equal(result.shopId, null);
-  assert.equal(result.itemId, "1733294149780801469");
-});
-
-test("parseProductLink: tach dung product_id tu dang moi /{locale}/pdp/{id} cua TikTok Shop (shop.tiktok.com)", async () => {
-  const result = await parseProductLink(
-    "https://shop.tiktok.com/vn/pdp/1732783707240498274?_d=ebja7ibeka4jl4&scene=pdp"
+test("parseProductLink: nem RetiredMerchantLinkError voi moi link TikTok Shop (san da ngung)", async () => {
+  await assert.rejects(
+    () => parseProductLink("https://www.tiktok.com/view/product/1733294149780801469?region=VN&local=en"),
+    RetiredMerchantLinkError
   );
-  assert.equal(result.merchant, "tiktokshop");
-  assert.equal(result.shopId, null);
-  assert.equal(result.itemId, "1732783707240498274");
+  await assert.rejects(
+    () => parseProductLink("https://shop.tiktok.com/vn/pdp/1732783707240498274?_d=ebja7ibeka4jl4&scene=pdp"),
+    RetiredMerchantLinkError
+  );
 });
 
-test("parseProductLink: nem NotAProductLinkError voi link tiktok.com khong phai san pham (vd video thuong)", async () => {
+test("parseProductLink: link video TikTok thuong cung bao la san da ngung, khong doi ra loi khac", async () => {
   await assert.rejects(
     () => parseProductLink("https://www.tiktok.com/@someuser/video/1234567890123456789"),
-    NotAProductLinkError
+    RetiredMerchantLinkError
   );
+});
+
+// Neu extractProductUrls KHONG nhat link cua san da ngung ra khoi tin nhan thi adapter se coi
+// nhu tin nhan khong co link -> Zalo DM im lang tuyet doi -> user tuong bot hong.
+test("extractProductUrls: VAN nhat link cua san da ngung de con tra loi duoc", () => {
+  assert.deepEqual(extractProductUrls("mua cai nay https://vt.tiktok.com/ZSABC123/ nhe"), [
+    "https://vt.tiktok.com/ZSABC123/",
+  ]);
+  assert.deepEqual(extractProductUrls("https://www.lazada.vn/products/x-i1.html"), [
+    "https://www.lazada.vn/products/x-i1.html",
+  ]);
+});
+
+test("parseProductLink: short link cua san da ngung bi tu choi NGAY, khong goi mang", async () => {
+  await assert.rejects(() => parseProductLink("https://vt.tiktok.com/ZSABC123/"), RetiredMerchantLinkError);
 });
 
 test("parseProductLink: nem InvalidLinkError voi chuoi khong phai URL", async () => {
