@@ -44,6 +44,20 @@ test("parseProductLink: tach dung shop_id/item_id tu dang /product/{shop}/{item}
   assert.equal(result.itemId, "222");
 });
 
+/**
+ * Dang /opaanlp/{shop}/{item} la dang app Shopee sinh ra khi bam "Chia se" - chiem 58/90 link
+ * that trong production (do lai 2026-09-29), nhieu hon han dang /product/ (30). Truoc khi nhan
+ * dang duoc, extractIds tra null nen origin_link giu nguyen query string ~700 ky tu cua link goc
+ * (credential_token, gads_t_sig, uls_trackid va ca tham so affiliate cua NGUOI KHAC).
+ */
+test("parseProductLink: tach dung shop_id/item_id tu dang /opaanlp/{shop}/{item} cua app Shopee", async () => {
+  const result = await parseProductLink(
+    "https://shopee.vn/opaanlp/438333144/10002287009?__mobile__=1&credential_token=3fbCuxANWvpk&uls_trackid=56o2868i00kj&utm_medium=affiliates&utm_source=an_17326960274"
+  );
+  assert.equal(result.shopId, "438333144");
+  assert.equal(result.itemId, "10002287009");
+});
+
 test("parseProductLink: link Shopee khong co pattern id van hop le, id la null", async () => {
   const result = await parseProductLink("https://shopee.vn/some-shop-page");
   assert.equal(result.shopId, null);

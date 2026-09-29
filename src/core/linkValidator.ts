@@ -72,8 +72,15 @@ function extractIds(merchant: MerchantConfig, url: URL): { shopId: string | null
     if (iPatternMatch) {
       return { shopId: iPatternMatch[1], itemId: iPatternMatch[2] };
     }
-    // Dang: /product/{shopId}/{itemId}
-    const productPatternMatch = url.pathname.match(/\/product\/(\d+)\/(\d+)/);
+    // Dang: /product/{shopId}/{itemId} va /opaanlp/{shopId}/{itemId}.
+    // "opaanlp" la segment CO DINH (khong phai slug ten san pham) app Shopee dung khi nguoi dung
+    // bam "Chia se" - do tren du lieu that 2026-09-29: 58/90 link trong short_links la dang nay,
+    // /product/ chi 30. Chi khop dung 2 segment DA XAC MINH, KHONG dung /{bat-ky}/{id}/{id} (xem
+    // "khong doan mo regex" trong CLAUDE.md) vi trang shop/category cung co dang 2 so tuong tu.
+    // Tach duoc id la quan trong hon metadata: ShopeeAffiliateProvider dung chung de rut origin_link
+    // ve shopee.vn/product/{shop}/{item}, bo query string ~700 ky tu cua link goc (credential_token,
+    // gads_t_sig, uls_trackid, va ca tham so affiliate cua NGUOI KHAC neu link duoc chia se lai).
+    const productPatternMatch = url.pathname.match(/\/(?:product|opaanlp)\/(\d+)\/(\d+)/);
     if (productPatternMatch) {
       return { shopId: productPatternMatch[1], itemId: productPatternMatch[2] };
     }
