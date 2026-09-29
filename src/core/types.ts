@@ -145,7 +145,7 @@ export interface ReconciliationSummary {
 /**
  * Lich su cac lan "ghi nhan don hang" tren web /admin/record-orders (2026-08-23) - "csv" la import
  * bao cao goc Shopee (co the nhieu don/lan), "single" la form "Ghi 1 don le" (luon dung 1 don moi,
- * khong bao gio co statusTransitions vi recordOrderFromAccesstrade chi INSERT, khong UPDATE entry
+ * khong bao gio co statusTransitions vi recordSingleOrder chi INSERT, khong UPDATE entry
  * co san). Xem LedgerStore.recordImportHistory()/listImportHistory().
  */
 export type ImportActionType = "csv" | "single";

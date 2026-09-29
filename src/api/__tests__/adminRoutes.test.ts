@@ -77,7 +77,7 @@ function fakeProofFormData(filename = "proof.png"): FormData {
   return formData;
 }
 
-/** Gia lap 1 request thanh cong da qua bot - can co truoc de recordOrderFromAccesstrade tra duoc subId. */
+/** Gia lap 1 request thanh cong da qua bot - can co truoc de recordSingleOrder tra duoc subId. */
 function seedRequestLog(logStore: LogStore, subId: string, overrides: Partial<{ platform: "telegram" | "zalo"; userId: string }> = {}) {
   logStore.record({
     platform: overrides.platform ?? "telegram",

@@ -23,7 +23,7 @@ import type { LinkResolverService } from "../core/linkResolverService.js";
 import type { LogStore } from "../core/logStore.js";
 import { MERCHANTS, type MerchantId } from "../core/merchants.js";
 import {
-  recordOrderFromAccesstrade,
+  recordSingleOrder,
   type RecordOrderConfig,
   type RecordableOrderStatus,
 } from "../core/orderIngest.js";
@@ -621,7 +621,7 @@ export function createServer(
         ...orderConfig,
         userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
       };
-      const entry = recordOrderFromAccesstrade(logStore, ledgerStore, requestOrderConfig, {
+      const entry = recordSingleOrder(logStore, ledgerStore, requestOrderConfig, {
         subId,
         orderId,
         productName,
@@ -649,7 +649,7 @@ export function createServer(
           console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
         });
       }
-      // Lich su (2026-08-23): form "Ghi 1 don le" luon tao 1 entry MOI (recordOrderFromAccesstrade
+      // Lich su (2026-08-23): form "Ghi 1 don le" luon tao 1 entry MOI (recordSingleOrder
       // chi INSERT, khong bao gio UPDATE entry co san) - vi vay khong bao gio co statusTransitions.
       ledgerStore.recordImportHistory({ actionType: "single", newOrderIds: [entry.orderId], statusTransitions: [] });
 
