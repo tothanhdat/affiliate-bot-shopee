@@ -17,7 +17,7 @@ import type { StatusTransition } from "./types.js";
  *   "Hoan thanh"        -> confirmed (Kha dung)
  *   "Dang cho xu ly"    -> pending (Cho xac nhan)
  *   "Khong hop le"      -> reversed (Huy - CHI ap dung neu entry dang la "pending", giong dung rule
- *                          hien tai cua accesstradeSync.ts/admin web, khong tu huy don da "confirmed")
+ *                          hien tai cua admin web, khong tu huy don da "confirmed")
  *   gia tri khac 3 gia tri tren -> SKIP + canh bao (khong doan mo, chua xac minh Shopee co dung
  *   the them trang thai nao khac hay khong)
  *
@@ -50,7 +50,7 @@ export interface ShopeeReportImportResult {
   /** Gia tri cot "Trang thai san pham lien ket" khong khop 1 trong 3 gia tri da biet. */
   skippedUnknownStatus: number;
   errors: string[];
-  /** Dung de gui thong bao gop cho user (giong accesstradeSync.ts). CHI cho don MOI "confirmed". */
+  /** Dung de gui thong bao gop cho user. CHI cho don MOI "confirmed". */
   confirmedByUser: UserOrderSummary[];
   /** Ma don duoc ghi MOI trong lan nay (confirmed hoac pending) - dung cho lich su hien tren /admin/record-orders. */
   newOrderIds: string[];
@@ -150,8 +150,7 @@ interface MergedOrder {
 type MergeOutcome = { kind: "unknown-status"; rawStatus: string } | { kind: "ok"; order: MergedOrder };
 
 /**
- * Gop N dong cung 1 "ID don hang" thanh 1 don (cung y tuong voi groupTransactionsByOrderId cua
- * accesstradeSync.ts). Quy tac chot voi user 2026-09-10:
+ * Gop N dong cung 1 "ID don hang" thanh 1 don. Quy tac chot voi user 2026-09-10:
  *  - Bat ky dong nao co trang thai LA -> bo qua CA DON (khong ghi mot phan, khong doan mo).
  *  - subId cua don = subId khac rong DAU TIEN. Dong nao co subId rong/khac bi LOAI khoi tong kem
  *    canh bao - giu dung quyet dinh 2026-08-23: hoa hong cua dong khong di qua link nao cua bot

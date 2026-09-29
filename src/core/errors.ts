@@ -1,6 +1,7 @@
 export type ErrorCode =
   | "INVALID_LINK"
   | "UNSUPPORTED_MERCHANT_LINK"
+  | "RETIRED_MERCHANT_LINK"
   | "MERCHANT_NOT_CONFIGURED"
   | "AFFILIATE_API_ERROR"
   | "AFFILIATE_API_TIMEOUT"
@@ -14,7 +15,6 @@ export type ErrorCode =
   | "PRODUCT_NOT_AFFILIATE_ELIGIBLE"
   | "ENTRY_ALREADY_WITHDRAWN"
   | "IMPLAUSIBLE_COMMISSION_AMOUNT"
-  | "INVALID_PAYMENT_AMOUNT"
   | "MISSING_WITHDRAWAL_PROOF"
   | "MISSING_BANK_INFO"
   | "ENTRY_NOT_PENDING";
@@ -44,6 +44,20 @@ export class UnsupportedMerchantLinkError extends AppError {
     super(
       "UNSUPPORTED_MERCHANT_LINK",
       "Sàn này em chưa hỗ trợ được á, để em báo admin cập nhật thêm nha 🙏"
+    );
+  }
+}
+
+/**
+ * Link cua san TUNG duoc ho tro nhung da ngung (TikTok Shop, Lazada - 2026-09-29).
+ * KHONG dung lai UnsupportedMerchantLinkError: message cua no hua "de em bao admin cap nhat
+ * them", ma 2 san nay se khong bao gio duoc them lai - hua sai con te hon khong noi gi.
+ */
+export class RetiredMerchantLinkError extends AppError {
+  constructor() {
+    super(
+      "RETIRED_MERCHANT_LINK",
+      "Hiện em chỉ hỗ trợ Shopee thôi ạ 🛒 Bạn gửi link Shopee giúp em nha!"
     );
   }
 }
@@ -133,9 +147,9 @@ export class NotAProductLinkError extends AppError {
 
 /**
  * San pham co that va link hop le, nhung nguoi ban CHUA bat tiep thi lien ket cho no (hoa hong 0%,
- * khong co trong Affiliate Center) - Accesstrade tu choi tao link. Tach rieng khoi AffiliateApiError
- * vi day KHONG phai su co he thong: thu lai bao nhieu lan cung cho ket qua y het, nen tuyet doi
- * khong duoc noi voi user "vui long thu lai sau" (phat hien 2026-09-02, xem accesstradeProvider.ts).
+ * khong co trong Affiliate Center) - nguon affiliate tu choi tao link. Tach rieng khoi
+ * AffiliateApiError vi day KHONG phai su co he thong: thu lai bao nhieu lan cung cho ket qua y het,
+ * nen tuyet doi khong duoc noi voi user "vui long thu lai sau" (phat hien 2026-09-02).
  */
 export class ProductNotAffiliateEligibleError extends AppError {
   constructor(detail: string) {
@@ -158,7 +172,7 @@ export class EntryNotPendingError extends AppError {
 
 /**
  * Rieng cho reverseCommissionEntry() khi goi voi allowNonPending=true (chi CLI reverse-entry dung -
- * loi thoat duy nhat cho Shopee, khong co giai doan "pending" nhu duong Accesstrade tu dong) - van
+ * loi thoat duy nhat cho Shopee ghi tay, vi duong nay khong co giai doan "pending") - van
  * chan neu entry da gan vao 1 yeu cau rut tien, vi tien co the da chuyen that.
  */
 export class EntryAlreadyWithdrawnError extends AppError {
@@ -167,12 +181,6 @@ export class EntryAlreadyWithdrawnError extends AppError {
       "ENTRY_ALREADY_WITHDRAWN",
       "Đơn hàng này đã nằm trong 1 yêu cầu rút tiền (đang chờ hoặc đã trả), không thể huỷ trực tiếp qua đây."
     );
-  }
-}
-
-export class InvalidPaymentAmountError extends AppError {
-  constructor() {
-    super("INVALID_PAYMENT_AMOUNT", "Số tiền phải lớn hơn 0.");
   }
 }
 

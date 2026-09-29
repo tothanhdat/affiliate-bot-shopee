@@ -47,7 +47,7 @@ export const FAQ_TOPICS: FaqTopic[] = [
       "User hoi hoan tien la gi, bot hoat dong the nao, tai sao lai duoc tien, co that khong, co mat phi khong",
     defaultAnswer:
       `Dạ để em giải thích nhanh nha 😊\n\n` +
-      `Khi bạn mua hàng qua link em gửi, sàn (Shopee/TikTok Shop) trả cho em một khoản hoa hồng tiếp thị. ` +
+      `Khi bạn mua hàng qua link em gửi, Shopee trả cho em một khoản hoa hồng tiếp thị. ` +
       `Em chia lại cho bạn {{userSharePercent}}% khoản đó, em giữ {{botSharePercent}}% để vận hành.\n\n` +
       `Các bước rất đơn giản:\n` +
       `1️⃣ Bạn gửi link sản phẩm cho em\n` +
@@ -109,7 +109,7 @@ export const FAQ_TOPICS: FaqTopic[] = [
       "User hoi dung bot the nao, gui link o dau, gui gi cho bot, copy link kieu nao, dung trong group hay nhan rieng",
     defaultAnswer:
       `Đơn giản lắm ạ 🥳\n\n` +
-      `Bạn copy link sản phẩm trên Shopee hoặc TikTok Shop rồi gửi cho em — gửi trong group hoặc nhắn riêng cho em đều được nha (nhắn riêng nếu bạn không muốn người khác thấy mình mua gì 😉).\n\n` +
+      `Bạn copy link sản phẩm trên Shopee rồi gửi cho em — gửi trong group hoặc nhắn riêng cho em đều được nha (nhắn riêng nếu bạn không muốn người khác thấy mình mua gì 😉).\n\n` +
       `Em sẽ gửi lại link đã gắn mã hoàn tiền. Bạn mở đúng link đó và đặt hàng luôn trong phiên là xong!\n\n` +
       `⚠️ Quan trọng: đừng xem video/livestream xen giữa lúc mở link và lúc đặt hàng, đơn sẽ không được ghi nhận đó.`,
   },
@@ -129,21 +129,10 @@ export const FAQ_TOPICS: FaqTopic[] = [
     id: "san_ho_tro",
     label: "Sàn được hỗ trợ",
     description:
-      "User hoi san nao duoc ho tro, co Lazada/Tiki/Dien May Xanh khong, mua o dau thi duoc tinh tien",
+      "User hoi san nao duoc ho tro, co TikTok Shop/Lazada/Tiki/Dien May Xanh khong, mua o dau thi duoc tinh tien",
     defaultAnswer:
-      `Hiện em hỗ trợ **Shopee** và **TikTok Shop** ạ 🛒\n\n` +
-      `Các sàn khác em chưa hỗ trợ, bạn gửi link vào em sẽ báo không nhận diện được nha.\n\n` +
+      `Hiện em chỉ hỗ trợ **Shopee** thôi ạ 🛒\n\n` +
+      `Các sàn khác em chưa hỗ trợ, bạn gửi link vào em sẽ báo lại ngay nha.\n\n` +
       `Có thêm sàn mới em sẽ báo trong group liền!`,
-  },
-  {
-    id: "lich_cap_nhat_trang_thai",
-    label: "Lịch cập nhật trạng thái đơn hàng",
-    description:
-      "User hoi trang thai don hang duoc cap nhat khi nao, bao lau thi cap nhat, lich cap nhat don hang, tai sao don van chua doi trang thai",
-    defaultAnswer:
-      `Lịch cập nhật trạng thái đơn hàng khác nhau theo từng sàn nha 📅\n\n` +
-      `• **Shopee**: cập nhật mỗi ngày.\n` +
-      `• **TikTok Shop**: cập nhật vào thứ 2 hằng tuần.\n\n` +
-      `Nên nếu đơn TikTok Shop của bạn chưa thấy đổi trạng thái ngay thì đừng lo, cứ đợi tới đợt cập nhật thứ 2 gần nhất là có nha!`,
   },
 ];

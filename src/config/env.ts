@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { MERCHANTS, type MerchantId } from "../core/merchants.js";
 
 function optional(name: string, fallback: string): string {
   const value = process.env[name];
@@ -22,93 +21,25 @@ function optionalBool(name: string, fallback: boolean): boolean {
   return raw.toLowerCase() === "true";
 }
 
-// "shopee_direct" (them 2026-08-19, xem spec_bot_ap_ma_shopee.md muc 5/T3.1): Shopee dung
-// ShopeeAffiliateProvider (co che an_redir truc tiep, khong qua Accesstrade), Lazada/TikTok Shop
-// van qua AccesstradeProvider nhu cu - xem CompositeAffiliateProvider trong providers/index.ts.
-export type AffiliateProviderName = "mock" | "accesstrade" | "shopee_direct";
+// "shopee_direct" (them 2026-08-19): Shopee dung ShopeeAffiliateProvider (co che an_redir truc
+// tiep, khong can Open API). Tu 2026-09-29 day la nguon affiliate DUY NHAT - lua chon
+// "accesstrade" da bi go cung luc voi viec bo TikTok Shop/Lazada khoi scope.
+export type AffiliateProviderName = "mock" | "shopee_direct";
 
 function resolveAffiliateProvider(): AffiliateProviderName {
   const raw = optional("AFFILIATE_PROVIDER", "mock").toLowerCase();
-  if (raw !== "mock" && raw !== "accesstrade" && raw !== "shopee_direct") {
+  if (raw !== "mock" && raw !== "shopee_direct") {
     throw new Error(
-      `AFFILIATE_PROVIDER phai la "mock", "accesstrade" hoac "shopee_direct", nhan duoc: "${raw}"`
+      `AFFILIATE_PROVIDER phai la "mock" hoac "shopee_direct", nhan duoc: "${raw}"`
     );
   }
   return raw;
-}
-
-/**
- * "shopee" -> "SHOPEE", dung de suy ra ten bien moi truong ACCESSTRADE_CAMPAIGN_ID_SHOPEE, v.v.
- * promotionsMerchant mac dinh xac minh that (2026-07-31): shopee, lazada_kol.
- */
-const DEFAULT_PROMOTIONS_MERCHANT: Record<MerchantId, string> = {
-  shopee: "shopee",
-  lazada: "lazada_kol",
-  // Rong vi chua xac minh TikTok Shop co dung chung endpoint /v1/offers_informations
-  // khong (endpoint tao link cua no da khac hoan toan Shopee/Lazada, xem accesstradeProvider.ts) -
-  // khong doan mo slug. getPromotions cho merchant nay se bao loi ro rang neu bi goi ma chua co config.
-  tiktokshop: "",
-};
-
-function resolveAccesstradeMerchants(): Record<MerchantId, { campaignId: string; promotionsMerchant: string }> {
-  const result = {} as Record<MerchantId, { campaignId: string; promotionsMerchant: string }>;
-  for (const merchant of MERCHANTS) {
-    const suffix = merchant.id.toUpperCase();
-    result[merchant.id] = {
-      campaignId: optional(`ACCESSTRADE_CAMPAIGN_ID_${suffix}`, ""),
-      promotionsMerchant: optional(
-        `ACCESSTRADE_PROMOTIONS_MERCHANT_${suffix}`,
-        DEFAULT_PROMOTIONS_MERCHANT[merchant.id]
-      ),
-    };
-  }
-  return result;
 }
 
 export const env = {
   port: optionalInt("PORT", 3000),
 
   affiliateProvider: resolveAffiliateProvider(),
-  accesstrade: {
-    apiKey: optional("ACCESSTRADE_API_KEY", ""),
-    apiBase: optional("ACCESSTRADE_API_BASE", "https://api.accesstrade.vn"),
-    endpointPath: optional("ACCESSTRADE_ENDPOINT_PATH", "/v1/product_link/create"),
-    timeoutMs: optionalInt("ACCESSTRADE_TIMEOUT_MS", 4000),
-    promotionsCacheTtlMs: optionalInt("ACCESSTRADE_PROMOTIONS_CACHE_TTL_MS", 10 * 60 * 1000),
-    /** campaign_id + promotions merchant slug rieng cho tung merchant (Shopee, Lazada...) */
-    merchants: resolveAccesstradeMerchants(),
-  },
-
-  /**
-   * T2.1 tu dong hoa (2026-08-20, xem rui-ro-can-giai-quyet.md muc 8): job dinh ky goi
-   * GET /v1/transactions cua Accesstrade. CHI ap dung cho merchant di qua Accesstrade (TikTok
-   * Shop/Lazada) - Shopee di thang qua an_redir (ShopeeAffiliateProvider), KHONG qua Accesstrade,
-   * nen se KHONG BAO GIO xuat hien trong ket qua sync nay, van can doi soat thu cong rieng.
-   */
-  accesstradeSync: {
-    enabled: optionalBool("ACCESSTRADE_SYNC_ENABLED", false),
-    /**
-     * Gio chay hang ngay (0-23) - LA GIO CUA PROCESS DANG CHAY (new Date().setHours() dung timezone
-     * he dieu hanh/container, KHONG PHAI gio Viet Nam co dinh). Railway container mac dinh chay UTC
-     * (da xac nhan qua SSH, 2026-08-20) - muon chay 8h sang gio VN (UTC+7) thi phai dat bien nay = 1
-     * tren Railway (1h UTC = 8h sang ICT), KHONG PHAI 8. Chay local (may dev da o timezone ICT san)
-     * thi dat = 8 la dung. Luon kiem tra timezone thuc te cua moi truong dang deploy truoc khi doi so nay.
-     */
-    hour: optionalInt("ACCESSTRADE_SYNC_HOUR", 8),
-    /**
-     * So ngay nhin lai moi lan chay - du dai de bat duoc don duyet tre, khong chi "hom qua". Cua so
-     * nay TRUOT theo "hom nay" (since = now - lookbackDays, xem syncAccesstradeTransactions) chu
-     * KHONG neo theo ngay tao don - don nao qua lookbackDays van chua duoc Accesstrade duyet se
-     * VINH VIEN roi khoi cua so quet va khong bao gio duoc cap nhat tu dong nua (bug that phat hien
-     * 2026-09-23: 2 don TikTok Shop mua 19/08 van "pending" trong bot dua da "Duoc duyet" tren
-     * Accesstrade tu truoc 18/09 - "Ngay duyet du kien" TikTok Shop hien thi ~30 ngay sau ngay mua,
-     * tuc la NAM SAT RIA cua so 30 ngay cu, khien phan lon don TikTok Shop co nguy co rot khoi cua so
-     * dung luc sap duoc duyet). Tang 30->60 de co bien do an toan. Fix tay cho don da bi ket: chay
-     * `npx tsx src/scripts/ledgerAdmin.ts sync-accesstrade --lookbackDays=<so lon hon>`.
-     */
-    lookbackDays: optionalInt("ACCESSTRADE_SYNC_LOOKBACK_DAYS", 60),
-  },
-
   /** Chi dung khi AFFILIATE_PROVIDER=shopee_direct (xem ShopeeAffiliateProvider). */
   shopeeDirect: {
     /** affiliate_id co dinh cua tai khoan, lay tai affiliate.shopee.vn/account_setting. */
@@ -211,20 +142,9 @@ export const env = {
 export function assertAffiliateProviderConfigured(): void {
   if (env.affiliateProvider === "mock") return;
 
-  // Ca "accesstrade" va "shopee_direct" deu can Accesstrade API key - shopee_direct van dung
-  // AccesstradeProvider cho Lazada/TikTok Shop qua CompositeAffiliateProvider (providers/index.ts).
-  if (env.accesstrade.apiKey === "") {
-    throw new Error(
-      `AFFILIATE_PROVIDER=${env.affiliateProvider} nhung thieu ACCESSTRADE_API_KEY. ` +
-        "Hoan tat T0.1 (dang ky Accesstrade, lay API key) roi dien vao .env, " +
-        "hoac dat AFFILIATE_PROVIDER=mock de chay thu."
-    );
-  }
-  // Khong bat buoc campaign_id cho TAT CA merchant o day - moi merchant duoc kiem tra
-  // rieng luc xu ly request that (MerchantNotConfiguredError), vi co the ban chi dung
-  // 1 vai merchant (vi du chi Shopee) chu chua dang ky Lazada.
-
-  if (env.affiliateProvider === "shopee_direct" && env.shopeeDirect.affiliateId === "") {
+  // Tu 2026-09-29 khong con phu thuoc ACCESSTRADE_API_KEY - Shopee di thang qua an_redir,
+  // chi can affiliate_id co dinh cua tai khoan.
+  if (env.shopeeDirect.affiliateId === "") {
     throw new Error(
       "AFFILIATE_PROVIDER=shopee_direct nhung thieu SHOPEE_AFFILIATE_ID. " +
         "Lay affiliate_id tai affiliate.shopee.vn/account_setting roi dien vao .env."

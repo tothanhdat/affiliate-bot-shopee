@@ -9,8 +9,6 @@ import { LinkResolverService } from "./core/linkResolverService.js";
 import { RateLimiter } from "./core/rateLimiter.js";
 import { createAffiliateProvider } from "./core/providers/index.js";
 import type { Platform } from "./core/types.js";
-import { syncAccesstradeTransactions } from "./core/accesstradeSync.js";
-import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "./adapters/shared/replyText.js";
 import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
 import { FaqService } from "./core/faq/faqService.js";
 import { createFaqClassifier } from "./core/faq/providers/index.js";
@@ -25,7 +23,7 @@ const resolver = new LinkResolverService(affiliateProvider, logStore, rateLimite
 if (env.affiliateProvider === "mock") {
   console.warn(
     "[warn] AFFILIATE_PROVIDER=mock - dang chay voi affiliate link gia. " +
-      "Hoan tat T0.1 va dat ACCESSTRADE_API_KEY + AFFILIATE_PROVIDER=accesstrade de dung that."
+      "Dat SHOPEE_AFFILIATE_ID + AFFILIATE_PROVIDER=shopee_direct de dung that."
   );
 }
 
@@ -177,82 +175,6 @@ if (!env.zaloGroup.enabled) {
   );
 }
 
-// T2.1 tu dong hoa (2026-08-20, rui-ro-can-giai-quyet.md muc 8): dinh ky goi Accesstrade
-// /v1/transactions thay cho ledgerAdmin.ts record-conversions-csv thu cong hang tuan. CHI ap dung
-// cho merchant di qua Accesstrade (TikTok Shop/Lazada) - Shopee KHONG BAO GIO xuat hien o day (di
-// thang qua an_redir, khong qua Accesstrade), van can doi soat thu cong rieng nhu cu.
-let accesstradeSyncTimer: NodeJS.Timeout | null = null;
-
-async function runAccesstradeSync(): Promise<void> {
-  console.log("[accesstrade-sync] Bat dau dong bo dinh ky...");
-  try {
-    const result = await syncAccesstradeTransactions(logStore, ledgerStore, {
-      apiKey: env.accesstrade.apiKey,
-      apiBase: env.accesstrade.apiBase,
-      timeoutMs: env.accesstrade.timeoutMs,
-      lookbackDays: env.accesstradeSync.lookbackDays,
-      recordOrderConfig: {
-        taxPercent: env.commission.taxPercent,
-        platformFeePercent: env.commission.platformFeePercent,
-        userSharePercent: ledgerStore.getUserSharePercent(env.commission.userSharePercent),
-        maxCommissionRatioPercent: env.commission.maxRatioPercent,
-      },
-    });
-    console.log(
-      `[accesstrade-sync] Xong: quet ${result.transactionsScanned} giao dich, ${result.confirmedNew} don moi, ` +
-        `${result.confirmedDuplicate} da co san, ${result.pendingNew} dang cho duyet, ${result.pendingUpdated} pending duoc cap nhat so lieu, ` +
-        `${result.reversedCount} bi huy, ${result.skippedNoSubId + result.skippedSubIdNotFound} bo qua, ${result.errors.length} loi.`
-    );
-    if (result.errors.length > 0) {
-      console.warn("[accesstrade-sync] Chi tiet loi:", result.errors);
-    }
-
-    for (const summary of result.confirmedByUser) {
-      const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
-      const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-      notifyUser(
-        summary.platform,
-        summary.userId,
-        formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
-      ).catch((err) => console.warn("[accesstrade-sync] gui thong bao user that bai:", err));
-    }
-
-    if (result.confirmedNew > 0 || result.pendingNew > 0 || result.reversedCount > 0 || result.errors.length > 0) {
-      notifyAdmin(
-        `🔄 Đối soát Accesstrade tự động: ${result.confirmedNew} đơn mới, ${result.pendingNew} đơn chờ duyệt, ${result.reversedCount} đơn bị huỷ` +
-          (result.errors.length > 0 ? `, ${result.errors.length} lỗi (xem log server)` : "")
-      ).catch((err) => console.warn("[accesstrade-sync] gui thong bao admin that bai:", err));
-    }
-  } catch (err) {
-    console.error("[accesstrade-sync] Loi khi dong bo:", err);
-  }
-}
-
-function msUntilNextHour(hour: number): number {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(hour, 0, 0, 0);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 1);
-  }
-  return next.getTime() - now.getTime();
-}
-
-if (env.accesstradeSync.enabled) {
-  if (env.accesstrade.apiKey === "") {
-    console.warn("[warn] ACCESSTRADE_SYNC_ENABLED=true nhung thieu ACCESSTRADE_API_KEY - bo qua dong bo tu dong.");
-  } else {
-    const delayMs = msUntilNextHour(env.accesstradeSync.hour);
-    console.log(
-      `[accesstrade-sync] Da bat - lan chay dau tien sau ${Math.round(delayMs / 60000)} phut (${env.accesstradeSync.hour}h moi ngay).`
-    );
-    accesstradeSyncTimer = setTimeout(() => {
-      void runAccesstradeSync();
-      accesstradeSyncTimer = setInterval(() => void runAccesstradeSync(), 24 * 60 * 60 * 1000);
-    }, delayMs);
-  }
-}
-
 async function shutdown(signal: string): Promise<void> {
   console.log(`\n[shutdown] Nhan ${signal}, dang dong service...`);
   telegramBot?.stop(signal);
@@ -260,7 +182,6 @@ async function shutdown(signal: string): Promise<void> {
   rateLimiter.stop();
   adminLoginRateLimiter.stop();
   faqRateLimiter.stop();
-  if (accesstradeSyncTimer) clearTimeout(accesstradeSyncTimer);
   await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   logStore.close();
   ledgerStore.close();

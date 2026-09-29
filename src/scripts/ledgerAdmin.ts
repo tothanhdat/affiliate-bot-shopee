@@ -1,56 +1,35 @@
 /**
- * Script quan tri ledger chay tay tren server. Tu 2026-08-20: T2.1 (dong bo don hang/hoa hong tu
- * dong qua subId) DA XONG cho TikTok Shop/Lazada (xem accesstradeSync.ts, sync-accesstrade duoi day)
- * - script nay KHONG con la "giai phap tam" cho 2 merchant do nua, ma la cong cu du phong/sua tay
- * (reverse-entry, mark-withdrawal-paid, ghi truoc lich chay...). Rieng Shopee thi day VAN LA duong
- * DUY NHAT va VINH VIEN (Shopee di thang qua an_redir, khong qua Accesstrade nen khong the tu dong
- * hoa qua sync-accesstrade - xem chi tiet trong accesstradeSync.ts) - dung khi ban tu mat thay 1 don
- * hang Shopee that thanh cong tren dashboard affiliate.shopee.vn va muon ghi vao ledger de user nhan
- * duoc phan hoa hong cua ho (COMMISSION_USER_SHARE_PERCENT trong .env).
+ * Script quan tri ledger chay tay tren server. Tu 2026-09-29 du an chi con ho tro SHOPEE, ma
+ * Shopee di thang qua an_redir (khong qua network affiliate nao) nen KHONG the tu dong hoa doi
+ * soat - day la duong ghi nhan don DUY NHAT va VINH VIEN, ben canh trang web /admin/record-orders.
+ * Dung khi ban tu mat thay 1 don hang that thanh cong tren dashboard affiliate.shopee.vn va muon
+ * ghi vao ledger de user nhan duoc phan hoa hong cua ho (COMMISSION_USER_SHARE_PERCENT trong .env).
  *
  * Chay: npx tsx src/scripts/ledgerAdmin.ts <subcommand> --flag=value
  *
  * Subcommands:
  *   record-conversion --subId= --orderId= --orderAmount= --commissionAmount= [--productName=] [--note=]
- *   record-conversions-csv --file=<duong dan file .csv>   (xem quy-trinh-van-hanh-cashback.md, quy trinh hang tuan)
  *   record-shopee-report --file=<duong dan file .csv>     (2026-08-22: import THANG file bao cao goc
  *     Shopee Affiliate, vd "AffiliateCommissionReport_*.csv" tu affiliate.shopee.vn/report/conversion_report
- *     - khac record-conversions-csv, khong can doi ten cot truoc. Tu quyet dinh confirmed/pending/reversed
- *     theo cot "Trang thai san pham lien ket" trong file - xem core/shopeeReportImport.ts. Don nhieu san
- *     pham (nhieu dong cung ID don hang) hien CHUA HO TRO, se bi skip kem canh bao - dung
- *     record-conversion ghi tay cho case do.)
+ *     - khong can doi ten cot truoc. Tu quyet dinh confirmed/pending/reversed theo cot "Trang thai san
+ *     pham lien ket" trong file - xem core/shopeeReportImport.ts. Day la cong cu doi soat CHINH.)
  *   mark-withdrawal-paid --id= --proofImagePath=<duong dan anh chup man hinh da chuyen khoan>
  *     (anh se duoc COPY vao WITHDRAWAL_PROOF_DIR, ban chi can tro toi 1 file da co san tren may -
  *     bat buoc, xem rui ro so 7 trong rui-ro-can-giai-quyet.md)
  *   reverse-entry --id= --reason=   (2026-08-20: huy duoc CA don "confirmed"/"Kha dung" - loi thoat
- *     rieng cho CLI, vi Shopee ghi tay khong co giai doan "pending". Tren admin web/accesstradeSync.ts
- *     CHI huy duoc don "pending" - xem CLAUDE.md muc "Doi soat tu dong" de biet ly do)
+ *     rieng cho CLI, vi Shopee ghi tay khong co giai doan "pending". Tren admin web CHI huy duoc
+ *     don "pending")
  *   list-pending-withdrawals
- *   record-accesstrade-payment --amount= [--note=]   (Accesstrade CHUYEN KHOAN THAT cho chu bot, doi chieu dong tien)
- *   reconciliation-summary                            (da nhan that vs da tra that cho user, canh bao neu am)
- *   sync-accesstrade [--lookbackDays=60]              (T2.1, 2026-08-20: goi that GET /v1/transactions, tu ghi nhan
- *     don da duoc Accesstrade duyet (status=1 + is_confirmed=1) va tu huy don bi tra ve rejected (status=2).
- *     CHI ap dung merchant di qua Accesstrade (TikTok Shop/Lazada) - Shopee KHONG xuat hien o day, van
- *     phai doi soat thu cong nhu cu. Server production tu chay lenh nay dinh ky (ACCESSTRADE_SYNC_ENABLED=true,
- *     xem src/index.ts) - subcommand nay dung de chay tay/test thu, khong bat buoc dung thuong xuyen.)
  */
 import { parseArgs } from "node:util";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { env } from "../config/env.js";
-import { parseCsv } from "../core/csv.js";
 import { AppError } from "../core/errors.js";
 import { LedgerStore } from "../core/ledgerStore.js";
 import { LogStore } from "../core/logStore.js";
-import { syncAccesstradeTransactions } from "../core/accesstradeSync.js";
 import { importShopeeReport } from "../core/shopeeReportImport.js";
-import {
-  recordOrderFromAccesstrade,
-  recordOrdersFromCsv,
-  summarizeOrderResultsByUser,
-  type RecordOrderConfig,
-  type UserOrderSummary,
-} from "../core/orderIngest.js";
+import { recordSingleOrder, type RecordOrderConfig } from "../core/orderIngest.js";
 import type { Platform } from "../core/types.js";
 import { formatOrdersConfirmedReply, ORDERS_CONFIRMED_TEMPLATE_DEFAULT } from "../adapters/shared/replyText.js";
 
@@ -122,7 +101,7 @@ async function main(): Promise<void> {
   const [subcommand, ...rest] = process.argv.slice(2);
   if (!subcommand) {
     fail(
-      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-conversions-csv, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade"
+      "Thieu subcommand. Cac subcommand ho tro: record-conversion, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals"
     );
   }
 
@@ -164,7 +143,7 @@ async function main(): Promise<void> {
         const commissionAmount = requireNumberFlag(values, "commissionAmount");
         const note = typeof values.note === "string" ? values.note : undefined;
 
-        const entry = recordOrderFromAccesstrade(logStore, ledgerStore, orderConfig, {
+        const entry = recordSingleOrder(logStore, ledgerStore, orderConfig, {
           subId,
           orderId,
           productName,
@@ -185,42 +164,6 @@ async function main(): Promise<void> {
             `${env.dashboard.baseUrl}/d/${token}`
           )
         );
-        break;
-      }
-
-      case "record-conversions-csv": {
-        const filePath = requireFlag(values, "file");
-        let raw: string;
-        try {
-          raw = readFileSync(filePath, "utf8");
-        } catch (err) {
-          fail(`Khong doc duoc file "${filePath}": ${(err as Error).message}`);
-        }
-
-        const rows = parseCsv(raw!);
-        if (rows.length === 0) {
-          fail(`File "${filePath}" khong co dong du lieu nao (chi co header hoac rong).`);
-        }
-
-        // Header bat buoc: subId,orderId,orderAmount,commissionAmount. productName,note tuy chon.
-        // Xem file mau: src/scripts/templates/weekly-conversions.example.csv
-        const results = recordOrdersFromCsv(logStore, ledgerStore, orderConfig, rows);
-        const okCount = results.filter((r) => r.ok).length;
-        for (const r of results) {
-          console.log(`[dong ${r.line}] ${r.ok ? "OK" : "LOI"} - orderId=${r.orderId} subId=${r.subId} - ${r.detail}`);
-        }
-        console.log(`\nTong: ${results.length} dong, ${okCount} thanh cong, ${results.length - okCount} loi.`);
-
-        const summaries: UserOrderSummary[] = summarizeOrderResultsByUser(results);
-        for (const summary of summaries) {
-          const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
-          const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-          await notifyUserFromCli(
-            summary.platform,
-            summary.userId,
-            formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
-          );
-        }
         break;
       }
 
@@ -266,8 +209,8 @@ async function main(): Promise<void> {
       case "reverse-entry": {
         const id = requireFlag(values, "id");
         const reason = requireFlag(values, "reason");
-        // allowNonPending: true - Shopee (ghi tay) khong co giai doan "pending" nhu duong Accesstrade
-        // tu dong, nen CLI la loi thoat DUY NHAT de huy 1 don da "confirmed" (nhap sai, tra hang phat
+        // allowNonPending: true - don Shopee ghi tay khong co giai doan "pending",
+        // nen CLI la loi thoat DUY NHAT de huy 1 don da "confirmed" (nhap sai, tra hang phat
         // hien tre...). Van bi chan neu entry da gan vao 1 yeu cau rut tien (EntryAlreadyWithdrawnError).
         const result = ledgerStore.reverseCommissionEntry(id, reason, { allowNonPending: true });
         console.log(JSON.stringify(result, null, 2));
@@ -280,59 +223,9 @@ async function main(): Promise<void> {
         break;
       }
 
-      case "record-accesstrade-payment": {
-        const amount = requireNumberFlag(values, "amount");
-        const note = typeof values.note === "string" ? values.note : undefined;
-        const result = ledgerStore.recordAccesstradePayment({ amountVnd: amount, note });
-        console.log(JSON.stringify(result, null, 2));
-        break;
-      }
-
-      case "reconciliation-summary": {
-        const result = ledgerStore.getReconciliationSummary();
-        console.log(JSON.stringify(result, null, 2));
-        if (result.remainingVnd < 0) {
-          console.warn(
-            `\nCANH BAO: dang tra user vuot qua so tien da nhan tu Accesstrade (am ${Math.abs(result.remainingVnd).toLocaleString("vi-VN")}d).`
-          );
-        }
-        break;
-      }
-
-      case "sync-accesstrade": {
-        if (env.accesstrade.apiKey === "") {
-          fail("Thieu ACCESSTRADE_API_KEY - can co API key that de goi GET /v1/transactions.");
-        }
-        const lookbackDays =
-          typeof values.lookbackDays === "string" ? Number(values.lookbackDays) : env.accesstradeSync.lookbackDays;
-        if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
-          fail(`--lookbackDays phai la so nguyen duong, nhan duoc "${values.lookbackDays}"`);
-        }
-
-        const result = await syncAccesstradeTransactions(logStore, ledgerStore, {
-          apiKey: env.accesstrade.apiKey,
-          apiBase: env.accesstrade.apiBase,
-          timeoutMs: env.accesstrade.timeoutMs,
-          lookbackDays,
-          recordOrderConfig: orderConfig,
-        });
-        console.log(JSON.stringify(result, null, 2));
-
-        for (const summary of result.confirmedByUser) {
-          const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
-          const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-          await notifyUserFromCli(
-            summary.platform,
-            summary.userId,
-            formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${env.dashboard.baseUrl}/d/${token}`)
-          );
-        }
-        break;
-      }
-
       default:
         fail(
-          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-conversions-csv, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals, record-accesstrade-payment, reconciliation-summary, sync-accesstrade`
+          `Subcommand "${subcommand}" khong ton tai. Cac subcommand ho tro: record-conversion, record-shopee-report, mark-withdrawal-paid, reverse-entry, list-pending-withdrawals`
         );
     }
   } catch (err) {

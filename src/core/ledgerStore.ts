@@ -9,7 +9,6 @@ import {
   EntryNotPendingError,
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
-  InvalidPaymentAmountError,
   MissingBankInfoError,
   MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
@@ -18,7 +17,6 @@ import type { MerchantId } from "./merchants.js";
 import { SETTINGS_KEYS } from "./settingsKeys.js";
 import { normalizeNewlines } from "./textNormalize.js";
 import type {
-  AccesstradePayment,
   CommissionEntry,
   CommissionStatus,
   DashboardToken,
@@ -26,7 +24,6 @@ import type {
   FaqMuteReason,
   ImportHistoryEntry,
   Platform,
-  ReconciliationSummary,
   StatusTransition,
   WithdrawalRequest,
   ZaloGroup,
@@ -167,13 +164,6 @@ export class LedgerStore {
         display_name TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (platform, user_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS accesstrade_payments (
-        id TEXT PRIMARY KEY,
-        received_at TEXT NOT NULL,
-        amount INTEGER NOT NULL,
-        note TEXT
       );
 
       CREATE TABLE IF NOT EXISTS welcome_messages (
@@ -370,11 +360,10 @@ export class LedgerStore {
 
   /**
    * Cap nhat lai order_amount/commission_amount (va thue/phi/userShare tinh lai theo) cho 1 entry
-   * VAN CON "pending" (2026-08-21, phat hien qua bao cao thuc te: Accesstrade tra ve commission=0
+   * VAN CON "pending" (2026-08-21, phat hien qua bao cao thuc te: nguon affiliate tra ve commission=0
    * luc giao dich con hold, roi dien dan so lieu uoc tinh that len dashboard cua ho TRUOC KHI duyet
-   * hang - nhung sync cu bo qua hoan toan entry da ton tai bat ke trang thai gi (`if (existing)
-   * continue`), nen dashboard cua bot ket qua bi "dong bang" o 0d cho toi khi don duoc duyet, du
-   * Accesstrade da hien so uoc tinh that tu lau). KHONG doi status (van "pending"), chi cap nhat so
+   * hang - nhung sync cu bo qua hoan toan entry da ton tai bat ke trang thai gi, nen dashboard cua
+   * bot ket qua bi "dong bang" o 0d cho toi khi don duoc duyet). KHONG doi status (van "pending"), chi cap nhat so
    * lieu hien thi - khac confirmPendingEntry (doi status sang "confirmed").
    */
   updatePendingEntry(
@@ -442,11 +431,11 @@ export class LedgerStore {
   }
 
   /**
-   * Chuyen 1 entry dang "pending" (tao boi accesstradeSync.ts khi Accesstrade con hold/chua chot,
-   * 2026-08-20) sang "confirmed" khi Accesstrade sau do duyet that (status=1+is_confirmed=1) -
+   * Chuyen 1 entry dang "pending" (bao cao Shopee ghi "Dang cho xu ly"/"Chua thanh toan", xem
+   * shopeeReportImport.ts) sang "confirmed" khi bao cao sau do ghi "Hoan thanh" -
    * UPDATE tai cho thay vi INSERT moi, vi INSERT se dung UNIQUE constraint (merchant, order_id)
    * da co san tu luc con pending (DuplicateConversionError). Tinh lai thue/phi/userShare tu
-   * commissionAmount/orderAmount MOI NHAT Accesstrade tra ve luc duyet - co the khac nhe so voi
+   * commissionAmount/orderAmount MOI NHAT trong bao cao luc duyet - co the khac nhe so voi
    * luc con hold (hiem nhung co the xay ra), khong tin so lieu cu.
    */
   confirmPendingEntry(
@@ -826,8 +815,8 @@ export class LedgerStore {
 
   /**
    * Tra 1 entry theo (merchant, orderId) - khop dung unique index idx_commission_entries_order.
-   * Dung boi accesstradeSync.ts de tim entry can reverse khi Accesstrade tra ve status=rejected
-   * cho 1 don da tung ghi nhan "confirmed" truoc do (khong biet truoc id noi bo, chi co orderId).
+   * Dung boi shopeeReportImport.ts de tim entry can cap nhat/reverse khi bao cao Shopee doi trang
+   * thai cho 1 don da tung ghi nhan truoc do (khong biet truoc id noi bo, chi co orderId).
    */
   getEntryByOrderId(merchant: MerchantId, orderId: string): CommissionEntry | null {
     const row = this.db
@@ -996,16 +985,15 @@ export class LedgerStore {
   }
 
   /**
-   * Dung boi admin trang/accesstradeSync.ts khi 1 don "pending" (Accesstrade con hold/chua chot)
-   * bi tu choi that su (status=2). Mac dinh CHI huy duoc entry dang "pending" (2026-08-20, quyet
-   * dinh chot lai voi user, dua theo FAQ chinh thuc cua Accesstrade: "hoa hong tam duyet" (~pending
-   * ben minh) co the bi huy neu doi soat khong dat, nhung "hoa hong duoc duyet" (~confirmed,
-   * is_confirmed=1) la so lieu CUOI CUNG dung de thanh toan, khong con thay doi nua) - goi khong co
+   * Dung boi admin trang/shopeeReportImport.ts khi 1 don "pending" (con cho xu ly) bi huy that su
+   * ("Da huy"/"Khong hop le" trong bao cao Shopee). Mac dinh CHI huy duoc entry dang "pending"
+   * (2026-08-20, quyet dinh chot lai voi user: don con cho xu ly co the bi huy neu doi soat khong
+   * dat, nhung don da "Hoan thanh" la so lieu CUOI CUNG dung de thanh toan, khong doi nua) - goi khong co
    * options se tu choi voi EntryNotPendingError cho moi trang thai khac "pending".
    *
    * `options.allowNonPending`: LOI THOAT rieng CHI cho `ledgerAdmin.ts reverse-entry` (CLI) dung -
-   * Shopee ghi tay qua record-conversion/CSV/admin web KHONG co giai doan "pending" (di thang len
-   * "confirmed" ngay, khong qua accesstradeSync.ts), nen day la cach DUY NHAT de sua loi nhap sai
+   * Shopee ghi tay qua record-conversion/admin web KHONG co giai doan "pending" (di thang len
+   * "confirmed" ngay), nen day la cach DUY NHAT de sua loi nhap sai
    * hoac xu ly don Shopee bi tra hang phat hien SAU KHI da ghi nhan. Ngay ca khi bat co nay, van
    * CHAN neu entry da gan vao 1 yeu cau rut tien (EntryAlreadyWithdrawnError) - tien co the da chuyen
    * that, khong the huy 1 chieu qua day duoc nua.
@@ -1038,50 +1026,6 @@ export class LedgerStore {
     return { ...existing, status: "reversed", note: newNote };
   }
 
-  /**
-   * Ghi 1 lan Accesstrade CHUYEN KHOAN THAT cho chu bot (nhap tay, doi chieu voi ngan hang).
-   * receivedAt tuy chon (ISO) - cho phep admin chon lai dung ngay Accesstrade chuyen (vd nhap tre vai
-   * ngay so voi luc ghi vao he thong), mac dinh la thoi diem ghi neu khong truyen vao.
-   */
-  recordAccesstradePayment(input: { amountVnd: number; note?: string; receivedAt?: string }): AccesstradePayment {
-    if (!(input.amountVnd > 0)) {
-      throw new InvalidPaymentAmountError();
-    }
-
-    const id = randomUUID();
-    const receivedAt = input.receivedAt ?? new Date().toISOString();
-    this.db
-      .prepare(`INSERT INTO accesstrade_payments (id, received_at, amount, note) VALUES (?, ?, ?, ?)`)
-      .run(id, receivedAt, input.amountVnd, input.note ?? null);
-
-    return { id, receivedAt, amountVnd: input.amountVnd, note: input.note ?? null };
-  }
-
-  /** Lich su tat ca lan ghi nhan Accesstrade da chuyen tien, moi nhat truoc. */
-  listAccesstradePayments(): AccesstradePayment[] {
-    const rows = this.db.prepare(`SELECT * FROM accesstrade_payments ORDER BY received_at DESC`).all();
-    return rows.map(rowToAccesstradePayment);
-  }
-
-  /**
-   * Doi chieu dong tien: tong DA NHAN THAT tu Accesstrade (accesstrade_payments) vs tong DA TRA THAT
-   * cho user (withdrawal_requests da 'paid' - khong dung commission_entries vi entry 'confirmed' chua
-   * chac da thanh tien that roi khoi tai khoan). remainingVnd am = dang tra vuot qua so tien thuc nhan.
-   */
-  getReconciliationSummary(): ReconciliationSummary {
-    const receivedRow = this.db
-      .prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM accesstrade_payments`)
-      .get() as { total: number };
-    const paidRow = this.db
-      .prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawal_requests WHERE status = 'paid'`)
-      .get() as { total: number };
-
-    return {
-      totalReceivedVnd: receivedRow.total,
-      totalPaidToUsersVnd: paidRow.total,
-      remainingVnd: receivedRow.total - paidRow.total,
-    };
-  }
 
   /**
    * Doc 1 setting tu bang `settings` - tra defaultValue neu chua tung duoc admin luu qua
@@ -1270,16 +1214,6 @@ function rowToDashboardToken(row: unknown): DashboardToken {
     platform: r.platform as Platform,
     userId: r.user_id as string,
     createdAt: r.created_at as string,
-  };
-}
-
-function rowToAccesstradePayment(row: unknown): AccesstradePayment {
-  const r = row as Record<string, unknown>;
-  return {
-    id: r.id as string,
-    receivedAt: r.received_at as string,
-    amountVnd: r.amount as number,
-    note: (r.note as string | null) ?? null,
   };
 }
 

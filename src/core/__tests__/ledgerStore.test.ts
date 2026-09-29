@@ -7,7 +7,6 @@ import {
   EntryNotPendingError,
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
-  InvalidPaymentAmountError,
   MissingBankInfoError,
   MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
@@ -385,8 +384,8 @@ test("LedgerStore: reverseCommissionEntry huy dung don dang 'pending'", () => {
   }
 });
 
-// 2026-08-20 (quyet dinh chot lai voi user, dua theo FAQ Accesstrade: "hoa hong duoc duyet" la so
-// lieu cuoi cung dung de thanh toan) - don "confirmed" (Kha dung) duoc xem la da hoan tat, KHONG
+// 2026-08-20 (quyet dinh chot lai voi user): don da chot so lieu voi san - don "confirmed"
+// (Kha dung) duoc xem la da hoan tat, KHONG
 // con huy duoc qua reverseCommissionEntry nua, du chua gan vao yeu cau rut tien nao.
 test("LedgerStore: reverseCommissionEntry nem EntryNotPendingError khi entry da 'confirmed' (Kha dung)", () => {
   const store = new LedgerStore(":memory:");
@@ -599,57 +598,6 @@ test("LedgerStore: listUsers tra ve dung displayName tu user_profiles", () => {
     const [user] = store.listUsers();
     assert.equal(user.userId, "user-a");
     assert.equal(user.displayName, "Nguyễn Văn A");
-  } finally {
-    store.close();
-  }
-});
-
-test("LedgerStore: recordAccesstradePayment nem InvalidPaymentAmountError voi so tien <= 0", () => {
-  const store = new LedgerStore(":memory:");
-  try {
-    assert.throws(() => store.recordAccesstradePayment({ amountVnd: 0 }), InvalidPaymentAmountError);
-    assert.throws(() => store.recordAccesstradePayment({ amountVnd: -1000 }), InvalidPaymentAmountError);
-  } finally {
-    store.close();
-  }
-});
-
-test("LedgerStore: getReconciliationSummary tra ve 0 het khi chua co du lieu, cong dung nhieu lan ghi nhan", () => {
-  const store = new LedgerStore(":memory:");
-  try {
-    const empty = store.getReconciliationSummary();
-    assert.deepEqual(empty, { totalReceivedVnd: 0, totalPaidToUsersVnd: 0, remainingVnd: 0 });
-
-    store.recordAccesstradePayment({ amountVnd: 2_000_000, note: "ky thang 8" });
-    store.recordAccesstradePayment({ amountVnd: 1_000_000 });
-
-    const summary = store.getReconciliationSummary();
-    assert.equal(summary.totalReceivedVnd, 3_000_000);
-    assert.equal(summary.remainingVnd, 3_000_000);
-  } finally {
-    store.close();
-  }
-});
-
-test("LedgerStore: getReconciliationSummary - da tra chi tinh withdrawal status paid, canh bao khi am", () => {
-  const store = new LedgerStore(":memory:");
-  try {
-    store.recordAccesstradePayment({ amountVnd: 1_000_000 });
-
-    recordSample(store, { orderId: "order-1", commissionAmount: 1_500_000 });
-    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
-
-    // Dang cho, chua "paid" -> khong tinh vao da tra.
-    let summary = store.getReconciliationSummary();
-    assert.equal(summary.totalReceivedVnd, 1_000_000);
-    assert.equal(summary.totalPaidToUsersVnd, 0);
-    assert.equal(summary.remainingVnd, 1_000_000);
-
-    store.markWithdrawalPaid(withdrawal.id, "proof-1.png");
-    summary = store.getReconciliationSummary();
-    assert.equal(summary.totalPaidToUsersVnd, withdrawal.amount);
-    assert.equal(summary.remainingVnd, 1_000_000 - withdrawal.amount);
-    assert.ok(summary.remainingVnd < 0, "vi du nay co chu dich de tao so am, kiem tra canh bao dung huong");
   } finally {
     store.close();
   }

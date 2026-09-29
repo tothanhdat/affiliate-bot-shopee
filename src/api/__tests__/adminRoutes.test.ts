@@ -77,7 +77,7 @@ function fakeProofFormData(filename = "proof.png"): FormData {
   return formData;
 }
 
-/** Gia lap 1 request thanh cong da qua bot - can co truoc de recordOrderFromAccesstrade tra duoc subId. */
+/** Gia lap 1 request thanh cong da qua bot - can co truoc de recordSingleOrder tra duoc subId. */
 function seedRequestLog(logStore: LogStore, subId: string, overrides: Partial<{ platform: "telegram" | "zalo"; userId: string }> = {}) {
   logStore.record({
     platform: overrides.platform ?? "telegram",
@@ -435,101 +435,6 @@ test("khong the huy don da 'confirmed' (Kha dung) - an link, chan ca GET confirm
     });
     assert.equal(postRes.status, 422);
     assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0); // van bi giu boi withdrawal, khong doi
-  } finally {
-    cleanup();
-  }
-});
-
-test("card doi chieu tren /admin/accesstrade-payments hien dung so du + lich su, POST cong don", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    const cookie = await loginAndGetCookie(baseUrl);
-
-    const before = await (
-      await fetch(`${baseUrl}/admin/accesstrade-payments`, { headers: { cookie: cookie! } })
-    ).text();
-    assert.match(before, /Số dư chủ bot/);
-    assert.match(before, /Chưa ghi nhận lần chuyển khoản nào/);
-    assert.doesNotMatch(before, /Yêu cầu rút tiền đang chờ/); // danh sach rut tien van o /admin/withdrawals, khong lap lai o day
-
-    const postRes = await fetch(`${baseUrl}/admin/accesstrade-payments`, {
-      method: "POST",
-      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
-      body: "amount=2000000&note=ky+thang+8&receivedAt=2026-08-01",
-      redirect: "manual",
-    });
-    assert.equal(postRes.status, 303);
-    assert.equal(ledgerStore.getReconciliationSummary().totalReceivedVnd, 2_000_000);
-
-    const [payment] = ledgerStore.listAccesstradePayments();
-    assert.equal(payment.receivedAt, "2026-08-01T00:00:00.000Z");
-    assert.equal(payment.note, "ky thang 8");
-
-    const after = await (
-      await fetch(`${baseUrl}/admin/accesstrade-payments`, { headers: { cookie: cookie! } })
-    ).text();
-    assert.match(after, /2\.000\.000đ/);
-    assert.match(after, /ky thang 8/);
-  } finally {
-    cleanup();
-  }
-});
-
-test("/admin/withdrawals khong con hien card doi chieu (da chuyen qua /admin/accesstrade-payments)", async () => {
-  const { baseUrl, cleanup } = setup();
-  try {
-    const cookie = await loginAndGetCookie(baseUrl);
-    const html = await (await fetch(`${baseUrl}/admin/withdrawals`, { headers: { cookie: cookie! } })).text();
-    assert.doesNotMatch(html, /Số dư chủ bot/);
-  } finally {
-    cleanup();
-  }
-});
-
-test("POST /admin/accesstrade-payments voi so tien khong hop le -> 422 kem loi, khong ghi nhan", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    const cookie = await loginAndGetCookie(baseUrl);
-
-    const res = await fetch(`${baseUrl}/admin/accesstrade-payments`, {
-      method: "POST",
-      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
-      body: "amount=abc",
-      redirect: "manual",
-    });
-    assert.equal(res.status, 422);
-    const html = await res.text();
-    assert.match(html, /không hợp lệ/);
-    assert.equal(ledgerStore.getReconciliationSummary().totalReceivedVnd, 0);
-  } finally {
-    cleanup();
-  }
-});
-
-test("card doi chieu canh bao khi so du chu bot am", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    ledgerStore.recordConversion({
-      subId: "telegram-user-a-1",
-      platform: "telegram",
-      userId: "user-a",
-      merchant: "shopee",
-      orderId: "order-1",
-      orderAmount: 500_000,
-      commissionAmount: 100_000,
-      taxPercent: 0,
-      platformFeePercent: 0,
-      userSharePercent: 80,
-      maxCommissionRatioPercent: 1000,
-    });
-    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
-    ledgerStore.markWithdrawalPaid(withdrawal.id, "proof-1.png"); // da tra 80_000, chua ghi nhan da nhan gi tu Accesstrade -> am
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    const html = await (
-      await fetch(`${baseUrl}/admin/accesstrade-payments`, { headers: { cookie: cookie! } })
-    ).text();
-    assert.match(html, /Đang trả cho user vượt quá số tiền đã nhận thật/);
   } finally {
     cleanup();
   }

@@ -381,12 +381,12 @@ test("Zalo DM: cau hoi FAQ -> bot tra loi bang cau soan san", async () => {
   try {
     ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
     attachFaq(async () => ["san_ho_tro"]);
-    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee và TikTok Shop nha");
+    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee nha");
 
     await handleMessage(makeMessage(ThreadType.User, "ad ơi bot hỗ trợ sàn nào v"));
 
     assert.equal(sent.length, 1);
-    assert.equal(bodyOf(sent[0]), "Shopee và TikTok Shop nha");
+    assert.equal(bodyOf(sent[0]), "Shopee nha");
   } finally {
     cleanup();
   }
@@ -438,13 +438,13 @@ test("Zalo DM: tin do CHINH bot gui ra -> KHONG tu khoa minh", async () => {
   try {
     ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
     attachFaq(async () => ["san_ho_tro"]);
-    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee và TikTok Shop nha");
+    ledgerStore.setSetting(faqAnswerKey("san_ho_tro"), "Shopee nha");
 
     await handleMessage(makeMessage(ThreadType.User, "bot hỗ trợ sàn nào"));
     assert.equal(sent.length, 1);
 
     // zca-js phat lai chinh tin bot vua gui (selfListen) - phai duoc nhan ra qua SentMessageTracker.
-    await handleMessage(makeSelfMessage("Shopee và TikTok Shop nha", "msg-bot-1"));
+    await handleMessage(makeSelfMessage("Shopee nha", "msg-bot-1"));
     assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
   } finally {
     cleanup();

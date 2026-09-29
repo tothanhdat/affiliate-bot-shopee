@@ -3,7 +3,7 @@ import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
 import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
 export const USAGE_TEXT =
-  "👋 Gửi cho mình link sản phẩm Shopee hoặc TikTok Shop (ví dụ: https://vn.shp.ee/xxxxxxx), " +
+  "👋 Gửi cho mình link sản phẩm Shopee (ví dụ: https://vn.shp.ee/xxxxxxx), " +
   "mình sẽ trả về link áp mã cho bạn.";
 
 /**
@@ -40,7 +40,7 @@ export function formatSuccessReply(
   commissionEstimate?: CommissionEstimate | null
 ): string {
   // commissionEstimate chi co khi provider lay duoc du lieu CHINH THUC (khong phai scrape/doan) -
-  // hien chi TikTok Shop qua Accesstrade (xem accesstradeProvider.ts). Khong co thi bo qua dong nay,
+  // hien KHONG provider nao con tra ve (xem affiliateProvider.ts). Khong co thi bo qua dong nay,
   // KHONG tu bia so - giu dung nguyen tac da thong nhat.
   // 2026-08-20 (viet lai theo gop y truc tiep cua user sau khi xem tin nhan that): cau "mình sẽ chủ
   // dong nhan tin cho ban" thay cho "nhan 'xemhh' de theo doi" o dong nay - vi tu 2026-08-20 da co
@@ -185,7 +185,7 @@ export function formatWelcomeReply(
 /** Default cho setting "group_join_welcome_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
-  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee/TikTok Shop vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
+  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
   `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: {{handbookUrl}}\n\n` +
   `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
 

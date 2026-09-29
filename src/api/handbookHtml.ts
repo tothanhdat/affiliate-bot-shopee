@@ -117,11 +117,11 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
       title: "Các bước sử dụng",
       lead: `
         <ol class="steps">
-          <li class="step-card" ${searchAttr("Bước 1 Sao chép link sản phẩm Shopee TikTok Shop chia sẻ")}>
+          <li class="step-card" ${searchAttr("Bước 1 Sao chép link sản phẩm Shopee chia sẻ")}>
             <div class="step-num">1</div>
             <div class="step-body">
               <h3>Sao chép link sản phẩm</h3>
-              <p>Mở app Shopee hoặc TikTok Shop, tìm sản phẩm bạn muốn mua, bấm "Chia sẻ" và sao chép link sản phẩm.</p>
+              <p>Mở app Shopee, tìm sản phẩm bạn muốn mua, bấm "Chia sẻ" và sao chép link sản phẩm.</p>
             </div>
           </li>
           <li class="step-card" ${searchAttr("Bước 2 Dán link vào group Zalo Telegram nhiều link cùng lúc 5 link")}>
@@ -143,7 +143,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
             </div>
           </li>
           <li class="step-card" ${searchAttr(
-            "Bước 4 Theo dõi nhận tiền hoàn xemhh dashboard số dư khả dụng rút tiền Shopee mỗi ngày TikTok thứ Ba"
+            "Bước 4 Theo dõi nhận tiền hoàn xemhh dashboard số dư khả dụng rút tiền Shopee mỗi ngày"
           )}>
             <div class="step-num">4</div>
             <div class="step-body">
@@ -151,7 +151,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
               <p>Nhắn <strong>"xemhh"</strong> (không phân biệt hoa/thường) trong tin nhắn riêng (DM) cho bot — không phải trong group — để lấy link dashboard cá nhân. Link này cố định, lưu lại dùng dần không cần nhắn lại nhiều lần.</p>
               <p>Trên dashboard bạn xem được: số dư khả dụng, số đang chờ xác nhận, số đang chờ rút, số đã nhận, và danh sách chi tiết từng đơn hàng.</p>
               <p>Khi có đơn được xác nhận <strong>Hoàn thành</strong>, bot sẽ tự động nhắn tin riêng báo cho bạn — bạn không cần chủ động hỏi. Khi số dư "Khả dụng" đạt từ ${threshold} trở lên, bạn có thể bấm yêu cầu rút toàn bộ ngay trên dashboard.</p>
-              <p class="muted-note"><strong>Tần suất cập nhật trạng thái đơn:</strong> Shopee cập nhật <strong>mỗi ngày</strong>; TikTok Shop cập nhật <strong>mỗi thứ Ba hằng tuần</strong>. Vì vậy với đơn TikTok Shop, bạn nên đợi đến thứ Ba tuần kế tiếp mới kiểm tra thay vì hỏi hằng ngày.</p>
+              <p class="muted-note"><strong>Tần suất cập nhật trạng thái đơn:</strong> Shopee cập nhật <strong>mỗi ngày</strong>, nên đơn mới đặt thường cần vài ngày mới đổi trạng thái.</p>
             </div>
           </li>
         </ol>`,
@@ -165,7 +165,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         {
           id: "san-ho-tro",
           title: "Sàn được hỗ trợ",
-          body: `<p>Shopee và TikTok Shop.</p>`,
+          body: `<p>Shopee.</p>`,
         },
         {
           id: "dinh-dang-link",
@@ -173,7 +173,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
           body: `
             <ul>
               <li><strong>Shopee:</strong> link đầy đủ hoặc link rút gọn (vn.shp.ee, s.shopee.vn...)</li>
-              <li><strong>TikTok Shop:</strong> link sản phẩm dạng vt.tiktok.com hoặc link .../view/product/... — lưu ý bot chỉ nhận đúng link sản phẩm, không nhận link video thường</li>
+              <li>Lưu ý bot chỉ nhận đúng link sản phẩm, không nhận link video (sv.shopee.vn)</li>
             </ul>`,
         },
         {
@@ -182,9 +182,8 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
           body: `
             <div class="kv-list">
               ${kvRow("Shopee", "Mỗi ngày")}
-              ${kvRow("TikTok Shop", "Mỗi thứ Ba hằng tuần")}
             </div>
-            <p>Nghĩa là đơn TikTok Shop dù đã đủ điều kiện cũng chỉ được cập nhật trạng thái vào đúng thứ Ba — không cần sốt ruột kiểm tra dashboard mỗi ngày với đơn TikTok Shop.</p>`,
+            <p>Đơn mới đặt vẫn cần vài ngày mới hiện và đổi trạng thái — không cần sốt ruột kiểm tra dashboard liên tục.</p>`,
         },
         {
           id: "trang-thai-don",
@@ -596,7 +595,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
     .section-title { font-size: 1.1875rem; }
     .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.625rem; }
     .chip { min-width: 0; padding: 0.625rem 0.875rem; }
-    /* The thu 3 ("Shopee · TikTok Shop") dai hon 2 the so, cho chiem tron 1 hang de khong xuong dong xau. */
+    /* The thu 3 (ten san) co the dai hon 2 the so, cho chiem tron 1 hang de khong xuong dong xau. */
     .chip:last-child { grid-column: 1 / -1; }
     .chip-value { font-size: 1.25rem; }
     .chip.chip-plain .chip-value { font-size: 1rem; }
@@ -620,7 +619,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
 <div class="page-content">
   <header class="hero">
     <h1>Sổ tay hoàn tiền</h1>
-    <p class="subtitle">Hướng dẫn dành cho bạn khi dùng bot săn sale hoàn tiền (cashback) trong group Zalo/Telegram khi mua hàng qua Shopee hoặc TikTok Shop.</p>
+    <p class="subtitle">Hướng dẫn dành cho bạn khi dùng bot săn sale hoàn tiền (cashback) trong group Zalo/Telegram khi mua hàng qua Shopee.</p>
     <div class="chips">
       <div class="chip">
         <div class="chip-label">Bạn nhận</div>
@@ -632,7 +631,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
       </div>
       <div class="chip chip-plain">
         <div class="chip-label">Sàn hỗ trợ</div>
-        <div class="chip-value">Shopee · TikTok Shop</div>
+        <div class="chip-value">Shopee</div>
       </div>
     </div>
   </header>

@@ -2,12 +2,10 @@ import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants
 import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import type {
-  AccesstradePayment,
   CommissionEntry,
   CommissionStatus,
   ImportHistoryEntry,
   Platform,
-  ReconciliationSummary,
   WithdrawalRequest,
   ZaloGroup,
 } from "../core/types.js";
@@ -18,7 +16,6 @@ import {
   formatVnd,
   statusBadge,
   successToast,
-  todayDateInputValue,
 } from "./htmlHelpers.js";
 
 /**
@@ -33,7 +30,6 @@ const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: string 
   { key: "users", href: "/admin/users", label: "Người dùng", icon: "👥" },
   { key: "orders", href: "/admin/orders", label: "Đơn hàng", icon: "📦" },
   { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng", icon: "📝" },
-  { key: "accesstrade-payments", href: "/admin/accesstrade-payments", label: "Đối chiếu Accesstrade", icon: "🔄" },
   { key: "settings", href: "/admin/settings", label: "Cấu hình", icon: "⚙️" },
 ];
 
@@ -409,68 +405,6 @@ ${
   return adminShell("withdrawals", "Yêu cầu rút tiền", `${pendingCard}\n${historyCard}`);
 }
 
-export function renderAccesstradePaymentsPage(
-  payments: AccesstradePayment[],
-  summary: ReconciliationSummary,
-  errorMessage?: string | null
-): string {
-  const isNegative = summary.remainingVnd < 0;
-  const errorBlock = errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : "";
-  const warningBlock = isNegative
-    ? `<div class="error">⚠️ Đang trả cho user vượt quá số tiền đã nhận thật từ Accesstrade (âm ${formatVnd(Math.abs(summary.remainingVnd))}). Kiểm tra lại số liệu hoặc ghi nhận thêm khoản Accesstrade đã chuyển.</div>`
-    : "";
-
-  const summaryCard = `<div class="card">
-<h2>Số dư chủ bot (đối chiếu dòng tiền)</h2>
-${errorBlock}
-${warningBlock}
-<div class="totals">
-  <div class="stat"><div class="label">Đã nhận từ Accesstrade</div><div class="value">${formatVnd(summary.totalReceivedVnd)}</div></div>
-  <div class="stat"><div class="label">Đã trả cho user</div><div class="value">${formatVnd(summary.totalPaidToUsersVnd)}</div></div>
-  <div class="stat ${isNegative ? "danger" : "accent"}"><div class="label">Còn lại</div><div class="value">${formatVnd(summary.remainingVnd)}</div></div>
-</div>
-<form method="POST" action="/admin/accesstrade-payments" class="payment-form" ${confirmOnSubmit("Xác nhận ghi nhận khoản Accesstrade đã chuyển này? Số liệu sẽ dùng để đối chiếu dòng tiền.")}>
-  <div>
-    <label for="amount">Số tiền Accesstrade đã chuyển (đ)</label>
-    <input type="text" id="amount" name="amount" placeholder="vd: 2000000" inputmode="numeric">
-  </div>
-  <div>
-    <label for="receivedAt">Ngày chuyển</label>
-    <input type="date" id="receivedAt" name="receivedAt" value="${todayDateInputValue()}">
-  </div>
-  <div>
-    <label for="payment-note">Ghi chú (tuỳ chọn)</label>
-    <input type="text" id="payment-note" name="note" placeholder="vd: chuyển khoản kỳ tháng 8">
-  </div>
-  <div><button type="submit" class="primary">Ghi nhận</button></div>
-</form>
-</div>`;
-
-  const rows = payments
-    .map(
-      (p) => `<tr>
-  <td>${formatDateTime(p.receivedAt)}</td>
-  <td>${formatVnd(p.amountVnd)}</td>
-  <td>${p.note ? escapeHtml(p.note) : `<span class="muted">—</span>`}</td>
-</tr>`
-    )
-    .join("\n");
-
-  const historyCard = `<div class="card">
-<h2>Lịch sử Accesstrade đã chuyển tiền (${payments.length})</h2>
-${
-  payments.length > 0
-    ? `<div class="table-scroll"><table>
-<thead><tr><th>Ngày chuyển</th><th>Số tiền</th><th>Ghi chú</th></tr></thead>
-<tbody>${rows}</tbody>
-</table></div>`
-    : `<p class="empty">Chưa ghi nhận lần chuyển khoản nào.</p>`
-}
-</div>`;
-
-  return adminShell("accesstrade-payments", "Đối chiếu Accesstrade", `${summaryCard}\n${historyCard}`);
-}
-
 export function renderUsersPage(
   list: Array<{
     platform: Platform;
@@ -654,9 +588,8 @@ export function renderOrdersPage(
         ? `<span class="cell-truncate" title="${escapeHtml(e.productName)}">${escapeHtml(e.productName)}</span>`
         : `<span class="muted">—</span>`;
       // 2026-08-20 (quyet dinh chot lai voi user): CHI huy duoc don dang "pending" - "confirmed"
-      // (Khai dung) nghia la Accesstrade da duyet chinh thuc/chot so lieu, xem la hoan tat, khong
-      // con ly do gi de huy nua (khop FAQ chinh thuc Accesstrade: "hoa hong duoc duyet" la so lieu
-      // cuoi cung dung de thanh toan). LedgerStore.reverseCommissionEntry() cung tu choi ngay o
+      // (Kha dung) nghia la bao cao Shopee da ghi "Hoan thanh"/chot so lieu, xem la hoan tat, khong
+      // con ly do gi de huy nua. LedgerStore.reverseCommissionEntry() cung tu choi ngay o
       // tang du lieu neu status khac "pending" (EntryNotPendingError) - day chi la an link o UI.
       const reverseLink =
         e.status === "pending" ? `<a class="link" href="/admin/orders/${e.id}/reverse">Huỷ đơn</a>` : "";

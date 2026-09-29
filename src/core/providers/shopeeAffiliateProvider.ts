@@ -30,11 +30,11 @@ export interface ShopeeAffiliateProviderConfig {
  * buoc rut gon nao) resolve dung CUNG 1 trang san pham voi link tao qua Custom Link portal, sub_id
  * giu nguyen dung trong utm_content - dung slot ma bot dang dung de doi soat qua subId.
  *
- * CHI xu ly duoc merchant "shopee" - dung CompositeAffiliateProvider (compositeProvider.ts) de
- * ket hop voi provider khac (vd AccesstradeProvider) cho Lazada/TikTok Shop.
+ * CHI xu ly duoc merchant "shopee" - tu 2026-09-29 day cung la merchant duy nhat trong scope,
+ * nen no la provider that duy nhat (xem providers/index.ts).
  *
- * T3.2 (2026-08-19): link an_redir tu build dai ~150-290+ ky tu (khong gon nhu link Custom Link/
- * Accesstrade tra ve) - rut gon qua route rieng GET /s/:code (server.ts) truoc khi tra ve cho user.
+ * T3.2 (2026-08-19): link an_redir tu build dai ~150-290+ ky tu (khong gon nhu link Custom Link)
+ * - rut gon qua route rieng GET /s/:code (server.ts) truoc khi tra ve cho user.
  * QUAN TRONG de khong pha tracking: route do PHAI la 302 redirect THAT sang chinh URL an_redir nay,
  * KHONG duoc fetch/proxy noi dung trang dich roi render lai - phai de trinh duyet cua user tu nhay
  * tiep sang s.shopee.vn/an_redir?..., giu nguyen toan bo cookie/uls_trackid Shopee tu sinh phia ho.
