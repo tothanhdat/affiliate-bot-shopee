@@ -35,8 +35,8 @@ export function successToast(message: string): string {
 
 /**
  * Tra ve attribute `onsubmit="return confirm('...');"` de gan vao 1 the <form> - popup xac nhan
- * bat buoc cho MOI action lien quan den tien (rut tien, danh dau da tra, huy don, ghi nhan don/
- * khoan Accesstrade...). Day la 1 trong so RAT IT ngoai le dung JS phia client trong toan bo
+ * bat buoc cho MOI action lien quan den tien (rut tien, danh dau da tra, huy don, ghi nhan
+ * don...). Day la 1 trong so RAT IT ngoai le dung JS phia client trong toan bo
  * src/api - chi la thuoc tinh inline dung API co san cua trinh duyet, khong them script/dependency.
  */
 export function confirmOnSubmit(message: string): string {

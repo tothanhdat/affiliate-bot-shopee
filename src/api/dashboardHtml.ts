@@ -332,7 +332,7 @@ export function renderDashboardPage(input: {
   );
 
   // 2026-08-20 (yeu cau truc tiep cua user): the rieng cho tong hoa hong cac don dang "pending"
-  // (Accesstrade con hold/chua chot, xem accesstradeSync.ts) - CHI de hien thi, KHONG cong vao
+  // (bao cao Shopee con ghi "Dang cho xu ly") - CHI de hien thi, KHONG cong vao
   // availableBalance/pendingBalance nao ca, tranh nham lan voi "Dang cho rut" (tien da confirmed,
   // dang bi giu boi 1 yeu cau rut tien). Khai bao truoc withdrawBlock vi progress-hint ben duoi
   // can dung gia tri nay (2026-09-16: tich luy con thieu tinh tren "Cho xac nhan", KHONG phai
@@ -371,8 +371,8 @@ export function renderDashboardPage(input: {
 
   // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 5 (2026-08-20, SUA LAI cung ngay sau khi chot
   // lai voi user): canh bao chi con dung neu con dang "pending" - "confirmed"/"paid" gio la trang
-  // thai CUOI CUNG, khong con bi huy nguoc duoc nua (khop FAQ Accesstrade: "hoa hong duoc duyet"
-  // la so lieu dung de thanh toan, chi "hoa hong tam duyet" - tuong duong pending - moi con rui ro
+  // thai CUOI CUNG, khong con bi huy nguoc duoc nua (don da "Hoan thanh" tren bao cao Shopee la so
+  // lieu dung de thanh toan, chi don con "Dang cho xu ly" - tuong duong pending - moi con rui ro
   // bi huy sau doi soat). reverseCommissionEntry() cung da tu choi huy don khong con "pending".
   const hasPendingEntry = input.entries.some((e) => e.status === "pending");
   const reversalWarning = hasPendingEntry

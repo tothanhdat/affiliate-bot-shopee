@@ -96,9 +96,8 @@ export interface UserOrderSummary {
  * cau truc tiep cua user) de formatOrdersConfirmedReply liet ke ro tung don thay vi chi tong so tien.
  *
  * CHI gom don da "confirmed" (2026-08-21, sau khi them lua chon status luc ghi nhan) - dong nhat
- * voi accesstradeSync.ts (entry "pending" KHONG kich hoat DM "don da duoc xac nhan", user se duoc
- * bao sau khi don thuc su chuyen sang confirmed). r.status undefined (dong CSV cu, truoc khi co
- * cot status) coi nhu "confirmed" - khop default cua recordOrdersFromCsv.
+ * voi shopeeReportImport.ts (entry "pending" KHONG kich hoat DM "don da duoc xac nhan", user se
+ * duoc bao sau khi don thuc su chuyen sang confirmed). r.status undefined coi nhu "confirmed".
  */
 export function summarizeOrderResultsByUser(results: OrderRowResult[]): UserOrderSummary[] {
   const map = new Map<string, UserOrderSummary>();

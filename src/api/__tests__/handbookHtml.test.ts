@@ -71,10 +71,11 @@ test("handbook: vi du voi bo % mac dinh ra dung con so cua ban Google Docs cu", 
   }
 });
 
-test("handbook: khong nhac den Lazada", () => {
+test("handbook: khong nhac den san da ngung (Lazada, TikTok Shop)", () => {
   const html = render();
 
   assert.ok(!/lazada/i.test(html), "Lazada da duoc go khoi So tay (quyet dinh 2026-09-28)");
+  assert.ok(!/tiktok/i.test(html), "TikTok Shop da duoc go khoi So tay (quyet dinh 2026-09-29)");
 });
 
 test("handbook: co du 3 phan chinh cua ban goc", () => {
@@ -89,11 +90,9 @@ test("handbook: giu cac noi dung bat buoc cua ban goc", () => {
   const html = render();
 
   assert.match(html, /xemhh/, "phai con huong dan lenh xemhh");
-  assert.match(html, /thứ Ba/i, "phai con lich cap nhat TikTok Shop");
   assert.match(html, /livestream/i, "phai con canh bao khong mo video\\/livestream truoc khi dat");
   assert.match(html, /không hỗ trợ rút một phần|rút toàn bộ/i, "phai con quy dinh rut toan bo");
   assert.match(html, /Shopee/);
-  assert.match(html, /TikTok Shop/);
 });
 
 test("handbook: co muc luc tro toi dung cac id section co that trong trang", () => {
