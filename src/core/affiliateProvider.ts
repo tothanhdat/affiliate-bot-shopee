@@ -13,9 +13,9 @@ export interface CreateAffiliateLinkInput {
    */
   shopId?: string | null;
   /**
-   * id san pham da tach san tu linkValidator.ts (vi du product_id cua TikTok Shop).
-   * Optional - phan lon provider/merchant khong can, nhung AccesstradeProvider dung
-   * gia tri nay cho TikTok Shop (bat buoc phai co, xem accesstradeProvider.ts).
+   * id san pham da tach san tu linkValidator.ts (item_id cua Shopee).
+   * Optional - metadata thoi, khong provider nao con bat buoc phai co tu 2026-09-29
+   * (TikTok Shop - truong hop duy nhat tung bat buoc - da bi bo khoi scope).
    */
   itemId?: string | null;
 }
@@ -31,9 +31,9 @@ export interface CommissionEstimate {
 export interface CreateAffiliateLinkOutput {
   affiliateUrl: string;
   /**
-   * Uoc tinh hoa hong theo du lieu CHINH THUC tu nguon affiliate (khong phai scrape) - optional,
-   * hien chi TikTok Shop qua Accesstrade co (xem accesstradeProvider.ts). null/undefined neu
-   * provider/merchant khong ho tro hoac lay du lieu that bai (khong lam fail ca lan tao link).
+   * Uoc tinh hoa hong theo du lieu CHINH THUC tu nguon affiliate (khong phai scrape) - optional.
+   * Hien KHONG provider nao con tra ve gia tri nay (nguon duy nhat tung co la TikTok Shop qua
+   * Accesstrade, da bi bo khoi scope 2026-09-29). Giu lai vi day la field cua interface chung.
    */
   commissionEstimate?: CommissionEstimate | null;
 }

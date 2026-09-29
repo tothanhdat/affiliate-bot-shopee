@@ -22,16 +22,16 @@ function optionalBool(name: string, fallback: boolean): boolean {
   return raw.toLowerCase() === "true";
 }
 
-// "shopee_direct" (them 2026-08-19, xem spec_bot_ap_ma_shopee.md muc 5/T3.1): Shopee dung
-// ShopeeAffiliateProvider (co che an_redir truc tiep, khong qua Accesstrade), Lazada/TikTok Shop
-// van qua AccesstradeProvider nhu cu - xem CompositeAffiliateProvider trong providers/index.ts.
-export type AffiliateProviderName = "mock" | "accesstrade" | "shopee_direct";
+// "shopee_direct" (them 2026-08-19): Shopee dung ShopeeAffiliateProvider (co che an_redir truc
+// tiep, khong can Open API). Tu 2026-09-29 day la nguon affiliate DUY NHAT - lua chon
+// "accesstrade" da bi go cung luc voi viec bo TikTok Shop/Lazada khoi scope.
+export type AffiliateProviderName = "mock" | "shopee_direct";
 
 function resolveAffiliateProvider(): AffiliateProviderName {
   const raw = optional("AFFILIATE_PROVIDER", "mock").toLowerCase();
-  if (raw !== "mock" && raw !== "accesstrade" && raw !== "shopee_direct") {
+  if (raw !== "mock" && raw !== "shopee_direct") {
     throw new Error(
-      `AFFILIATE_PROVIDER phai la "mock", "accesstrade" hoac "shopee_direct", nhan duoc: "${raw}"`
+      `AFFILIATE_PROVIDER phai la "mock" hoac "shopee_direct", nhan duoc: "${raw}"`
     );
   }
   return raw;
@@ -211,20 +211,9 @@ export const env = {
 export function assertAffiliateProviderConfigured(): void {
   if (env.affiliateProvider === "mock") return;
 
-  // Ca "accesstrade" va "shopee_direct" deu can Accesstrade API key - shopee_direct van dung
-  // AccesstradeProvider cho Lazada/TikTok Shop qua CompositeAffiliateProvider (providers/index.ts).
-  if (env.accesstrade.apiKey === "") {
-    throw new Error(
-      `AFFILIATE_PROVIDER=${env.affiliateProvider} nhung thieu ACCESSTRADE_API_KEY. ` +
-        "Hoan tat T0.1 (dang ky Accesstrade, lay API key) roi dien vao .env, " +
-        "hoac dat AFFILIATE_PROVIDER=mock de chay thu."
-    );
-  }
-  // Khong bat buoc campaign_id cho TAT CA merchant o day - moi merchant duoc kiem tra
-  // rieng luc xu ly request that (MerchantNotConfiguredError), vi co the ban chi dung
-  // 1 vai merchant (vi du chi Shopee) chu chua dang ky Lazada.
-
-  if (env.affiliateProvider === "shopee_direct" && env.shopeeDirect.affiliateId === "") {
+  // Tu 2026-09-29 khong con phu thuoc ACCESSTRADE_API_KEY - Shopee di thang qua an_redir,
+  // chi can affiliate_id co dinh cua tai khoan.
+  if (env.shopeeDirect.affiliateId === "") {
     throw new Error(
       "AFFILIATE_PROVIDER=shopee_direct nhung thieu SHOPEE_AFFILIATE_ID. " +
         "Lay affiliate_id tai affiliate.shopee.vn/account_setting roi dien vao .env."

@@ -25,7 +25,7 @@ const resolver = new LinkResolverService(affiliateProvider, logStore, rateLimite
 if (env.affiliateProvider === "mock") {
   console.warn(
     "[warn] AFFILIATE_PROVIDER=mock - dang chay voi affiliate link gia. " +
-      "Hoan tat T0.1 va dat ACCESSTRADE_API_KEY + AFFILIATE_PROVIDER=accesstrade de dung that."
+      "Dat SHOPEE_AFFILIATE_ID + AFFILIATE_PROVIDER=shopee_direct de dung that."
   );
 }
 
