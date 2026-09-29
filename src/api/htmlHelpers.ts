@@ -10,11 +10,6 @@ export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
-/** "YYYY-MM-DD" cua ngay hom nay (gio VN) - dung lam value mac dinh cho <input type="date">. */
-export function todayDateInputValue(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
-}
-
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")

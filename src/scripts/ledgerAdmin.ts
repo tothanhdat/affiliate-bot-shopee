@@ -209,8 +209,8 @@ async function main(): Promise<void> {
       case "reverse-entry": {
         const id = requireFlag(values, "id");
         const reason = requireFlag(values, "reason");
-        // allowNonPending: true - Shopee (ghi tay) khong co giai doan "pending" nhu duong Accesstrade
-        // tu dong, nen CLI la loi thoat DUY NHAT de huy 1 don da "confirmed" (nhap sai, tra hang phat
+        // allowNonPending: true - don Shopee ghi tay khong co giai doan "pending",
+        // nen CLI la loi thoat DUY NHAT de huy 1 don da "confirmed" (nhap sai, tra hang phat
         // hien tre...). Van bi chan neu entry da gan vao 1 yeu cau rut tien (EntryAlreadyWithdrawnError).
         const result = ledgerStore.reverseCommissionEntry(id, reason, { allowNonPending: true });
         console.log(JSON.stringify(result, null, 2));
@@ -220,25 +220,6 @@ async function main(): Promise<void> {
       case "list-pending-withdrawals": {
         const result = ledgerStore.listPendingWithdrawals();
         console.log(JSON.stringify(result, null, 2));
-        break;
-      }
-
-      case "record-accesstrade-payment": {
-        const amount = requireNumberFlag(values, "amount");
-        const note = typeof values.note === "string" ? values.note : undefined;
-        const result = ledgerStore.recordAccesstradePayment({ amountVnd: amount, note });
-        console.log(JSON.stringify(result, null, 2));
-        break;
-      }
-
-      case "reconciliation-summary": {
-        const result = ledgerStore.getReconciliationSummary();
-        console.log(JSON.stringify(result, null, 2));
-        if (result.remainingVnd < 0) {
-          console.warn(
-            `\nCANH BAO: dang tra user vuot qua so tien da nhan tu Accesstrade (am ${Math.abs(result.remainingVnd).toLocaleString("vi-VN")}d).`
-          );
-        }
         break;
       }
 

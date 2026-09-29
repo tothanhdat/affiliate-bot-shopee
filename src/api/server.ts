@@ -3,7 +3,6 @@ import multer from "multer";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import {
-  renderAccesstradePaymentsPage,
   renderAdminLoginPage,
   renderOrdersPage,
   ORDERS_PAGE_SIZE,
@@ -470,58 +469,6 @@ export function createServer(
     res.type("html").send(renderUsersPage(ledgerStore.listUsers()));
   });
 
-  // T4 doi chieu dong tien: xem lich su + ghi nhan 1 lan Accesstrade CHUYEN KHOAN THAT cho chu bot,
-  // so sanh voi tong da tra user (xem ledgerStore.getReconciliationSummary). receivedAt la ngay
-  // Accesstrade THAT SU chuyen (chon tren form, mac dinh hom nay) - khac voi luc admin ghi vao he thong.
-  app.get("/admin/accesstrade-payments", requireAdminAuth, (_req: Request, res: Response) => {
-    res
-      .type("html")
-      .send(
-        renderAccesstradePaymentsPage(ledgerStore.listAccesstradePayments(), ledgerStore.getReconciliationSummary())
-      );
-  });
-
-  app.post("/admin/accesstrade-payments", requireAdminAuth, (req: Request, res: Response) => {
-    const amountRaw = typeof req.body?.amount === "string" ? req.body.amount.trim() : "";
-    const amount = Number(amountRaw);
-    const note = typeof req.body?.note === "string" && req.body.note.trim() !== "" ? req.body.note.trim() : undefined;
-    const receivedAtDate = typeof req.body?.receivedAt === "string" ? req.body.receivedAt.trim() : "";
-    // Chi nhan dung dang "YYYY-MM-DD" tu <input type="date"> - khong hop le/rong thi dung mac dinh
-    // (thoi diem ghi) thay vi bao loi, vi day chi la truong ghi chu ngay, khong phai du lieu quan trong.
-    const receivedAt = /^\d{4}-\d{2}-\d{2}$/.test(receivedAtDate) ? `${receivedAtDate}T00:00:00.000Z` : undefined;
-
-    if (!Number.isFinite(amount)) {
-      res
-        .status(422)
-        .type("html")
-        .send(
-          renderAccesstradePaymentsPage(
-            ledgerStore.listAccesstradePayments(),
-            ledgerStore.getReconciliationSummary(),
-            `Số tiền "${amountRaw}" không hợp lệ, vui lòng nhập số.`
-          )
-        );
-      return;
-    }
-
-    try {
-      ledgerStore.recordAccesstradePayment({ amountVnd: amount, note, receivedAt });
-      res.redirect(303, "/admin/accesstrade-payments");
-    } catch (err) {
-      const errorMessage = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res
-        .status(422)
-        .type("html")
-        .send(
-          renderAccesstradePaymentsPage(
-            ledgerStore.listAccesstradePayments(),
-            ledgerStore.getReconciliationSummary(),
-            errorMessage
-          )
-        );
-    }
-  });
-
   app.get("/admin/orders", requireAdminAuth, (req: Request, res: Response) => {
     const filters: OrdersFilters = {
       platform:
@@ -587,8 +534,8 @@ export function createServer(
     }
   });
 
-  // Ghi nhan don hang tu Accesstrade tren web - thay the (khong thay the, chi THEM lua chon ngoai CLI)
-  // cho ledgerAdmin.ts record-conversion / record-conversions-csv. Dung chung logic qua core/orderIngest.ts
+  // Ghi nhan don hang tren web - THEM lua chon ngoai CLI ledgerAdmin.ts record-conversion /
+  // record-shopee-report. Dung chung logic qua core/orderIngest.ts
   // de khong lap lai (tra subId -> platform/userId/merchant -> ledgerStore.recordConversion).
   app.get("/admin/record-orders", requireAdminAuth, (_req: Request, res: Response) => {
     res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20)));
@@ -632,7 +579,7 @@ export function createServer(
       });
       // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay, khong gop lot.
       // CHI bao khi da "confirmed" (Kha dung) - don "pending" (Cho xac nhan) chua chac chan, dong
-      // nhat voi accesstradeSync.ts (khong DM cho entry pending). Best-effort - loi gui khong duoc
+      // nhat voi shopeeReportImport.ts (khong DM cho entry pending). Best-effort - loi gui khong duoc
       // lam fail response, don da ghi vao ledger roi.
       if (entry.status === "confirmed") {
         const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);

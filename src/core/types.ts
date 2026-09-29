@@ -127,21 +127,6 @@ export interface DashboardToken {
   createdAt: string;
 }
 
-/** 1 lan Accesstrade CHUYEN KHOAN THAT cho chu bot - nhap tay boi admin, doi chieu voi tien da tra user. */
-export interface AccesstradePayment {
-  id: string;
-  receivedAt: string;
-  amountVnd: number;
-  note: string | null;
-}
-
-/** Doi chieu dong tien: da nhan that tu Accesstrade vs da tra that cho user - phat hien som neu tra vuot thu. */
-export interface ReconciliationSummary {
-  totalReceivedVnd: number;
-  totalPaidToUsersVnd: number;
-  remainingVnd: number;
-}
-
 /**
  * Lich su cac lan "ghi nhan don hang" tren web /admin/record-orders (2026-08-23) - "csv" la import
  * bao cao goc Shopee (co the nhieu don/lan), "single" la form "Ghi 1 don le" (luon dung 1 don moi,
