@@ -1,6 +1,6 @@
 # Bot Ap Ma Shopee Affiliate — Core Service + Telegram + Zalo Group Adapter
 
-Chi tiet implementation/kien truc xem `CLAUDE.md`; huong dan van hanh xem `huong-dan-van-hanh-admin.md`; huong dan su dung cho user xem `huong-dan-nguoi-dung.md`. Tu 2026-09-29 chi ho tro **Shopee** (TikTok Shop va Lazada da bi bo khoi scope, keo theo toan bo duong Accesstrade). Dung Zalo Group Adapter thay cho Zalo OA chinh thuc. Scope da code:
+Chi tiet implementation/kien truc xem `CLAUDE.md`; huong dan cho user xem trang `/so-tay` bot tu host. Tu 2026-09-29 chi ho tro **Shopee** (TikTok Shop va Lazada da bi bo khoi scope, keo theo toan bo duong Accesstrade). Dung Zalo Group Adapter thay cho Zalo OA chinh thuc. Scope da code:
 
 - **T1.1** Core Link Resolver Service (validate link, nhan dien merchant theo domain, tao affiliate link Shopee qua co che an_redir)
 - **T1.2** Telegram Adapter (long polling)

@@ -59,7 +59,7 @@ export class ShopeeAffiliateProvider implements AffiliateProvider {
     // hon han giu nguyen slug ten san pham tieng Viet cua link goc. Neu khong tach duoc (link
     // shop/category/campaign, hoac pattern URL chua duoc xac minh trong extractIds()) fallback ve
     // chinh productUrl da resolve - giong cach Custom Link xu ly duoc moi loai trang Shopee,
-    // khong chi trang san pham (xem nguon-kien-thuc-shopee-affiliate-portal.md muc 3).
+    // khong chi trang san pham.
     const originLink =
       input.shopId && input.itemId
         ? `https://shopee.vn/product/${input.shopId}/${input.itemId}`
@@ -101,7 +101,7 @@ export class ShopeeAffiliateProvider implements AffiliateProvider {
   /**
    * Da xac nhan Shopee Direct KHONG co nguon coupon chung tuong duong (ca 3 muc Hoa hong Shopee/
    * San pham/Uu dai doc quyen deu gan theo tung san pham cu the, khong phai danh sach ma giam gia
-   * chung cua merchant) - xem nguon-kien-thuc-shopee-affiliate-portal.md muc 8. Tra ve rong thay
+   * chung cua merchant). Tra ve rong thay
    * vi bao loi, vi PROMOTIONS_DISPLAY_LIMIT mac dinh da tat cho Shopee.
    */
   async getPromotions(_merchant: MerchantId, _limit: number): Promise<PromotionItem[]> {
