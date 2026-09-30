@@ -64,6 +64,19 @@ export interface AddlivetagCommissionLookupConfig {
   fetchImpl?: FetchLike;
 }
 
+/** So lieu tho doc tu 1 lan goi API, truoc khi quyet dinh co chap nhan hay khong. */
+interface RawProductInfo {
+  commissionAmount: number;
+  ratePercent: number;
+  price: number;
+  isCapped: boolean;
+  /** true = ben cung cap tra tu cache cua ho (`dataSource: "db"`) chu khong goi lai nguon. */
+  fromCache: boolean;
+}
+
+/** Duoi nguong nay thi khong con du thoi gian de thu lai cho co y nghia - bo qua luon. */
+const MIN_RETRY_BUDGET_MS = 400;
+
 function readFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -87,7 +100,60 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
     }
   }
 
+  /**
+   * Doc hoa hong, kem MOT lan thu lai khi nghi ngo cache cua ben cung cap bi hong.
+   *
+   * VI SAO CAN THU LAI (do that 2026-10-01, dung xoa buoc nay):
+   * Cung mot item, cung mot phut, ben cung cap tra HAI ket qua khac nhau - ban cache
+   * (`dataSource: "db"`) noi `commission: 0`, con ban ep goi nguon (`clear_cache=1`,
+   * `dataSource: "api"`) noi `commission: 40000`. Tuc la cache cua ho co the giu mot gia tri 0
+   * SAI trong toi 3 tieng. Neu tin ngay so 0 do thi bot bo qua uoc tinh cua san pham CO hoa hong
+   * that - va neu sau nay them tinh nang "bao thang la san pham khong du dieu kien hoan tien"
+   * thi con noi SAI han ve san pham do.
+   *
+   * Chi thu lai dung truong hop dang nghi: commission <= 0 VA den tu cache. San pham co hoa hong
+   * binh thuong khong ton them request nao. Han muc 150 req/phut nen chi phi nay khong dang ke.
+   */
   private async fetchCommission(itemId: string): Promise<ProductCommission | null> {
+    const startedAt = Date.now();
+    let info = await this.fetchOnce(itemId, false, this.config.timeoutMs);
+
+    if (info && info.commissionAmount <= 0 && info.fromCache) {
+      // Ngan sach thoi gian la TONG cho ca luot tra, khong phai moi request - user dang cho tin
+      // nhan, khong duoc phep doi 2 lan timeout. Con qua it thoi gian thi bo qua lan thu lai.
+      const remaining = this.config.timeoutMs - (Date.now() - startedAt);
+      if (remaining >= MIN_RETRY_BUDGET_MS) {
+        const fresh = await this.fetchOnce(itemId, true, remaining);
+        if (fresh) info = fresh;
+      }
+    }
+
+    if (!info) return null;
+
+    // Den day van <= 0 (va da ep goi nguon neu can) thi day la so 0 THAT: nganh hang khong co
+    // hoa hong. Tra null de bot giu nguyen tin nhan cu, thay vi khoe con so "0d" vua vo nghia
+    // vua phan tac dung.
+    if (info.commissionAmount <= 0) {
+      console.warn(
+        `[commissionLookup] item ${itemId}: khong co hoa hong (commission=${info.commissionAmount}, fromCache=${info.fromCache})`
+      );
+      return null;
+    }
+
+    return {
+      commissionAmount: Math.round(info.commissionAmount),
+      ratePercent: info.ratePercent,
+      price: info.price,
+      isCapped: info.isCapped,
+    };
+  }
+
+  /** Mot lan goi API. Tra `null` khi loi truyen tai/sai dinh dang; con so lieu (ke ca commission = 0) thi tra nguyen. */
+  private async fetchOnce(
+    itemId: string,
+    clearCache: boolean,
+    timeoutMs: number
+  ): Promise<RawProductInfo | null> {
     const url = new URL(this.config.endpoint ?? ADDLIVETAG_DEFAULT_ENDPOINT);
     url.searchParams.set("item_id", itemId);
     if (this.config.baseRatePercent != null) {
@@ -96,11 +162,14 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
     if (this.config.capVnd != null) {
       url.searchParams.set("cap", String(this.config.capVnd));
     }
+    if (clearCache) {
+      url.searchParams.set("clear_cache", "1");
+    }
 
     const res = await this.fetchImpl(url.toString(), {
       // Key di bang header chu KHONG phai query string - tranh lot vao log may chu trung gian.
       headers: { "X-API-Key": this.config.apiKey, accept: "application/json" },
-      signal: AbortSignal.timeout(this.config.timeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!res.ok) {
@@ -122,18 +191,17 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
     }
 
     const commissionAmount = readFiniteNumber(info.commission);
-    // commission <= 0 nghia la nganh hang nay khong co hoa hong - tra null de bot giu nguyen tin
-    // nhan cu, thay vi khoe voi user con so "0d" vua vo nghia vua phan tac dung.
-    if (commissionAmount == null || commissionAmount <= 0) {
-      console.warn(`[commissionLookup] item ${itemId}: commission khong dung (${String(info.commission)})`);
+    if (commissionAmount == null) {
+      console.warn(`[commissionLookup] item ${itemId}: commission khong phai so (${String(info.commission)})`);
       return null;
     }
 
     return {
-      commissionAmount: Math.round(commissionAmount),
+      commissionAmount,
       ratePercent: readFiniteNumber(info.totalRatePercent) ?? 0,
       price: readFiniteNumber(info.price) ?? 0,
       isCapped: info.isCapped === true,
+      fromCache: info.dataSource === "db",
     };
   }
 }

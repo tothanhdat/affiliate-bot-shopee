@@ -226,3 +226,89 @@ test("commission am -> null", async () => {
   });
   assert.equal(await makeLookup(fetchImpl).lookup("43881017922"), null);
 });
+
+/**
+ * Thu lai khi nghi cache cua ben cung cap bi hong (2026-10-01).
+ *
+ * Su co that: cung item 57810614027 (Canon EOS R50), cung mot phut - ban cache
+ * (`dataSource: "db"`) tra `commission: 0`, ban ep goi nguon (`clear_cache=1`,
+ * `dataSource: "api"`) tra `commission: 40000`. Portal Shopee xac nhan 40.000d moi dung.
+ * Khong co buoc thu lai thi bot bo qua uoc tinh cua san pham CO hoa hong that.
+ */
+function seqFetch(bodies: unknown[]) {
+  const urls: string[] = [];
+  const fetchImpl: FetchLike = async (url) => {
+    urls.push(String(url));
+    const body = bodies[Math.min(urls.length - 1, bodies.length - 1)];
+    return { ok: true, status: 200, json: async () => body };
+  };
+  return { fetchImpl, urls };
+}
+
+const zeroFromCache = {
+  status: "success",
+  productInfo: { ...CANON_CAPPED_RESPONSE.productInfo, commission: 0, isCapped: false, dataSource: "db" },
+};
+const realFromApi = {
+  status: "success",
+  productInfo: { ...CANON_CAPPED_RESPONSE.productInfo, dataSource: "api" },
+};
+
+test("commission=0 den tu CACHE -> goi lai voi clear_cache=1 va lay so that", async () => {
+  const { fetchImpl, urls } = seqFetch([zeroFromCache, realFromApi]);
+  const result = await makeLookup(fetchImpl).lookup("57810614027");
+
+  assert.equal(urls.length, 2, "phai goi lan 2 de ep nguon");
+  assert.doesNotMatch(urls[0], /clear_cache/, "lan 1 khong duoc ep - se pha cache cua ho vo co");
+  assert.match(urls[1], /clear_cache=1/);
+  assert.equal(result?.commissionAmount, 40000);
+});
+
+test("commission=0 den tu NGUON (dataSource=api) -> tin ngay, khong goi lai", async () => {
+  // Day la so 0 THAT (nganh hang khong co hoa hong) - goi lai cung chi ra 0, ton request va
+  // lam user cho lau hon vo ich.
+  const zeroFromApi = {
+    status: "success",
+    productInfo: { ...CANON_CAPPED_RESPONSE.productInfo, commission: 0, dataSource: "api" },
+  };
+  const { fetchImpl, urls } = seqFetch([zeroFromApi]);
+  const result = await makeLookup(fetchImpl).lookup("57810614027");
+
+  assert.equal(urls.length, 1, "khong duoc goi lai khi so 0 den tu nguon");
+  assert.equal(result, null);
+});
+
+test("goi lai van 0 -> tra null, va CHI thu dung 1 lan (khong lap vo han)", async () => {
+  const zeroFromApi = {
+    status: "success",
+    productInfo: { ...CANON_CAPPED_RESPONSE.productInfo, commission: 0, dataSource: "api" },
+  };
+  const { fetchImpl, urls } = seqFetch([zeroFromCache, zeroFromApi]);
+  const result = await makeLookup(fetchImpl).lookup("57810614027");
+
+  assert.equal(urls.length, 2);
+  assert.equal(result, null);
+});
+
+test("co hoa hong binh thuong tu cache -> KHONG ton them request nao", async () => {
+  const okFromCache = {
+    status: "success",
+    productInfo: { ...ULANZI_RESPONSE.productInfo, dataSource: "db" },
+  };
+  const { fetchImpl, urls } = seqFetch([okFromCache]);
+  const result = await makeLookup(fetchImpl).lookup("43881017922");
+
+  assert.equal(urls.length, 1);
+  assert.equal(result?.commissionAmount, 12250);
+});
+
+test("goi lai that bai -> khong throw, tra null theo ket qua goc", async () => {
+  const urls: string[] = [];
+  const fetchImpl: FetchLike = async (url) => {
+    urls.push(String(url));
+    if (urls.length === 1) return { ok: true, status: 200, json: async () => zeroFromCache };
+    throw new Error("The operation was aborted");
+  };
+  assert.equal(await makeLookup(fetchImpl).lookup("57810614027"), null);
+  assert.equal(urls.length, 2);
+});
