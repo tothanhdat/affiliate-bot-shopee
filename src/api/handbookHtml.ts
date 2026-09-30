@@ -219,7 +219,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
             <p>Mỗi đơn hàng được tính theo công thức: hoa hồng gốc từ sàn → trừ ${data.taxPercent}% thuế → trừ ${data.platformFeePercent}% phí sàn (tính trên phần đã trừ thuế) → phần còn lại bạn nhận <strong>${data.userSharePercent}%</strong>, chủ bot giữ ${botSharePercent}% để duy trì vận hành.</p>
             <p class="example-label">Ví dụ</p>
             ${calcFlow}
-            <p class="muted-note">Tỉ lệ này chốt tại thời điểm đơn được ghi nhận — nếu sau này tỉ lệ % thay đổi, các đơn đã ghi nhận trước đó không bị ảnh hưởng ngược.</p>`,
+            <p class="muted-note">Tỉ lệ này chốt tại thời điểm đơn hoàn thành — nếu sau này tỉ lệ % thay đổi, các đơn đã hoàn thành trước đó không bị ảnh hưởng ngược.</p>`,
         },
         {
           id: "dieu-kien",
