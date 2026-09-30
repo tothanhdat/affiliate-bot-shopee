@@ -40,6 +40,9 @@ if (env.telegramBotToken === "") {
   );
 } else {
   telegramBot = createTelegramBot(resolver, {
+    commissionUserSharePercent: env.commission.userSharePercent,
+    commissionTaxPercent: env.commission.taxPercent,
+    commissionPlatformFeePercent: env.commission.platformFeePercent,
     token: env.telegramBotToken,
     maxLinksPerMessage: env.maxLinksPerMessage,
     promotionsLimit: env.promotionsDisplayLimit,
@@ -166,6 +169,8 @@ if (!env.zaloGroup.enabled) {
     ledgerStore,
     dashboardBaseUrl: env.dashboard.baseUrl,
     commissionUserSharePercent: env.commission.userSharePercent,
+    commissionTaxPercent: env.commission.taxPercent,
+    commissionPlatformFeePercent: env.commission.platformFeePercent,
     withdrawalThresholdVnd: env.withdrawal.thresholdVnd,
     faqService,
   });

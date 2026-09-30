@@ -235,3 +235,44 @@ test("formatGroupJoinBlockedGroupReply: template default co {{name}} va link So 
   assert.ok(!body.includes("docs.google.com"), "khong duoc con tro ve ban Google Docs cu");
   assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
 });
+
+/**
+ * Uoc tinh tien hoan luc tra link (2026-10-01). Truoc do nhanh nay la code chet nen commit
+ * 5f86f18 da gop cau hoa hong thang vao template; gio co nguon du lieu that (xem
+ * src/core/commissionLookup.ts) nen cau hoa hong quay lai la MOT SLOT co HAI trang thai.
+ */
+test("formatSuccessReply: co uoc tinh thi thay cau 'chua bao so duoc' bang so tien that", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", {
+    userReceiveAmount: 9822,
+  });
+
+  assert.match(result, /9\.822đ/);
+  // Hai cau nay loai tru nhau: noi "em chua bao so lien duoc" ngay canh mot con so cu the la
+  // tu mau thuan truoc mat user.
+  assert.doesNotMatch(result, /chưa báo số liền được/);
+});
+
+test("formatSuccessReply: khong co uoc tinh thi giu nguyen cau cho xac nhan", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null);
+  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.ok(!result.includes("{{"), `con placeholder chua thay trong: ${result}`);
+});
+
+test("formatSuccessReply: template CU cua instance cung nhan duoc so uoc tinh", () => {
+  // Instance da bam Luu truoc 2026-10-01 co "{{commissionLine}}" trong DB - ho phai duoc huong
+  // tinh nang moi ma khong can sua tay template.
+  const result = formatSuccessReply("LINK: {{link}} | {{commissionLine}}", "https://x.test", {
+    userReceiveAmount: 12250,
+  });
+  assert.match(result, /12\.250đ/);
+});
+
+test("SUCCESS_REPLY_TEMPLATE_DEFAULT: PHAI con placeholder {{commissionLine}}", () => {
+  // Chot coupling de gay: neu ai do lai gop cau hoa hong THANG vao template (nhu commit 5f86f18
+  // tung lam luc nhanh uoc tinh con la code chet), thi so tien uoc tinh se khong bao gio hien
+  // ra duoc nua - va hong am tham, khong test nao khac bat duoc.
+  assert.ok(
+    SUCCESS_REPLY_TEMPLATE_DEFAULT.includes("{{commissionLine}}"),
+    "default template phai dung {{commissionLine}} de cau hoa hong doi duoc theo trang thai"
+  );
+});

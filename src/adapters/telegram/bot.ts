@@ -14,6 +14,7 @@ import {
   formatSkippedReply,
   formatPromotionsReply,
   formatDashboardLinkReply,
+  toCommissionReplyEstimate,
 } from "../shared/replyText.js";
 
 export interface TelegramBotOptions {
@@ -22,6 +23,16 @@ export interface TelegramBotOptions {
   promotionsLimit: number;
   ledgerStore: LedgerStore;
   dashboardBaseUrl: string;
+  /** Dong bo voi COMMISSION_USER_SHARE_PERCENT - gia tri khoi tao, admin doi duoc qua /admin/settings. */
+  commissionUserSharePercent: number;
+  /**
+   * Thue + phi san, dung de doi hoa hong GOC thanh so tien user THUC NHAN trong tin nhan tra link
+   * (2026-10-01). Dong bo voi COMMISSION_TAX_PERCENT / COMMISSION_PLATFORM_FEE_PERCENT - phai
+   * giong het gia tri ledgerStore dung luc ghi don that, neu khong bot hua mot dang ma dashboard
+   * tra mot dang.
+   */
+  commissionTaxPercent: number;
+  commissionPlatformFeePercent: number;
 }
 
 export function createTelegramBot(resolver: LinkResolverService, options: TelegramBotOptions) {
@@ -66,8 +77,14 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
         const result = await resolver.resolve({ url: rawUrl, platform: "telegram", userId });
         successMerchants.add(result.merchant);
         const successTemplate = ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
+        const replyEstimate = toCommissionReplyEstimate(result.commissionEstimate, {
+          taxPercent: options.commissionTaxPercent,
+          platformFeePercent: options.commissionPlatformFeePercent,
+          // Doc tu ledgerStore: admin doi % ngay tren /admin/settings khong can restart.
+          userSharePercent: ledgerStore.getUserSharePercent(options.commissionUserSharePercent),
+        });
         await ctx.reply(
-          formatSuccessReply(successTemplate, result.affiliateUrl),
+          formatSuccessReply(successTemplate, result.affiliateUrl, replyEstimate),
           { reply_parameters: { message_id: ctx.message.message_id } }
         );
       } catch (err) {

@@ -12,6 +12,7 @@ import {
 } from "zca-js";
 import { AppError } from "../../core/errors.js";
 import type { LedgerStore } from "../../core/ledgerStore.js";
+import type { CommissionEstimate } from "../../core/affiliateProvider.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
@@ -34,6 +35,7 @@ import {
   formatWelcomeReply,
   formatGroupJoinWelcomeReply,
   formatGroupJoinBlockedGroupReply,
+  toCommissionReplyEstimate,
 } from "../shared/replyText.js";
 
 export interface ZaloGroupBotOptions {
@@ -47,6 +49,14 @@ export interface ZaloGroupBotOptions {
   commissionUserSharePercent: number;
   /** Dung de dien vao DM chao mung user moi (formatWelcomeReply) - dong bo voi WITHDRAWAL_THRESHOLD_VND. */
   withdrawalThresholdVnd: number;
+  /**
+   * Thue + phi san, dung de doi hoa hong GOC thanh so tien user THUC NHAN trong tin nhan tra link
+   * (2026-10-01). Dong bo voi COMMISSION_TAX_PERCENT / COMMISSION_PLATFORM_FEE_PERCENT - phai
+   * giong het gia tri ledgerStore dung luc ghi don that, neu khong bot hua mot dang ma dashboard
+   * tra mot dang.
+   */
+  commissionTaxPercent: number;
+  commissionPlatformFeePercent: number;
   /**
    * Tra loi cau hoi FAQ trong DM (2026-09-13). Khong truyen (vd FAQ_PROVIDER=off) thi bot IM LANG
    * voi moi DM khong phai "xemhh"/link san pham - dung hanh vi truoc 2026-09-13.
@@ -369,6 +379,20 @@ export class ZaloGroupBot {
    * truyen vao qua sendReply (group: kem mention @ten; DM: van ban thuan) thay vi nhan doi ca vong
    * lap nay - sua logic xu ly link o day la ap dung cho ca 2 luong.
    */
+  /**
+   * userSharePercent doc tu ledgerStore (khong phai tu env) vi admin doi duoc ngay tren
+   * /admin/settings khong can restart - env chi con la gia tri khoi tao. Xem CLAUDE.md.
+   */
+  private toReplyEstimate(estimate: CommissionEstimate | null) {
+    return toCommissionReplyEstimate(estimate, {
+      taxPercent: this.options.commissionTaxPercent,
+      platformFeePercent: this.options.commissionPlatformFeePercent,
+      userSharePercent: this.options.ledgerStore.getUserSharePercent(
+        this.options.commissionUserSharePercent
+      ),
+    });
+  }
+
   private async processProductLinks(
     userId: string,
     links: string[],
@@ -384,7 +408,7 @@ export class ZaloGroupBot {
         successMerchants.add(result.merchant);
         const successTemplate = this.options.ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         await sendReply(
-          formatSuccessReply(successTemplate, result.affiliateUrl)
+          formatSuccessReply(successTemplate, result.affiliateUrl, this.toReplyEstimate(result.commissionEstimate))
         );
       } catch (err) {
         // AppError.message chua chi tiet chan doan (vd "Affiliate API error: HTTP 400: ...") con

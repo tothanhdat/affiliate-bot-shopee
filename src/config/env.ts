@@ -21,6 +21,21 @@ function optionalBool(name: string, fallback: boolean): boolean {
   return raw.toLowerCase() === "true";
 }
 
+/**
+ * Bien so tuy chon KHONG co gia tri mac dinh - bo trong thi tra `null` (khac optionalInt luon co
+ * fallback). Dung cho cac tham so ma "khong truyen" mang y nghia rieng, vi du base_rate/cap cua
+ * commissionLookup: bo trong = de ben cung cap tu lay rate that cua tai khoan.
+ */
+function optionalNumberOrNull(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return null;
+  const parsed = Number.parseFloat(raw);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Env var ${name} phai la so, nhan duoc: "${raw}"`);
+  }
+  return parsed;
+}
+
 // "shopee_direct" (them 2026-08-19): Shopee dung ShopeeAffiliateProvider (co che an_redir truc
 // tiep, khong can Open API). Tu 2026-09-29 day la nguon affiliate DUY NHAT - lua chon
 // "accesstrade" da bi go cung luc voi viec bo TikTok Shop/Lazada khoi scope.
@@ -106,6 +121,29 @@ export const env = {
      * tu choi ngay (ImplausibleCommissionAmountError), chan loi go nham (vd them 1 so 0) luc nhap CLI/CSV.
      */
     maxRatioPercent: optionalInt("COMMISSION_MAX_RATIO_PERCENT", 50),
+  },
+
+  /**
+   * Tra so tien hoa hong uoc tinh cua san pham ngay luc tra link (2026-10-01).
+   * Xem src/core/commissionLookup.ts de biet VI SAO phai di qua API ben thu ba thay vi goi thang
+   * Shopee (Open API bi tu choi + API noi bo portal co chu ky chong bot gan theo tung request).
+   *
+   * Mac dinh TAT: khong bat/khong co API key thi hanh vi bot khong doi mot ly nao - bot van tra
+   * tin nhan nhu cu. Giong triet ly cua FAQ_PROVIDER=off va AFFILIATE_PROVIDER=mock.
+   */
+  commissionLookup: {
+    enabled: optionalBool("COMMISSION_LOOKUP_ENABLED", false),
+    /** Lay tai addlivetag.com -> API Key -> Tao Key. BAT BUOC tu 01/10/2026 (khong co -> HTTP 401). */
+    apiKey: optional("ADDLIVETAG_API_KEY", ""),
+    /** Tran thoi gian cho. De ngan co chu dich: day la tinh nang PHU, khong duoc lam cham viec tra link. */
+    timeoutMs: optionalInt("COMMISSION_LOOKUP_TIMEOUT_MS", 2000),
+    /**
+     * CHI dien khi tier tai khoan khac mac dinh cua ben cung cap. Bo trong (mac dinh) thi ho tu
+     * lay rate that - da doi chieu 2026-09-30 tren 3 san pham that, khop chinh xac portal.
+     */
+    baseRatePercent: optionalNumberOrNull("COMMISSION_LOOKUP_BASE_RATE_PERCENT"),
+    /** Tran hoa hong san (VND) cua tai khoan. Bo trong = dung mac dinh cua ben cung cap (40.000d). */
+    capVnd: optionalNumberOrNull("COMMISSION_LOOKUP_CAP_VND"),
   },
 
   withdrawal: {

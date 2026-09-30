@@ -2,10 +2,12 @@ import { MerchantNotConfiguredError } from "../errors.js";
 import { getMerchantConfig, type MerchantId } from "../merchants.js";
 import type {
   AffiliateProvider,
+  CommissionEstimate,
   CreateAffiliateLinkInput,
   CreateAffiliateLinkOutput,
   PromotionItem,
 } from "../affiliateProvider.js";
+import type { CommissionLookup } from "../commissionLookup.js";
 
 export interface ShopeeAffiliateProviderConfig {
   /** affiliate_id co dinh cua tai khoan (affiliate.shopee.vn/account_setting), khong doi/khong can xin cap lai. */
@@ -18,6 +20,12 @@ export interface ShopeeAffiliateProviderConfig {
   createShortLink: (targetUrl: string) => string;
   /** Base URL cong khai de build link rut gon gui cho user, vi du "https://bot.example.com" (khong co dau / cuoi). */
   shortLinkBaseUrl: string;
+  /**
+   * Tra hoa hong uoc tinh cua san pham (2026-10-01) - TUY CHON. Khong truyen (COMMISSION_LOOKUP_ENABLED
+   * =false) thi createAffiliateLink khong tra commissionEstimate va bot giu nguyen tin nhan cu.
+   * Injected giong createShortLink de test khong can goi mang that.
+   */
+  commissionLookup?: CommissionLookup | null;
 }
 
 /**
@@ -63,7 +71,31 @@ export class ShopeeAffiliateProvider implements AffiliateProvider {
     url.searchParams.set("sub_id", input.subId);
 
     const code = this.config.createShortLink(url.toString());
-    return { affiliateUrl: `${this.config.shortLinkBaseUrl}/s/${code}` };
+    const affiliateUrl = `${this.config.shortLinkBaseUrl}/s/${code}`;
+
+    // Uoc tinh hoa hong CHI tra duoc khi tach duoc item_id (link san pham). Link shop/category/
+    // campaign khong co item_id -> bo qua, KHONG phai loi. Lookup tu nuot moi loi thanh null
+    // (xem commissionLookup.ts) nen khong can try/catch o day - tinh nang phu khong duoc phep
+    // lam hong viec tra link.
+    const commissionEstimate =
+      this.config.commissionLookup && input.itemId
+        ? await this.toEstimate(this.config.commissionLookup, input.itemId)
+        : null;
+
+    return { affiliateUrl, commissionEstimate };
+  }
+
+  private async toEstimate(
+    lookup: CommissionLookup,
+    itemId: string
+  ): Promise<CommissionEstimate | null> {
+    const found = await lookup.lookup(itemId);
+    if (!found) return null;
+    return {
+      ratePercent: found.ratePercent,
+      estimatedAmount: found.commissionAmount,
+      currency: "VND",
+    };
   }
 
   /**

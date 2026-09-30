@@ -88,6 +88,8 @@ function setup() {
     sessionPath,
     qrPath: join(sessionDir, "qr.png"),
     maxLinksPerMessage: 3,
+  commissionTaxPercent: 10,
+  commissionPlatformFeePercent: 1,
     promotionsLimit: 0,
     ledgerStore,
     dashboardBaseUrl: "http://localhost:3002",

@@ -103,8 +103,11 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: SUCCESS_REPLY_TEMPLATE_DEFAULT,
     helpText:
-      "Placeholder hợp lệ: {{link}}. ({{commissionLine}} là placeholder cũ, chỉ còn giữ để template lưu từ trước "
-      + "vẫn chạy được — template mới không cần dùng, cứ viết thẳng câu về hoa hồng vào đây.)",
+      "Placeholder hợp lệ: {{link}} và {{commissionLine}}. "
+      + "{{commissionLine}} tự đổi theo tình huống: tra được hoa hồng thì thành câu báo số tiền ước tính "
+      + "user nhận được, không tra được thì thành câu hẹn báo sau khi Shopee xác nhận đơn. "
+      + "GIỮ placeholder này trong template — viết thẳng câu hoa hồng vào đây thì bot sẽ không bao giờ "
+      + "hiện được số tiền ước tính nữa.",
   },
   {
     key: SETTINGS_KEYS.dashboardLinkReplyTemplate,

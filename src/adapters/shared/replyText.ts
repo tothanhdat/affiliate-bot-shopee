@@ -1,4 +1,5 @@
-import type { PromotionItem } from "../../core/affiliateProvider.js";
+import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
+import { computeCommissionBreakdown } from "../../core/commissionMath.js";
 import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
 import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
@@ -27,35 +28,82 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 }
 
 /**
- * Cau giai thich vi sao chua bao duoc so hoa hong ngay luc tra link. KHONG hua so tien/% cu the -
- * nguyen tac da chot 2026-08-17 (xem CLAUDE.md).
+ * Cau giai thich vi sao chua bao duoc so hoa hong ngay luc tra link - dung khi KHONG tra duoc
+ * uoc tinh (chua bat COMMISSION_LOOKUP_ENABLED, link khong co item_id, hoac nguon loi/timeout).
  */
 const COMMISSION_PENDING_LINE =
   "Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!";
 
+export interface CommissionReplyEstimate {
+  /** So tien user THUC NHAN (da tru thue + phi san + chia % chu bot), khong phai hoa hong goc. */
+  userReceiveAmount: number;
+}
+
+/**
+ * Cau bao so tien uoc tinh. Luon co chu "uoc tinh" va luon noi ro se chot lai theo gia thuc tra:
+ * nguon du lieu tinh tren GIA NIEM YET, con hoa hong that tinh tren gia sau voucher/xu cua user,
+ * nen so thuc te gan nhu luon THAP HON con so nay. Hua chac so tien la tu tao khieu nai.
+ */
+function commissionEstimateLine(estimate: CommissionReplyEstimate): string {
+  return `💰 Đơn này ước tính hoàn ~${formatVnd(estimate.userReceiveAmount)} về ví bạn. Số chốt theo giá thực trả khi Shopee duyệt nha!`;
+}
+
 /**
  * Default cho setting "success_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh.
  *
- * 2026-09-30: cau ve hoa hong duoc GOP THANG vao day thay vi sinh tu code qua {{commissionLine}}.
- * Ly do: tu khi bo TikTok Shop/Lazada khoi scope, merchant duy nhat con lai la Shopee, ma Shopee
- * KHONG BAO GIO tra ve commissionEstimate (khong co Open API cho tai khoan ca nhan, va doc gia tu
- * trang san pham la vi pham chinh sach chong gian lan muc (e) - xem CLAUDE.md). Nhanh "uoc tinh"
- * vi the la code chet vinh vien. Gop vao template con mot cai loi thuc dung: admin sua duoc CA cau
- * hoa hong ngay tren /admin/settings, khong phai sua code + deploy nhu truoc.
+ * LICH SU cua {{commissionLine}} - doc truoc khi dinh gop cau hoa hong thang vao day lan nua:
+ * - 2026-09-30 (5f86f18): gop THANG cau hoa hong vao template, bo placeholder. Ly do luc do dung:
+ *   Shopee tu choi Open API cho tai khoan ca nhan, nen khong co cach nao biet hoa hong cua 1 san
+ *   pham -> nhanh "uoc tinh" la code chet vinh vien.
+ * - 2026-10-01: tim duoc nguon du lieu that (xem src/core/commissionLookup.ts), nhanh uoc tinh
+ *   SONG LAI, nen placeholder quay lai. Cau hoa hong gio la MOT SLOT co HAI trang thai: co uoc
+ *   tinh -> bao so tien; khong co -> cau cho Shopee xac nhan. Gop thang vao template lan nua se
+ *   lam so uoc tinh khong bao gio hien duoc (co test chan viec nay).
+ *
+ * CANH BAO VAN HANH: instance da bam Luu o /admin/settings TRONG khoang 30/09-01/10 co the dang
+ * giu template KHONG CO {{commissionLine}} trong DB, ma gia tri DB de len default trong code
+ * (xem CLAUDE.md muc "Doi default cua template..."). Nhung instance do phai vao sua tay, neu
+ * khong se khong bao gio thay so uoc tinh du da bat COMMISSION_LOOKUP_ENABLED.
  */
 export const SUCCESS_REPLY_TEMPLATE_DEFAULT =
   `Link đây ạ: {{link}}\n\n` +
-  `${COMMISSION_PENDING_LINE}\n\n` +
+  `{{commissionLine}}\n\n` +
   `Muốn theo dõi đơn hàng với hoa hồng thì nhắn "xemhh" riêng cho em nha, có link dashboard cho anh/chị tự xem liền!\n\n` +
   `⚠️ Nhớ bấm link này rồi chốt đơn liền trong phiên, đừng lướt video/live giữa chừng kẻo bay hoa hồng đó 🙂`;
 
-export function formatSuccessReply(template: string, affiliateUrl: string): string {
-  // {{commissionLine}} la PLACEHOLDER LEGACY, giu lai co chu dich: instance da tung bam Luu o
-  // /admin/settings co template CU nam trong DB, ma gia tri DB DE len default trong code (xem
-  // CLAUDE.md muc "Doi default cua template... KHONG lan toi instance da tuy chinh"). Neu bo han
-  // key nay thi renderTemplate giu nguyen chuoi "{{commissionLine}}" va bot se nhan NGUYEN VAN no
-  // cho khach. Xoa duoc khi chac chan moi instance da luu lai template moi.
-  return renderTemplate(template, { link: affiliateUrl, commissionLine: COMMISSION_PENDING_LINE });
+/**
+ * Doi hoa hong GOC tu provider thanh so tien user THUC NHAN de bao trong tin nhan.
+ *
+ * Dat o day (khong phai trong tung adapter) vi CA Telegram lan Zalo deu can y het - lap lai o hai
+ * noi la mo duong cho hai noi tinh lech nhau. Va bat buoc di qua computeCommissionBreakdown -
+ * cung ham ma ledgerStore dung luc ghi tien that va trang /so-tay dung luc nem vi du: ba noi
+ * phai ra cung mot con so, neu khong bot se hua mot dang con dashboard tra mot dang.
+ */
+export function toCommissionReplyEstimate(
+  estimate: CommissionEstimate | null | undefined,
+  rates: { taxPercent: number; platformFeePercent: number; userSharePercent: number }
+): CommissionReplyEstimate | null {
+  if (!estimate) return null;
+  const breakdown = computeCommissionBreakdown({
+    commissionAmount: estimate.estimatedAmount,
+    taxPercent: rates.taxPercent,
+    platformFeePercent: rates.platformFeePercent,
+    userSharePercent: rates.userSharePercent,
+  });
+  // Lam tron xuong con 0d thi thoi khong khoe - bao "hoan ~0d" con te hon khong bao gi.
+  if (breakdown.userShareAmount <= 0) return null;
+  return { userReceiveAmount: breakdown.userShareAmount };
+}
+
+export function formatSuccessReply(
+  template: string,
+  affiliateUrl: string,
+  estimate?: CommissionReplyEstimate | null
+): string {
+  // Mot slot, hai trang thai - KHONG hien ca hai: noi "em chua bao so lien duoc" ngay canh mot
+  // con so cu the la tu mau thuan truoc mat user.
+  const commissionLine = estimate ? commissionEstimateLine(estimate) : COMMISSION_PENDING_LINE;
+  return renderTemplate(template, { link: affiliateUrl, commissionLine });
 }
 
 export function formatErrorReply(userMessage: string): string {
