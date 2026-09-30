@@ -1,4 +1,4 @@
-import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
+import type { PromotionItem } from "../../core/affiliateProvider.js";
 import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
 import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
@@ -26,33 +26,36 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => (key in vars ? vars[key] : match));
 }
 
-/** Default cho setting "success_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
+/**
+ * Cau giai thich vi sao chua bao duoc so hoa hong ngay luc tra link. KHONG hua so tien/% cu the -
+ * nguyen tac da chot 2026-08-17 (xem CLAUDE.md).
+ */
+const COMMISSION_PENDING_LINE =
+  "Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!";
+
+/**
+ * Default cho setting "success_reply_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh.
+ *
+ * 2026-09-30: cau ve hoa hong duoc GOP THANG vao day thay vi sinh tu code qua {{commissionLine}}.
+ * Ly do: tu khi bo TikTok Shop/Lazada khoi scope, merchant duy nhat con lai la Shopee, ma Shopee
+ * KHONG BAO GIO tra ve commissionEstimate (khong co Open API cho tai khoan ca nhan, va doc gia tu
+ * trang san pham la vi pham chinh sach chong gian lan muc (e) - xem CLAUDE.md). Nhanh "uoc tinh"
+ * vi the la code chet vinh vien. Gop vao template con mot cai loi thuc dung: admin sua duoc CA cau
+ * hoa hong ngay tren /admin/settings, khong phai sua code + deploy nhu truoc.
+ */
 export const SUCCESS_REPLY_TEMPLATE_DEFAULT =
   `Link đây ạ: {{link}}\n\n` +
-  `{{commissionLine}}\n\n` +
-  `Nếu cần theo dõi các đơn hàng đã đặt và hoa hồng nhận được, bạn vui lòng nhắn với cú pháp "xemhh" riêng cho Admin nhé.\n\n` +
-  `⚠️ Lưu ý quan trọng: Bạn mở đúng link và đặt hàng ngay trong phiên đó mới được ghi nhận nhé. Không xem video/live trong phiên nhé.`;
+  `${COMMISSION_PENDING_LINE}\n\n` +
+  `Muốn theo dõi đơn hàng với hoa hồng thì nhắn "xemhh" riêng cho em nha, có link dashboard cho anh/chị tự xem liền!\n\n` +
+  `⚠️ Nhớ bấm link này rồi chốt đơn liền trong phiên, đừng lướt video/live giữa chừng kẻo bay hoa hồng đó 🙂`;
 
-export function formatSuccessReply(
-  template: string,
-  merchant: MerchantId,
-  affiliateUrl: string,
-  commissionEstimate?: CommissionEstimate | null
-): string {
-  // commissionEstimate chi co khi provider lay duoc du lieu CHINH THUC (khong phai scrape/doan) -
-  // hien KHONG provider nao con tra ve (xem affiliateProvider.ts). Khong co thi bo qua dong nay,
-  // KHONG tu bia so - giu dung nguyen tac da thong nhat.
-  // 2026-08-20 (viet lai theo gop y truc tiep cua user sau khi xem tin nhan that): cau "mình sẽ chủ
-  // dong nhan tin cho ban" thay cho "nhan 'xemhh' de theo doi" o dong nay - vi tu 2026-08-20 da co
-  // thong bao tu dong khi don duoc xac nhan (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1), noi
-  // "cho minh chu dong bao" khong con la loi hua suong nua. Dong "xemhh" van giu o duoi cho case user
-  // muon tu tra cuu truoc khi co thong bao.
-  const commissionLine = commissionEstimate
-    ? `💰 Hoa hồng ước tính: ~${commissionEstimate.ratePercent.toFixed(1)}% (~${formatVnd(commissionEstimate.estimatedAmount)}), đang áp dụng cho SP này. Số liệu có thể thay đổi khi đơn được xác nhận.`
-    : merchant === "shopee"
-      ? `Do Shopee chưa cho xem giá nên chưa tính hoa hồng liền được, đợi xíu đơn confirm là em nhắn ngay nha!`
-      : `Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé.`;
-  return renderTemplate(template, { link: affiliateUrl, commissionLine });
+export function formatSuccessReply(template: string, affiliateUrl: string): string {
+  // {{commissionLine}} la PLACEHOLDER LEGACY, giu lai co chu dich: instance da tung bam Luu o
+  // /admin/settings co template CU nam trong DB, ma gia tri DB DE len default trong code (xem
+  // CLAUDE.md muc "Doi default cua template... KHONG lan toi instance da tuy chinh"). Neu bo han
+  // key nay thi renderTemplate giu nguyen chuoi "{{commissionLine}}" va bot se nhan NGUYEN VAN no
+  // cho khach. Xoa duoc khi chac chan moi instance da luu lai template moi.
+  return renderTemplate(template, { link: affiliateUrl, commissionLine: COMMISSION_PENDING_LINE });
 }
 
 export function formatErrorReply(userMessage: string): string {

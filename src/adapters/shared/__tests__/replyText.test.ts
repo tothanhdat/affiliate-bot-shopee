@@ -88,32 +88,33 @@ test("formatGroupJoinWelcomeReply: template admin tu soan khong co placeholder t
   assert.equal(result, "Chao ban moi!");
 });
 
-test("formatSuccessReply: template mac dinh chua link va dong luu y cuoi", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "lazada", "https://example.com/aff", null);
-  assert.match(result, /Link đây ạ: https:\/\/example\.com\/aff/);
-  assert.match(result, /Lưu ý quan trọng/);
+test("formatSuccessReply: template mac dinh chua link, cau hoa hong va dong luu y cuoi", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc");
+  assert.match(result, /Link đây ạ: https:\/\/s\.shopee\.vn\/abc/);
+  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.match(result, /đừng lướt video\/live/);
 });
 
-test("formatSuccessReply: merchant shopee khong co commissionEstimate -> dong thong bao rieng cho shopee", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "shopee", "https://s.shopee.vn/abc", null);
-  assert.match(result, /Shopee chưa cho xem giá/);
+test("formatSuccessReply: template mac dinh KHONG con placeholder chua duoc thay", () => {
+  // Chan viec them placeholder moi vao default ma quen truyen vars tuong ung -> bot nhan
+  // nguyen van "{{...}}" cho khach.
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc");
+  assert.ok(!result.includes("{{"), `con placeholder chua thay trong: ${result}`);
 });
 
-test("formatSuccessReply: co commissionEstimate -> hien dong % va so tien uoc tinh", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "tiktokshop", "https://example.com/aff", {
-    ratePercent: 3.888,
-    estimatedAmount: 12_345,
-    currency: "VND",
-  });
-  assert.match(result, /~3\.9% \(~12\.345đ\)/);
-});
-
-test("formatSuccessReply: template tuy chinh chi giu lai placeholder duoc thay", () => {
-  const result = formatSuccessReply("LINK: {{link}} | GHI CHU: {{commissionLine}}", "lazada", "https://x.test", null);
+test("formatSuccessReply: template CU con {{commissionLine}} van render ra cau hoa hong day du", () => {
+  // Tuong thich nguoc: instance da bam Luu o /admin/settings giu template cu trong DB, gia tri DB
+  // de len default trong code. Bo key nay la bot nhan nguyen van "{{commissionLine}}" cho khach.
+  const result = formatSuccessReply("LINK: {{link}} | GHI CHU: {{commissionLine}}", "https://x.test");
   assert.equal(
     result,
-    "LINK: https://x.test | GHI CHU: Đơn cần thời gian để hệ thống affiliate xác nhận, mình sẽ chủ động nhắn tin cho bạn khi đơn hoàn tất nhé."
+    "LINK: https://x.test | GHI CHU: Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!"
   );
+});
+
+test("formatSuccessReply: placeholder khong biet duoc giu nguyen, khong throw", () => {
+  const result = formatSuccessReply("{{link}} / {{khongTonTai}}", "https://x.test");
+  assert.equal(result, "https://x.test / {{khongTonTai}}");
 });
 
 test("formatWithdrawalRequestedReply: template mac dinh hien dung so tien da format VND", () => {

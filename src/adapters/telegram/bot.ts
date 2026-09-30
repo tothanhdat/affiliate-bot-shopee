@@ -67,7 +67,7 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
         successMerchants.add(result.merchant);
         const successTemplate = ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         await ctx.reply(
-          formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate),
+          formatSuccessReply(successTemplate, result.affiliateUrl),
           { reply_parameters: { message_id: ctx.message.message_id } }
         );
       } catch (err) {

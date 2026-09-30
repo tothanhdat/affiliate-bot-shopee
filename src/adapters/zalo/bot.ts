@@ -384,7 +384,7 @@ export class ZaloGroupBot {
         successMerchants.add(result.merchant);
         const successTemplate = this.options.ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         await sendReply(
-          formatSuccessReply(successTemplate, result.merchant, result.affiliateUrl, result.commissionEstimate)
+          formatSuccessReply(successTemplate, result.affiliateUrl)
         );
       } catch (err) {
         // AppError.message chua chi tiet chan doan (vd "Affiliate API error: HTTP 400: ...") con

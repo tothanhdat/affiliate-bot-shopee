@@ -102,7 +102,9 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     label: "Tin nhắn trả link mua hàng thành công",
     type: "textarea",
     default: SUCCESS_REPLY_TEMPLATE_DEFAULT,
-    helpText: "Placeholder hợp lệ: {{link}}, {{commissionLine}} (dòng hoa hồng ước tính, tự tính theo sản phẩm).",
+    helpText:
+      "Placeholder hợp lệ: {{link}}. ({{commissionLine}} là placeholder cũ, chỉ còn giữ để template lưu từ trước "
+      + "vẫn chạy được — template mới không cần dùng, cứ viết thẳng câu về hoa hồng vào đây.)",
   },
   {
     key: SETTINGS_KEYS.dashboardLinkReplyTemplate,
