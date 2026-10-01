@@ -7,7 +7,7 @@ import type {
   CreateAffiliateLinkOutput,
   PromotionItem,
 } from "../affiliateProvider.js";
-import type { CommissionLookup } from "../commissionLookup.js";
+import type { CommissionLookup, ProductCommission } from "../commissionLookup.js";
 
 export interface ShopeeAffiliateProviderConfig {
   /** affiliate_id co dinh cua tai khoan (affiliate.shopee.vn/account_setting), khong doi/khong can xin cap lai. */
@@ -77,20 +77,21 @@ export class ShopeeAffiliateProvider implements AffiliateProvider {
     // campaign khong co item_id -> bo qua, KHONG phai loi. Lookup tu nuot moi loi thanh null
     // (xem commissionLookup.ts) nen khong can try/catch o day - tinh nang phu khong duoc phep
     // lam hong viec tra link.
-    const commissionEstimate =
+    const found =
       this.config.commissionLookup && input.itemId
-        ? await this.toEstimate(this.config.commissionLookup, input.itemId)
+        ? await this.config.commissionLookup.lookup(input.itemId)
         : null;
 
-    return { affiliateUrl, commissionEstimate };
+    // found === null  -> khong tra duoc, bot giu cau hen
+    // commissionAmount === 0 -> da xac minh san pham chua bat hoa hong, bot bao thang
+    return {
+      affiliateUrl,
+      commissionEstimate: found && found.commissionAmount > 0 ? this.toEstimate(found) : null,
+      noCommission: found?.commissionAmount === 0,
+    };
   }
 
-  private async toEstimate(
-    lookup: CommissionLookup,
-    itemId: string
-  ): Promise<CommissionEstimate | null> {
-    const found = await lookup.lookup(itemId);
-    if (!found) return null;
+  private toEstimate(found: ProductCommission): CommissionEstimate {
     return {
       ratePercent: found.ratePercent,
       estimatedAmount: found.commissionAmount,

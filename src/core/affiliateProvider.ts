@@ -31,6 +31,12 @@ export interface CommissionEstimate {
 export interface CreateAffiliateLinkOutput {
   affiliateUrl: string;
   /**
+   * true = da xac minh san pham nay KHONG co hoa hong (chua bat), khac han voi commissionEstimate
+   * rong vi "khong tra duoc". Bot dung co nay de bao thang cho user thay vi hen "doi Shopee xac
+   * nhan don" - loi hen do se khong bao gio den.
+   */
+  noCommission?: boolean;
+  /**
    * Uoc tinh hoa hong theo du lieu CHINH THUC tu nguon affiliate (khong phai scrape) - optional.
    * Hien KHONG provider nao con tra ve gia tri nay (nguon duy nhat tung co la TikTok Shop qua
    * Accesstrade, da bi bo khoi scope 2026-09-29). Giu lai vi day la field cua interface chung.

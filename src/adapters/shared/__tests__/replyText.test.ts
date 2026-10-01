@@ -276,3 +276,35 @@ test("SUCCESS_REPLY_TEMPLATE_DEFAULT: PHAI con placeholder {{commissionLine}}", 
     "default template phai dung {{commissionLine}} de cau hoa hong doi duoc theo trang thai"
   );
 });
+
+/**
+ * Trang thai thu BA cua {{commissionLine}} (2026-10-01): san pham da XAC MINH la khong co hoa
+ * hong. Truoc do ca nay roi chung vao cau hen "doi Shopee xac nhan don" - loi hen khong bao gio
+ * den vi don nay se khong bao gio co hoa hong de bao.
+ */
+test("formatSuccessReply: noCommission -> bao thang la chua bat hoa hong, KHONG hen suong", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null, true);
+
+  assert.match(result, /chưa bật hoa hồng/);
+  assert.doesNotMatch(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.ok(!result.includes("{{"), `con placeholder chua thay: ${result}`);
+});
+
+test("formatSuccessReply: co so tien thi KHONG bao gio hien cau 'chua bat hoa hong'", () => {
+  // Phong truong hop caller truyen nham ca hai - co so tien that thi noCommission chac chan sai.
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", {
+    userReceiveAmount: 28512,
+  }, true);
+
+  assert.match(result, /28\.512đ/);
+  assert.doesNotMatch(result, /chưa bật hoa hồng/);
+});
+
+test("formatSuccessReply: khong biet (null, false) -> van la cau hen nhu cu", () => {
+  // Ranh gioi quan trong nhat cua tinh nang nay: API timeout / het han muc / tat tinh nang deu roi
+  // vao day. Noi "san pham chua bat hoa hong" o ca nay la noi SAI ve mot san pham binh thuong.
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null, false);
+
+  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.doesNotMatch(result, /chưa bật hoa hồng/);
+});

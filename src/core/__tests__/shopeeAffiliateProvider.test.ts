@@ -184,3 +184,52 @@ test("khong cau hinh commissionLookup (COMMISSION_LOOKUP_ENABLED=false) -> hanh 
   assert.equal(result.commissionEstimate, null);
   assert.equal(result.affiliateUrl, `${SHORT_LINK_BASE_URL}/s/code1`);
 });
+
+test("hoa hong = 0 da xac minh -> noCommission=true, estimate null, link VAN tra binh thuong", async () => {
+  const { createShortLink } = fakeShortLinker();
+  const { lookup } = fakeLookup({ commissionAmount: 0, ratePercent: 0, price: 192500, isCapped: false });
+  const provider = new ShopeeAffiliateProvider({
+    affiliateId: AFFILIATE_ID,
+    createShortLink,
+    shortLinkBaseUrl: SHORT_LINK_BASE_URL,
+    commissionLookup: lookup,
+  });
+
+  const result = await provider.createAffiliateLink({
+    merchant: "shopee",
+    productUrl: "https://shopee.vn/Nho-gay-i.30147471.43007180073",
+    subId: "k-user-abc-def",
+    shopId: "30147471",
+    itemId: "43007180073",
+  });
+
+  assert.equal(result.noCommission, true);
+  assert.equal(result.commissionEstimate, null);
+  // Quyet dinh san pham (2026-10-01): VAN tra link. San pham 0d hom nay co the bat hoa hong sau,
+  // va chan link thi user khong mua duoc mon ho dang can.
+  assert.equal(result.affiliateUrl, `${SHORT_LINK_BASE_URL}/s/code1`);
+});
+
+test("lookup that bai -> noCommission PHAI la false (khong duoc noi san pham chua bat hoa hong)", async () => {
+  const { createShortLink } = fakeShortLinker();
+  const { lookup } = fakeLookup(null);
+  const provider = new ShopeeAffiliateProvider({
+    affiliateId: AFFILIATE_ID,
+    createShortLink,
+    shortLinkBaseUrl: SHORT_LINK_BASE_URL,
+    commissionLookup: lookup,
+  });
+
+  const result = await provider.createAffiliateLink({
+    merchant: "shopee",
+    productUrl: "https://shopee.vn/Ao-thun-nam-i.123.456",
+    subId: "k-user-abc-def",
+    shopId: "123",
+    itemId: "456",
+  });
+
+  // Day la ranh gioi quan trong nhat: API timeout/429/tat tinh nang deu roi vao day. Set nham
+  // true o day la bot di noi SAI ve mot san pham binh thuong va duoi user khoi don co tien.
+  assert.equal(result.noCommission, false);
+  assert.equal(result.commissionEstimate, null);
+});

@@ -33,7 +33,7 @@ export class LinkResolverService {
     try {
       const parsed = await parseProductLink(request.url);
       const subId = generateSubId(request.platform, request.userId);
-      const { affiliateUrl, commissionEstimate } = await this.provider.createAffiliateLink({
+      const { affiliateUrl, commissionEstimate, noCommission } = await this.provider.createAffiliateLink({
         merchant: parsed.merchant,
         productUrl: parsed.canonicalUrl,
         subId,
@@ -61,6 +61,7 @@ export class LinkResolverService {
         itemId: parsed.itemId,
         subId,
         commissionEstimate: commissionEstimate ?? null,
+        noCommission: noCommission === true,
       };
     } catch (err) {
       const appError = toAppError(err);

@@ -34,6 +34,15 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 const COMMISSION_PENDING_LINE =
   "Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!";
 
+/**
+ * Cau bao san pham khong co hoa hong - CHI dung khi da XAC MINH TU NGUON (xem `noCommission`
+ * trong ProductCommission). Tuyet doi khong dung cho ca "khong tra duoc hoa hong": noi sai rang
+ * mot san pham binh thuong khong duoc hoan tien se duoi user khoi don ma dang le ho co tien.
+ */
+const COMMISSION_NONE_LINE =
+  "⚠️ Sản phẩm này shop chưa bật hoa hồng nên đơn sẽ không được hoàn tiền nha. " +
+  "Link vẫn mua bình thường được — còn muốn có cashback thì bạn thử tìm sản phẩm tương tự ở shop khác xem sao!";
+
 export interface CommissionReplyEstimate {
   /** So tien user THUC NHAN (da tru thue + phi san + chia % chu bot), khong phai hoa hong goc. */
   userReceiveAmount: number;
@@ -98,11 +107,20 @@ export function toCommissionReplyEstimate(
 export function formatSuccessReply(
   template: string,
   affiliateUrl: string,
-  estimate?: CommissionReplyEstimate | null
+  estimate?: CommissionReplyEstimate | null,
+  noCommission?: boolean
 ): string {
-  // Mot slot, hai trang thai - KHONG hien ca hai: noi "em chua bao so lien duoc" ngay canh mot
-  // con so cu the la tu mau thuan truoc mat user.
-  const commissionLine = estimate ? commissionEstimateLine(estimate) : COMMISSION_PENDING_LINE;
+  // Mot slot, BA trang thai loai tru nhau - khong bao gio hien hai cau cung luc:
+  //   co so tien      -> bao so
+  //   chua bat hoa hong (DA XAC MINH tu nguon) -> bao thang, dung hen suong
+  //   khong biet      -> cau hen nhu cu
+  // Thu tu uu tien quan trong: estimate truoc, vi neu co so tien that thi noCommission chac chan
+  // la false, con nguoc lai thi khong.
+  const commissionLine = estimate
+    ? commissionEstimateLine(estimate)
+    : noCommission
+      ? COMMISSION_NONE_LINE
+      : COMMISSION_PENDING_LINE;
   return renderTemplate(template, { link: affiliateUrl, commissionLine });
 }
 

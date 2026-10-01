@@ -22,6 +22,11 @@ export interface ProductCommission {
   /**
    * So tien hoa hong GOC (truoc thue/phi san/chia % cho user), don vi VND - lay THANG tu API.
    * DA bao gom ca hoa hong san lan hoa hong seller Xtra, va DA ap tran neu don cham tran.
+   *
+   * CO THE BANG 0, va 0 o day la mot cau tra loi THAT: "san pham nay chua bat hoa hong" (da xac
+   * minh tu nguon, khong phai tu cache - xem fetchCommission). Khac han voi lookup() tra `null`
+   * nghia la "khong biet". Hai cai nay dan toi hai cau tra loi khac nhau cho user nen TUYET DOI
+   * khong duoc gop lai.
    */
   commissionAmount: number;
   /**
@@ -36,7 +41,10 @@ export interface ProductCommission {
 }
 
 export interface CommissionLookup {
-  /** Tra ve `null` khi khong tra duoc vi bat ky ly do gi - caller chi can bo qua phan uoc tinh. */
+  /**
+   * `null` = KHONG BIET (tat tinh nang, mang loi, timeout, 429, du lieu hong) -> bot giu cau hen.
+   * Object voi `commissionAmount = 0` = BIET CHAC la khong co hoa hong -> bot bao thang cho user.
+   */
   lookup(itemId: string): Promise<ProductCommission | null>;
 }
 
@@ -130,14 +138,17 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
 
     if (!info) return null;
 
-    // Den day van <= 0 (va da ep goi nguon neu can) thi day la so 0 THAT: nganh hang khong co
-    // hoa hong. Tra null de bot giu nguyen tin nhan cu, thay vi khoe con so "0d" vua vo nghia
-    // vua phan tac dung.
-    if (info.commissionAmount <= 0) {
-      console.warn(
-        `[commissionLookup] item ${itemId}: khong co hoa hong (commission=${info.commissionAmount}, fromCache=${info.fromCache})`
-      );
+    // So am la du lieu hong, khong phai cau tra lon "khong co hoa hong" - coi nhu khong biet.
+    if (info.commissionAmount < 0) {
+      console.warn(`[commissionLookup] item ${itemId}: commission am (${info.commissionAmount}) - bo qua`);
       return null;
+    }
+
+    // Den day commission = 0 (va da ep goi nguon neu so 0 do den tu cache) thi day la so 0 THAT.
+    // Tra ve nguyen chu KHONG gop thanh null: caller can phan biet "chua bat hoa hong" voi
+    // "khong tra duoc", vi hai ca nay noi hai cau khac nhau voi user.
+    if (info.commissionAmount === 0) {
+      console.warn(`[commissionLookup] item ${itemId}: san pham chua bat hoa hong (xac minh tu nguon)`);
     }
 
     return {

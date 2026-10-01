@@ -36,6 +36,8 @@ export interface ResolveLinkResult {
   subId: string;
   /** uoc tinh hoa hong tu du lieu chinh thuc cua provider - null neu khong ho tro/lay that bai */
   commissionEstimate: CommissionEstimate | null;
+  /** true = da xac minh san pham khong co hoa hong (khac voi commissionEstimate rong vi khong tra duoc). */
+  noCommission: boolean;
 }
 
 export type RequestOutcome = "success" | "error";

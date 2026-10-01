@@ -211,12 +211,16 @@ test("commission khong phai so -> null", async () => {
   assert.equal(await makeLookup(fetchImpl).lookup("43881017922"), null);
 });
 
-test("commission = 0 (nganh hang khong co hoa hong) -> null, khong hua '0d' voi user", async () => {
+test("commission = 0 -> tra ve 0 chu KHONG gop thanh null", async () => {
+  // Doi hanh vi 2026-10-01: truoc day 0 bi gop vao null nen bot hen "doi Shopee xac nhan don" -
+  // loi hen khong bao gio den. Gio 0 la mot cau tra loi THAT ("chua bat hoa hong") va phai den
+  // duoc adapter de bao thang cho user.
   const { fetchImpl } = fakeFetch({
     status: "success",
     productInfo: { ...ULANZI_RESPONSE.productInfo, commission: 0, shopeeComFinal: 0 },
   });
-  assert.equal(await makeLookup(fetchImpl).lookup("43881017922"), null);
+  const result = await makeLookup(fetchImpl).lookup("43881017922");
+  assert.equal(result?.commissionAmount, 0);
 });
 
 test("commission am -> null", async () => {
@@ -275,7 +279,7 @@ test("commission=0 den tu NGUON (dataSource=api) -> tin ngay, khong goi lai", as
   const result = await makeLookup(fetchImpl).lookup("57810614027");
 
   assert.equal(urls.length, 1, "khong duoc goi lai khi so 0 den tu nguon");
-  assert.equal(result, null);
+  assert.equal(result?.commissionAmount, 0, "0 da xac minh tu nguon -> tra 0, khong phai null");
 });
 
 test("goi lai van 0 -> tra null, va CHI thu dung 1 lan (khong lap vo han)", async () => {
@@ -287,7 +291,7 @@ test("goi lai van 0 -> tra null, va CHI thu dung 1 lan (khong lap vo han)", asyn
   const result = await makeLookup(fetchImpl).lookup("57810614027");
 
   assert.equal(urls.length, 2);
-  assert.equal(result, null);
+  assert.equal(result?.commissionAmount, 0, "da ep goi nguon va van 0 -> day la 0 THAT");
 });
 
 test("co hoa hong binh thuong tu cache -> KHONG ton them request nao", async () => {
