@@ -12,7 +12,7 @@ import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
 import { SETTINGS_REGISTRY } from "../../config/settingsRegistry.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
-import { yesterdayVnDdMm } from "../../core/vietnamDate.js";
+import { todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
 
 const THRESHOLD_VND = 50_000;
 const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
@@ -107,7 +107,13 @@ async function loginAndGetCookie(baseUrl: string, password = ADMIN_PASSWORD): Pr
 test("chua login -> moi route /admin/* (tru /admin/login) redirect ve /admin/login", async () => {
   const { baseUrl, cleanup } = setup();
   try {
-    for (const path of ["/admin", "/admin/withdrawals", "/admin/users", "/admin/orders"]) {
+    for (const path of [
+      "/admin",
+      "/admin/withdrawals",
+      "/admin/users",
+      "/admin/orders",
+      "/admin/users/zalo/user-a/commission",
+    ]) {
       const res = await fetch(`${baseUrl}${path}`, { redirect: "manual" });
       assert.equal(res.status, 303, `path=${path}`);
       assert.equal(res.headers.get("location"), "/admin/login", `path=${path}`);
@@ -1146,6 +1152,205 @@ test("/admin/orders tham so page rac/vuot gioi han khong lam vo trang", async ()
       const html = await res.text();
       assert.equal(countOrderRows(html), 3, `query=${query} phai ve trang hop le gan nhat`);
     }
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * % hoa hong rieng tung user (2026-10-01): admin cau hinh tay tren /admin/users. Han tinh theo ngay
+ * user DAT don, xem src/core/userCommissionOverride.ts.
+ */
+const COMMISSION_PATH = "/admin/users/zalo/user-a/commission";
+
+function seedUserWithOrder(ledgerStore: LedgerStore, userId = "user-a"): void {
+  ledgerStore.recordConversion({
+    subId: `k-${userId}-1`,
+    platform: "zalo",
+    userId,
+    merchant: "shopee",
+    orderId: `order-${userId}`,
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+  });
+}
+
+test("GET form cau hinh % rieng: hien % chung hien hanh + gia tri dang luu", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    ledgerStore.setUserCommissionOverride({
+      platform: "zalo",
+      userId: "user-a",
+      userSharePercent: 95,
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}${COMMISSION_PATH}`, { headers: { cookie: cookie! } });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+
+    assert.match(html, /value="95"/);
+    assert.match(html, /value="2026-10-31"/);
+    // Phai noi ro % chung de admin biet dat cao/thap hon cai gi.
+    assert.match(html, /80%/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST luu % rieng hop le -> 303, luu kem ngay bat dau la HOM NAY gio VN", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    const res = await fetch(`${baseUrl}${COMMISSION_PATH}`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ userSharePercent: "95", endDate: "2099-12-31" }),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+
+    const saved = ledgerStore.getUserCommissionOverride("zalo", "user-a");
+    assert.equal(saved?.userSharePercent, 95);
+    assert.equal(saved?.endDate, "2099-12-31");
+    assert.equal(saved?.startDate, todayVnIso());
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST ngay ket thuc de TRONG -> luu khong han", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    await fetch(`${baseUrl}${COMMISSION_PATH}`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ userSharePercent: "95", endDate: "" }),
+      redirect: "manual",
+    });
+
+    assert.equal(ledgerStore.getUserCommissionOverride("zalo", "user-a")?.endDate, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST % ngoai 0-100 -> 422, khong luu gi", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    for (const bad of ["101", "-5", "abc", ""]) {
+      const res = await fetch(`${baseUrl}${COMMISSION_PATH}`, {
+        method: "POST",
+        headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ userSharePercent: bad, endDate: "" }),
+        redirect: "manual",
+      });
+      assert.equal(res.status, 422, `% = "${bad}"`);
+      assert.equal(ledgerStore.getUserCommissionOverride("zalo", "user-a"), null, `% = "${bad}"`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST ngay ket thuc o QUA KHU -> 422 (luu uu dai het han san thi khong lam gi ca)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    const res = await fetch(`${baseUrl}${COMMISSION_PATH}`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ userSharePercent: "95", endDate: "2020-01-01" }),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 422);
+    const html = await res.text();
+    assert.match(html, /quá khứ|đã qua/i);
+    assert.equal(ledgerStore.getUserCommissionOverride("zalo", "user-a"), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST xoa uu dai -> tra user ve % chung", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore);
+    ledgerStore.setUserCommissionOverride({
+      platform: "zalo",
+      userId: "user-a",
+      userSharePercent: 95,
+      startDate: todayVnIso(),
+      endDate: null,
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    const res = await fetch(`${baseUrl}${COMMISSION_PATH}/delete`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getUserCommissionOverride("zalo", "user-a"), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("nen tang la trong danh sach hop le -> 404, khong tao ban ghi rac", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/users/facebook/user-a/commission`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ userSharePercent: "95", endDate: "" }),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 404);
+    assert.equal(ledgerStore.listUserCommissionOverrides().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/users hien cot % hoa hong rieng + nut cau hinh", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedUserWithOrder(ledgerStore, "user-a");
+    seedUserWithOrder(ledgerStore, "user-b");
+    ledgerStore.setUserCommissionOverride({
+      platform: "zalo",
+      userId: "user-a",
+      userSharePercent: 95,
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/users`, { headers: { cookie: cookie! } })).text();
+
+    assert.match(html, /<th>% hoa h\u1ed3ng<\/th>/);
+    assert.match(html, /95%/);
+    assert.match(html, /31\/10\/2026/);
+    assert.match(html, new RegExp(COMMISSION_PATH));
   } finally {
     cleanup();
   }

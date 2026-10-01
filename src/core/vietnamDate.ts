@@ -21,6 +21,21 @@ export function formatVnDateDdMm(date: Date): string {
   return `${day}/${month}`;
 }
 
+/**
+ * "YYYY-MM-DD" cua 1 thoi diem theo gio VN. Dung lam moc so sanh ngay (han uu dai % hoa hong rieng,
+ * xem userCommissionOverride.ts) chu khong de hien thi - dinh dang nay sap xep tu dien trung voi
+ * sap xep thoi gian nen so sanh duoc bang toan tu chuoi.
+ */
+export function formatVnDateIso(date: Date): string {
+  // en-CA tra ve dung "YYYY-MM-DD" va khong phu thuoc locale cua may chay.
+  return date.toLocaleDateString("en-CA", { timeZone: VN_TIME_ZONE });
+}
+
+/** "YYYY-MM-DD" cua HOM NAY theo gio VN. */
+export function todayVnIso(now: Date = new Date()): string {
+  return formatVnDateIso(now);
+}
+
 /** "dd/mm" cua ngay HOM QUA theo gio VN - dung cho thong bao "don hang ngay {{date}} da cap nhat". */
 export function yesterdayVnDdMm(now: Date = new Date()): string {
   return formatVnDateDdMm(new Date(now.getTime() - ONE_DAY_MS));

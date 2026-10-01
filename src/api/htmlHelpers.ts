@@ -2,9 +2,22 @@ import type { CommissionEntry } from "../core/types.js";
 
 /** Helper dung chung cho moi trang HTML viet tay trong src/api (dashboard user va admin). */
 
-export function formatVnd(amount: number): string {
-  return `${new Intl.NumberFormat("vi-VN").format(amount)}đ`;
-}
+/**
+ * Mot so tien hien thi tren web, LUON la so nguyen (yeu cau cua user 2026-10-01).
+ *
+ * Shopee tra hoa hong le toi phan nghin dong (vd 22.990,5d) nen commission_amount/after_tax_amount
+ * trong DB la so thuc; khong lam tron thi cong nhieu don ra "146.457,765đ", trong nhu loi he thong.
+ * Lam tron CHI o buoc hien thi - so trong DB giu nguyen do chinh xac, moi phep tinh tien van chay
+ * tren so goc (xem commissionMath.ts).
+ *
+ * Chuoi bi tru di khong lech: thue/phi/phan user deu da duoc Math.round thanh so nguyen tu luc ghi,
+ * nen phan thap phan cua "hoa hong goc" va "hoa hong sau thue" luon y het nhau - lam tron tung so
+ * roi tru van ra dung bang tru truoc roi lam tron.
+ *
+ * maximumFractionDigits: 0 dung dung cach cua formatVnd trong adapters/shared/replyText.ts (tin
+ * nhan bot) - 2 noi phai ra cung 1 con so cho cung 1 don.
+ */
+export { formatVnd } from "../core/money.js";
 
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });

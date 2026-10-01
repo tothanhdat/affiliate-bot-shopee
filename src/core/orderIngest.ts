@@ -2,6 +2,7 @@ import { SubIdNotFoundError } from "./errors.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import type { CommissionEntry, CommissionStatus, Platform } from "./types.js";
+import { todayVnIso } from "./vietnamDate.js";
 
 /**
  * Logic ghi nhan 1 don hang dung CHUNG boi ledgerAdmin.ts (CLI) va trang admin web
@@ -44,6 +45,15 @@ export function recordSingleOrder(
     throw new SubIdNotFoundError(input.subId);
   }
 
+  // Form "Ghi 1 don le" khong co truong ngay dat don, nen han uu dai % rieng tinh theo HOM NAY gio VN
+  // - thong tin gan dung nhat co duoc, khong doan nguoc (xem userCommissionOverride.ts).
+  const userSharePercent = ledgerStore.resolveUserSharePercent(
+    requestEntry.platform,
+    requestEntry.userId,
+    todayVnIso(),
+    config.userSharePercent
+  );
+
   return ledgerStore.recordConversion({
     subId: input.subId,
     platform: requestEntry.platform,
@@ -55,7 +65,7 @@ export function recordSingleOrder(
     commissionAmount: input.commissionAmount,
     taxPercent: config.taxPercent,
     platformFeePercent: config.platformFeePercent,
-    userSharePercent: config.userSharePercent,
+    userSharePercent,
     maxCommissionRatioPercent: config.maxCommissionRatioPercent,
     note: input.note,
     status: input.status,

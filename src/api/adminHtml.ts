@@ -1,5 +1,6 @@
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
+import type { UserCommissionOverride } from "../core/userCommissionOverride.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import type {
   CommissionEntry,
@@ -137,6 +138,14 @@ function shellStyles(): string {
     padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   button.primary:hover { filter: brightness(1.08); }
+  /* Nut pha huy (xoa uu dai % rieng) - PHAI khac nut "Luu" dung ngay tren cung trang, neu cung
+     mau .primary thi rat de bam nham. Dung vien do + chu do thay vi nen do day: hanh dong nay
+     khong phai hanh dong chinh cua trang. */
+  button.danger {
+    background: #fff; color: var(--danger); border: 1px solid var(--danger); border-radius: 8px;
+    padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  button.danger:hover { background: var(--danger-soft); }
   .filters { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: flex-end; }
   .filters label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
   .filters select, .filters input[type="text"], .filters input[type="search"] {
@@ -417,7 +426,12 @@ export function renderUsersPage(
     pendingBalance: number;
     paidTotal: number;
     ordersCount: number;
-  }>
+    commissionOverride: UserCommissionOverride | null;
+  }>,
+  /** % chung hien hanh - hien cho user chua co uu dai rieng, de admin doi chieu. */
+  generalSharePercent: number,
+  /** "YYYY-MM-DD" gio VN, de biet uu dai nao da het han. */
+  todayVn: string
 ): string {
   const rows = list
     .map(
@@ -425,10 +439,12 @@ export function renderUsersPage(
   <td>${escapeHtml(u.platform)}</td>
   <td>${escapeHtml(u.userId)}</td>
   <td>${nameCell(u.displayName)}</td>
+  <td>${commissionCell(u.commissionOverride, generalSharePercent, todayVn)}</td>
   <td>${formatVnd(u.availableBalance)}</td>
   <td>${formatVnd(u.pendingBalance)}</td>
   <td>${formatVnd(u.paidTotal)}</td>
   <td>${u.ordersCount}</td>
+  <td><a class="link" href="${commissionConfigHref(u.platform, u.userId)}">Cấu hình %</a></td>
   <td><a class="link" href="/admin/orders?platform=${encodeURIComponent(u.platform)}&userId=${encodeURIComponent(u.userId)}">Xem đơn hàng</a></td>
 </tr>`
     )
@@ -470,7 +486,7 @@ ${
   </div>
 </div>
 <div class="table-scroll"><table id="users-table">
-<thead><tr><th>Kênh</th><th>User ID</th><th>Tên</th><th>Khả dụng</th><th>Đang chờ rút</th><th>Đã nhận</th><th>Số đơn</th><th></th></tr></thead>
+<thead><tr><th>Kênh</th><th>User ID</th><th>Tên</th><th>% hoa hồng</th><th>Khả dụng</th><th>Đang chờ rút</th><th>Đã nhận</th><th>Số đơn</th><th></th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table></div>
 <p class="empty" id="users-no-match" hidden>Không có user nào khớp từ khoá.</p>
@@ -478,6 +494,106 @@ ${searchScript}`
     : `<p class="empty">Chưa có user nào có đơn hàng.</p>`
 }
 </div>`;
+
+  return adminShell("users", "Người dùng", body);
+}
+
+export function commissionConfigHref(platform: Platform, userId: string): string {
+  return `/admin/users/${encodeURIComponent(platform)}/${encodeURIComponent(userId)}/commission`;
+}
+
+/**
+ * O "% hoa hong" tren /admin/users. Uu dai HET HAN van hien (kem nhan "đã hết hạn") chu khong an di:
+ * admin can thay minh da hua gi voi ai, va day cung la loi nhac de gia han neu con muon.
+ */
+function commissionCell(
+  override: UserCommissionOverride | null,
+  generalSharePercent: number,
+  todayVn: string
+): string {
+  if (!override) {
+    return `<span class="muted">chung ${generalSharePercent}%</span>`;
+  }
+  const expired = override.endDate !== null && todayVn > override.endDate;
+  const notStarted = todayVn < override.startDate;
+  if (expired) {
+    return `<span class="muted">${override.userSharePercent}% · đã hết hạn ${formatVnDate(override.endDate!)}</span>`;
+  }
+  const window = notStarted
+    ? `từ ${formatVnDate(override.startDate)}`
+    : override.endDate === null
+      ? "không hạn"
+      : `đến ${formatVnDate(override.endDate)}`;
+  return `<strong>${override.userSharePercent}%</strong> <span class="muted">· ${escapeHtml(window)}</span>`;
+}
+
+/** "YYYY-MM-DD" -> "dd/mm/yyyy" de doc cho nguoi Viet. Chuoi vao luon do he thong sinh ra. */
+function formatVnDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Trang cau hinh % hoa hong rieng cho 1 user. Trang RIENG thay vi form nhoi vao tung hang bang
+ * /admin/users: can cho dong canh bao khi dat thap hon % chung, va cho nut xoa uu dai.
+ */
+export function renderUserCommissionPage(input: {
+  platform: Platform;
+  userId: string;
+  displayName: string | null;
+  override: UserCommissionOverride | null;
+  generalSharePercent: number;
+  todayVn: string;
+  errorMessage?: string | null;
+}): string {
+  const o = input.override;
+  const errorBlock = input.errorMessage ? `<div class="error">${escapeHtml(input.errorMessage)}</div>` : "";
+  const who = input.displayName
+    ? `${escapeHtml(input.displayName)} <span class="muted">(${escapeHtml(input.platform)} · ${escapeHtml(input.userId)})</span>`
+    : `${escapeHtml(input.platform)} · ${escapeHtml(input.userId)}`;
+
+  const currentBlock = o
+    ? `<p class="help">Đang áp dụng: <strong>${o.userSharePercent}%</strong> từ ${formatVnDate(o.startDate)}${
+        o.endDate === null ? " (không hạn)" : ` đến ${formatVnDate(o.endDate)}`
+      }${o.endDate !== null && input.todayVn > o.endDate ? " — <strong>đã hết hạn</strong>" : ""}.</p>`
+    : `<p class="help">User này đang dùng % chung (<strong>${input.generalSharePercent}%</strong>).</p>`;
+
+  const deleteForm = o
+    ? `<form method="POST" action="${commissionConfigHref(input.platform, input.userId)}/delete" ${confirmOnSubmit(
+        "Xoá ưu đãi riêng của user này? Các đơn đã ghi nhận không bị ảnh hưởng."
+      )}>
+  <button type="submit" class="danger">Xoá ưu đãi, trả về % chung</button>
+</form>`
+    : "";
+
+  const body = `<div class="card">
+<h2>% hoa hồng riêng — ${who}</h2>
+${errorBlock}
+${currentBlock}
+<form method="POST" action="${commissionConfigHref(input.platform, input.userId)}" class="settings-form" ${confirmOnSubmit(
+    "Lưu tỉ lệ riêng cho user này? Áp dụng cho đơn ghi nhận từ hôm nay trở đi."
+  )}>
+  <div class="field">
+    <label for="userSharePercent">% user nhận (0-100)</label>
+    <input type="number" id="userSharePercent" name="userSharePercent" min="0" max="100" step="1" value="${
+      o ? o.userSharePercent : input.generalSharePercent
+    }" required>
+    <p class="help">% chung hiện hành là <strong>${input.generalSharePercent}%</strong>. Đặt <strong>thấp hơn</strong> số này nghĩa là trả cho user ít hơn mức trang Sổ tay (/so-tay) đang hứa công khai — vẫn lưu được, nhưng bạn nên biết trước.</p>
+  </div>
+  <div class="field">
+    <label for="endDate">Ngày kết thúc</label>
+    <input type="date" id="endDate" name="endDate" value="${o?.endDate ?? ""}" min="${input.todayVn}">
+    <p class="help">Bỏ trống = không hạn. Sau ngày này đơn mới sẽ quay về % chung. Hạn tính theo <strong>ngày user đặt đơn</strong> (không phải ngày bạn import báo cáo), nên đơn mua trong hạn mà Shopee báo cáo trễ vẫn được hưởng.</p>
+  </div>
+  <div class="field">
+    <p class="help">Ngày bắt đầu là <strong>hôm nay (${formatVnDate(
+      input.todayVn
+    )})</strong>, tự gán khi lưu — đơn đã mua trước hôm nay không bị tính lại theo tỉ lệ mới.</p>
+  </div>
+  <div><button type="submit" class="primary">Lưu</button> <a class="link" href="/admin/users">Quay lại</a></div>
+</form>
+</div>
+${deleteForm ? `<div class="card">${deleteForm}</div>` : ""}`;
 
   return adminShell("users", "Người dùng", body);
 }

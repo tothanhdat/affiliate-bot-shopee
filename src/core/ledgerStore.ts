@@ -27,6 +27,8 @@ import type {
   WithdrawalRequest,
   ZaloGroup,
 } from "./types.js";
+import { resolveUserSharePercent } from "./userCommissionOverride.js";
+import type { UserCommissionOverride } from "./userCommissionOverride.js";
 
 /**
  * Bieu thuc SQL cho "ngay cua 1 don" theo gio VN. order_date da la ngay VN san (doc tu bao cao
@@ -192,6 +194,20 @@ export class LedgerStore {
         platform TEXT NOT NULL,
         user_id TEXT NOT NULL,
         display_name TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (platform, user_id)
+      );
+
+      -- % hoa hong RIENG cho 1 user, co han su dung (2026-10-01). Bang MOI nen khong can migration.
+      -- 1 dong = 1 user (khong luu lich su cac uu dai cu: lich su that nam o cot user_share_percent
+      -- cua tung don trong commission_entries, da chot vinh vien tai do).
+      -- end_date NULL = khong han. start_date = ngay admin bam Luu, xem userCommissionOverride.ts.
+      CREATE TABLE IF NOT EXISTS user_commission_overrides (
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        user_share_percent REAL NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (platform, user_id)
       );
@@ -829,6 +845,8 @@ export class LedgerStore {
     pendingBalance: number;
     paidTotal: number;
     ordersCount: number;
+    /** % hoa hong rieng dang cau hinh cho user nay, null neu dung % chung. */
+    commissionOverride: UserCommissionOverride | null;
   }> {
     const rows = this.db
       .prepare(
@@ -836,9 +854,14 @@ export class LedgerStore {
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL THEN ce.user_share_amount ELSE 0 END), 0) AS available,
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NOT NULL THEN ce.user_share_amount ELSE 0 END), 0) AS pending,
             COALESCE(SUM(CASE WHEN ce.status = 'paid' THEN ce.user_share_amount ELSE 0 END), 0) AS paid,
-            COUNT(*) AS orders_count
+            COUNT(*) AS orders_count,
+            uco.user_share_percent AS override_percent,
+            uco.start_date AS override_start_date,
+            uco.end_date AS override_end_date,
+            uco.updated_at AS override_updated_at
          FROM commission_entries ce
          LEFT JOIN user_profiles up ON up.platform = ce.platform AND up.user_id = ce.user_id
+         LEFT JOIN user_commission_overrides uco ON uco.platform = ce.platform AND uco.user_id = ce.user_id
          GROUP BY ce.platform, ce.user_id
          ORDER BY available DESC`
       )
@@ -850,6 +873,10 @@ export class LedgerStore {
       pending: number;
       paid: number;
       orders_count: number;
+      override_percent: number | null;
+      override_start_date: string | null;
+      override_end_date: string | null;
+      override_updated_at: string | null;
     }>;
 
     return rows.map((r) => ({
@@ -860,7 +887,117 @@ export class LedgerStore {
       pendingBalance: r.pending,
       paidTotal: r.paid,
       ordersCount: r.orders_count,
+      // override_percent CO THE la 0 (chu bot giu toan bo) - phai kiem tra null, khong dung falsy.
+      commissionOverride:
+        r.override_percent === null || r.override_start_date === null
+          ? null
+          : {
+              platform: r.platform,
+              userId: r.user_id,
+              userSharePercent: r.override_percent,
+              startDate: r.override_start_date,
+              endDate: r.override_end_date,
+              updatedAt: r.override_updated_at ?? "",
+            },
     }));
+  }
+
+  /**
+   * Ghi/ghi de % hoa hong rieng cua 1 user. startDate do caller truyen (= hom nay gio VN luc admin
+   * bam Luu) chu khong tu lay new Date() o day, de route va test chot duoc moc thoi gian.
+   */
+  setUserCommissionOverride(input: {
+    platform: Platform;
+    userId: string;
+    userSharePercent: number;
+    startDate: string;
+    endDate: string | null;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO user_commission_overrides
+          (platform, user_id, user_share_percent, start_date, end_date, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(platform, user_id) DO UPDATE SET
+           user_share_percent = excluded.user_share_percent,
+           start_date = excluded.start_date,
+           end_date = excluded.end_date,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        input.platform,
+        input.userId,
+        input.userSharePercent,
+        input.startDate,
+        input.endDate,
+        new Date().toISOString()
+      );
+  }
+
+  getUserCommissionOverride(platform: Platform, userId: string): UserCommissionOverride | null {
+    const row = this.db
+      .prepare(`SELECT * FROM user_commission_overrides WHERE platform = ? AND user_id = ?`)
+      .get(platform, userId) as
+      | {
+          platform: Platform;
+          user_id: string;
+          user_share_percent: number;
+          start_date: string;
+          end_date: string | null;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      platform: row.platform,
+      userId: row.user_id,
+      userSharePercent: row.user_share_percent,
+      startDate: row.start_date,
+      endDate: row.end_date ?? null,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  /** Tra user ve % chung. Khong loi neu user chua tung co override. */
+  deleteUserCommissionOverride(platform: Platform, userId: string): void {
+    this.db
+      .prepare(`DELETE FROM user_commission_overrides WHERE platform = ? AND user_id = ?`)
+      .run(platform, userId);
+  }
+
+  listUserCommissionOverrides(): UserCommissionOverride[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM user_commission_overrides ORDER BY updated_at DESC`)
+      .all() as Array<{
+      platform: Platform;
+      user_id: string;
+      user_share_percent: number;
+      start_date: string;
+      end_date: string | null;
+      updated_at: string;
+    }>;
+    return rows.map((r) => ({
+      platform: r.platform,
+      userId: r.user_id,
+      userSharePercent: r.user_share_percent,
+      startDate: r.start_date,
+      endDate: r.end_date ?? null,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  /**
+   * % user nhan cho 1 don DAT vao ngay `orderDateVn` ("YYYY-MM-DD" gio VN): % rieng neu con han,
+   * khong thi `generalPercent` do caller truyen (= % chung hien hanh trong settings).
+   * Goi tai dung thoi diem ghi nhan don - sau do ty le duoc CHOT vao entry, xem recordConversion.
+   */
+  resolveUserSharePercent(
+    platform: Platform,
+    userId: string,
+    orderDateVn: string,
+    generalPercent: number
+  ): number {
+    return resolveUserSharePercent(this.getUserCommissionOverride(platform, userId), generalPercent, orderDateVn);
   }
 
   /**

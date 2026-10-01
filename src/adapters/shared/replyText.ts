@@ -1,3 +1,4 @@
+import { formatVnd } from "../../core/money.js";
 import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
 import { computeCommissionBreakdown } from "../../core/commissionMath.js";
 import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
@@ -15,9 +16,7 @@ export const USAGE_TEXT =
  * khac) du hien chi Zalo DM dung, de neu sau can dung lai cho noi khac thi co san.
  * Cu phap doi tu "idid" sang "xemhh" ngay 2026-08-20 (yeu cau truc tiep cua user, de nghia hon).
  */
-function formatVnd(amount: number): string {
-  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
-}
+
 
 /**
  * Thay moi `{{key}}` trong template bang vars[key] tuong ung - key khong khop (vd admin go sai

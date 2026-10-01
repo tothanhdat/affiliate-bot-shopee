@@ -4,6 +4,7 @@ import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
 import type { StatusTransition } from "./types.js";
+import { todayVnIso } from "./vietnamDate.js";
 
 /**
  * Import file bao cao GOC cua Shopee Affiliate (vd "AffiliateCommissionReport_*.csv" xuat tu
@@ -309,6 +310,17 @@ export function importShopeeReport(
       ledgerStore.backfillOrderDate(existing.id, order.orderDate);
     }
 
+    // % user nhan cho RIENG don nay: uu dai % theo tung user tinh theo ngay user DAT don (khong phai
+    // ngay import - Shopee bao cao tre vai ngay, xem userCommissionOverride.ts). Bao cao khong cho
+    // biet ngay dat thi lui ve hom nay gio VN, KHONG doan nguoc. Dung cho ca 4 nhanh ben duoi; voi
+    // updatePendingEntry/confirmPendingEntry no chi la FALLBACK cho entry chua co ty le chot.
+    const userSharePercent = ledgerStore.resolveUserSharePercent(
+      requestEntry.platform,
+      requestEntry.userId,
+      order.orderDate ?? todayVnIso(),
+      recordOrderConfig.userSharePercent
+    );
+
     if (targetStatus === "confirmed") {
       if (existing?.status === "confirmed" || existing?.status === "paid") {
         // "paid" la trang thai SAU "confirmed" (chi dat duoc qua markWithdrawalPaid, xem ledgerStore.ts)
@@ -336,7 +348,7 @@ export function importShopeeReport(
             fallbackPercents: {
               taxPercent: recordOrderConfig.taxPercent,
               platformFeePercent: recordOrderConfig.platformFeePercent,
-              userSharePercent: recordOrderConfig.userSharePercent,
+              userSharePercent,
             },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
           });
@@ -354,7 +366,7 @@ export function importShopeeReport(
             orderDate: order.orderDate,
             taxPercent: recordOrderConfig.taxPercent,
             platformFeePercent: recordOrderConfig.platformFeePercent,
-            userSharePercent: recordOrderConfig.userSharePercent,
+            userSharePercent,
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
             note: "Nhap tu bao cao Shopee (file CSV admin upload)",
           });
@@ -420,7 +432,7 @@ export function importShopeeReport(
             fallbackPercents: {
               taxPercent: recordOrderConfig.taxPercent,
               platformFeePercent: recordOrderConfig.platformFeePercent,
-              userSharePercent: recordOrderConfig.userSharePercent,
+              userSharePercent,
             },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
           });
@@ -444,7 +456,7 @@ export function importShopeeReport(
         commissionAmount: order.commissionAmount,
         taxPercent: recordOrderConfig.taxPercent,
         platformFeePercent: recordOrderConfig.platformFeePercent,
-        userSharePercent: recordOrderConfig.userSharePercent,
+        userSharePercent,
         maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
         orderDate: order.orderDate,
         status: "pending",

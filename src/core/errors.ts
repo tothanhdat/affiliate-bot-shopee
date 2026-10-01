@@ -1,3 +1,4 @@
+import { formatVnd } from "./money.js";
 export type ErrorCode =
   | "INVALID_LINK"
   | "UNSUPPORTED_MERCHANT_LINK"
@@ -104,7 +105,7 @@ export class InsufficientBalanceError extends AppError {
   constructor(currentBalanceVnd: number, thresholdVnd: number) {
     super(
       "INSUFFICIENT_BALANCE",
-      `Số dư khả dụng của bạn (${currentBalanceVnd.toLocaleString("vi-VN")}đ) chưa đạt mức tối thiểu để rút (${thresholdVnd.toLocaleString("vi-VN")}đ).`
+      `Số dư khả dụng của bạn (${formatVnd(currentBalanceVnd)}) chưa đạt mức tối thiểu để rút (${formatVnd(thresholdVnd)}).`
     );
   }
 }
@@ -194,8 +195,8 @@ export class ImplausibleCommissionAmountError extends AppError {
   constructor(commissionAmount: number, orderAmount: number, maxRatioPercent: number) {
     super(
       "IMPLAUSIBLE_COMMISSION_AMOUNT",
-      `Hoa hồng ${commissionAmount.toLocaleString("vi-VN")}đ vượt quá ${maxRatioPercent}% giá trị đơn ` +
-        `(${orderAmount.toLocaleString("vi-VN")}đ), có thể gõ nhầm. Kiểm tra lại hoặc tăng ` +
+      `Hoa hồng ${formatVnd(commissionAmount)} vượt quá ${maxRatioPercent}% giá trị đơn ` +
+        `(${formatVnd(orderAmount)}), có thể gõ nhầm. Kiểm tra lại hoặc tăng ` +
         `COMMISSION_MAX_RATIO_PERCENT nếu đúng.`
     );
   }

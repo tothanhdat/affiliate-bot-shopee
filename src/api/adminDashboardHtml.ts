@@ -233,20 +233,20 @@ function renderKpiGrid(stats: DashboardStats): string {
     {
       group: "Tiền",
       label: "Hoa hồng gốc",
-      value: formatMoney(money.commission),
+      value: formatVnd(money.commission),
       hint: `Shopee trả, trước thuế/phí · ${periodNote}`,
     },
     {
       group: "Tiền",
       label: "Lợi nhuận chủ bot",
-      value: formatMoney(money.ownerProfit),
+      value: formatVnd(money.ownerProfit),
       hint: `Sau thuế, phí sàn và phần chia user · ${periodNote}`,
       tone: "accent",
     },
     {
       group: "Tiền",
       label: "Trả cho user",
-      value: formatMoney(money.owedToUsers),
+      value: formatVnd(money.owedToUsers),
       // Con so TOAN THOI GIAN - phai noi ro, neu khong chu bot se doc nham thanh "no trong 7 ngay"
       // va tuong minh du tien tra.
       hint: "Toàn thời gian · tiền đã xác nhận, user chưa rút",
@@ -262,7 +262,7 @@ function renderKpiGrid(stats: DashboardStats): string {
       group: "Đơn hàng",
       label: "Đơn chờ xác nhận",
       value: formatCount(orders.pendingCount),
-      hint: `${formatMoney(orders.pendingAmount)} tiền treo, chưa chắc chắn`,
+      hint: `${formatVnd(orders.pendingAmount)} tiền treo, chưa chắc chắn`,
     },
     {
       group: "Đơn hàng",
@@ -296,7 +296,7 @@ function renderKpiGrid(stats: DashboardStats): string {
       value: formatCount(withdrawals.pendingCount),
       hint:
         withdrawals.pendingCount > 0
-          ? `${formatMoney(withdrawals.pendingAmount)} đang chờ chuyển khoản`
+          ? `${formatVnd(withdrawals.pendingAmount)} đang chờ chuyển khoản`
           : "Không có yêu cầu nào đang chờ",
       // Day la the DUY NHAT co hanh dong cho admin lam ngay: co nguoi dang doi tien that. Khi > 0
       // thi doi han sang kieu "alert" (nen do nhat, vien day du, so mau do) chu khong chi 1 vach
@@ -314,7 +314,7 @@ function renderKpiGrid(stats: DashboardStats): string {
     {
       group: "Rút tiền & người dùng",
       label: "Đã chi trả",
-      value: formatMoney(withdrawals.paidAmount),
+      value: formatVnd(withdrawals.paidAmount),
       hint: `${formatCount(withdrawals.paidCount)} yêu cầu · ${periodNote}`,
     },
     {
@@ -422,10 +422,6 @@ function toDdMmYyyy(dayKey: string): string {
  * ra so kieu 146.457,765d - dung tren the KPI thi trong nhu loi he thong. Lam tron o BUOC HIEN THI
  * (du lieu trong DB giu nguyen so le that, khong ai duoc sua so tien de cho dep).
  */
-function formatMoney(value: number): string {
-  return formatVnd(Math.round(value));
-}
-
 /**
  * Cat nhan truc Y cua chart top user. Ten dai keo vung ve hep lai con vai chuc pixel - ten day du
  * van con trong tooltip nen khong mat thong tin.

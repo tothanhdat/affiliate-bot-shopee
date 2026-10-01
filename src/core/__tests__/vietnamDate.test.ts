@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatVnDateDdMm, yesterdayVnDdMm } from "../vietnamDate.js";
+import { formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../vietnamDate.js";
 
 test("formatVnDateDdMm: dinh dang dd/mm theo gio VN, co padding 0", () => {
   // 2026-09-05T03:00:00Z = 10:00 ngay 05/09 gio VN
@@ -30,4 +30,22 @@ test("yesterdayVnDdMm: moc doi thang (01/03 -> 28/02, 2026 khong phai nam nhuan)
 
 test("yesterdayVnDdMm: moc doi nam (01/01 -> 31/12)", () => {
   assert.equal(yesterdayVnDdMm(new Date("2027-01-01T03:00:00Z")), "31/12");
+});
+
+/**
+ * "YYYY-MM-DD" gio VN - moc so sanh han uu dai % hoa hong rieng (userCommissionOverride.ts).
+ * Railway chay UTC: 00:30 ngay 01/10 gio VN la 17:30 ngay 30/09 UTC, lay ngay theo UTC se bao cao
+ * nham sang hom truoc suot 7 tieng moi sang.
+ */
+test("todayVnIso: nua dem gio VN da sang ngay moi du UTC con hom truoc", () => {
+  assert.equal(todayVnIso(new Date("2026-09-30T17:30:00.000Z")), "2026-10-01");
+  assert.equal(todayVnIso(new Date("2026-09-30T16:59:00.000Z")), "2026-09-30");
+});
+
+test("todayVnIso: doi nam", () => {
+  assert.equal(todayVnIso(new Date("2026-12-31T17:00:00.000Z")), "2027-01-01");
+});
+
+test("todayVnIso: ngay 1 chu so co padding 0", () => {
+  assert.equal(todayVnIso(new Date("2026-03-05T06:00:00.000Z")), "2026-03-05");
 });

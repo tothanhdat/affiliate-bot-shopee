@@ -15,6 +15,7 @@ import {
   renderReverseConfirmPage,
   renderSettingsPage,
   renderUsersPage,
+  renderUserCommissionPage,
   renderWithdrawalsPage,
   type OrdersFilters,
 } from "./adminHtml.js";
@@ -46,7 +47,8 @@ import {
 } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import { normalizeNewlines } from "../core/textNormalize.js";
-import { yesterdayVnDdMm } from "../core/vietnamDate.js";
+import { todayVnIso, yesterdayVnDdMm } from "../core/vietnamDate.js";
+import { formatVnd } from "../core/money.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
 const VALID_MERCHANTS: MerchantId[] = MERCHANTS.map((m) => m.id);
@@ -314,7 +316,7 @@ export function createServer(
       });
       // Best-effort: loi gui thong bao khong duoc lam fail response, yeu cau rut tien da luu DB roi.
       notifyAdmin(
-        `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${withdrawal.amount.toLocaleString("vi-VN")}đ (id: ${withdrawal.id})`
+        `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
       ).catch((notifyErr) => {
         console.warn("[admin-notify] gui thong bao yeu cau rut tien that bai:", notifyErr);
       });
@@ -472,7 +474,102 @@ export function createServer(
   });
 
   app.get("/admin/users", requireAdminAuth, (_req: Request, res: Response) => {
-    res.type("html").send(renderUsersPage(ledgerStore.listUsers()));
+    const generalSharePercent = ledgerStore.getUserSharePercent(orderConfig.userSharePercent);
+    res.type("html").send(renderUsersPage(ledgerStore.listUsers(), generalSharePercent, todayVnIso()));
+  });
+
+  // --- % hoa hong RIENG tung user (2026-10-01) ---------------------------------------------------
+  // Ai duoc muc nao do admin quyet dinh tay o day; he thong khong tu chon, khong tu gia han.
+  // Ty le duoc ap LUC GHI NHAN don roi chot vao entry, nen sua/xoa o day khong hoi to don da ghi.
+
+  /** Tra ve null (va tu tra 404) neu platform khong nam trong danh sach hop le. */
+  function readUserRouteParams(req: Request, res: Response): { platform: Platform; userId: string } | null {
+    const platform = req.params.platform;
+    const userId = req.params.userId;
+    if (!VALID_PLATFORMS.includes(platform as Platform) || !userId) {
+      res.status(404).type("html").send("<p>Không tìm thấy user.</p>");
+      return null;
+    }
+    return { platform: platform as Platform, userId };
+  }
+
+  app.get("/admin/users/:platform/:userId/commission", requireAdminAuth, (req: Request, res: Response) => {
+    const params = readUserRouteParams(req, res);
+    if (!params) return;
+    res.type("html").send(
+      renderUserCommissionPage({
+        platform: params.platform,
+        userId: params.userId,
+        displayName: ledgerStore.getDisplayName(params.platform, params.userId),
+        override: ledgerStore.getUserCommissionOverride(params.platform, params.userId),
+        generalSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+        todayVn: todayVnIso(),
+      })
+    );
+  });
+
+  app.post("/admin/users/:platform/:userId/commission", requireAdminAuth, (req: Request, res: Response) => {
+    const params = readUserRouteParams(req, res);
+    if (!params) return;
+
+    const todayVn = todayVnIso();
+    const generalSharePercent = ledgerStore.getUserSharePercent(orderConfig.userSharePercent);
+    const renderError = (message: string): void => {
+      res.status(422).type("html").send(
+        renderUserCommissionPage({
+          platform: params.platform,
+          userId: params.userId,
+          displayName: ledgerStore.getDisplayName(params.platform, params.userId),
+          override: ledgerStore.getUserCommissionOverride(params.platform, params.userId),
+          generalSharePercent,
+          todayVn,
+          errorMessage: message,
+        })
+      );
+    };
+
+    const rawPercent = typeof req.body.userSharePercent === "string" ? req.body.userSharePercent.trim() : "";
+    // Number("") = 0 nen phai chan chuoi rong TRUOC khi doi so, khong thi bo trong o nay se luu thanh 0%.
+    if (rawPercent === "") {
+      renderError("Vui lòng nhập % hoa hồng user nhận.");
+      return;
+    }
+    const percent = Number(rawPercent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      renderError("% hoa hồng phải là số trong khoảng 0 đến 100.");
+      return;
+    }
+
+    const rawEndDate = typeof req.body.endDate === "string" ? req.body.endDate.trim() : "";
+    let endDate: string | null = null;
+    if (rawEndDate !== "") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
+        renderError("Ngày kết thúc không đúng định dạng.");
+        return;
+      }
+      // Luu 1 uu dai het han san thi khong ap dung cho don nao ca - im lang nhan vao la bay.
+      if (rawEndDate < todayVn) {
+        renderError("Ngày kết thúc đã ở quá khứ nên ưu đãi sẽ không áp dụng cho đơn nào. Chọn hôm nay trở đi.");
+        return;
+      }
+      endDate = rawEndDate;
+    }
+
+    ledgerStore.setUserCommissionOverride({
+      platform: params.platform,
+      userId: params.userId,
+      userSharePercent: percent,
+      startDate: todayVn,
+      endDate,
+    });
+    res.redirect(303, "/admin/users");
+  });
+
+  app.post("/admin/users/:platform/:userId/commission/delete", requireAdminAuth, (req: Request, res: Response) => {
+    const params = readUserRouteParams(req, res);
+    if (!params) return;
+    ledgerStore.deleteUserCommissionOverride(params.platform, params.userId);
+    res.redirect(303, "/admin/users");
   });
 
   app.get("/admin/orders", requireAdminAuth, (req: Request, res: Response) => {
@@ -609,8 +706,8 @@ export function createServer(
       const statusLabel = entry.status === "pending" ? "Chờ xác nhận" : "Khả dụng";
       const amountHint =
         entry.status === "pending"
-          ? `dự kiến user nhận ~${entry.userShareAmount.toLocaleString("vi-VN")}đ khi được xác nhận`
-          : `user nhận ${entry.userShareAmount.toLocaleString("vi-VN")}đ`;
+          ? `dự kiến user nhận ~${formatVnd(entry.userShareAmount)} khi được xác nhận`
+          : `user nhận ${formatVnd(entry.userShareAmount)}`;
       res.type("html").send(
         renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
           ok: true,

@@ -53,8 +53,9 @@ function extractSearchScript(): string {
       pendingBalance: 0,
       paidTotal: 0,
       ordersCount: 1,
+      commissionOverride: null,
     },
-  ]);
+  ], 80, "2026-10-01");
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script && script.trim() !== "", "trang /admin/users phai co script loc tim kiem");
   return script;

@@ -1,3 +1,4 @@
+import { formatVnd } from "../money.js";
 import { renderTemplate } from "../../adapters/shared/replyText.js";
 import { SETTINGS_KEYS, faqAnswerKey } from "../settingsKeys.js";
 import type { RateLimiter } from "../rateLimiter.js";
@@ -45,9 +46,6 @@ export interface FaqResolveInput {
   dashboardUrl: string;
 }
 
-function formatVnd(amount: number): string {
-  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount)}đ`;
-}
 
 /**
  * Dieu phoi FAQ: mute -> rate limit -> classify -> lay cau tra loi soan san -> render placeholder.
