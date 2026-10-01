@@ -94,6 +94,19 @@ export interface CommissionEntry {
   afterTaxAmount: number;
   /** VND, phan user duoc nhan (% cua afterTaxAmount) - chot tai thoi diem ghi nhan, doi ty le sau khong anh huong nguoc */
   userShareAmount: number;
+  /**
+   * 3 ty le DA CHOT luc don duoc ghi nhan lan dau (2026-10-01). Moi lan tinh lai tien cho don nay
+   * (updatePendingEntry/confirmPendingEntry o cac lan import sau) deu dung 3 so NAY, khong dung ty le
+   * hien hanh trong /admin/settings - don "pending" la don user DA MUA, ha % hom nay khong duoc ha
+   * tien cua don mua tu tuan truoc.
+   *
+   * null cho entry ghi TRUOC khi co 3 cot nay: KHONG backfill duoc (suy nguoc tu so tien thi sai khi
+   * hoa hong nho - vd thue 10% cua 7d ra 1d, suy nguoc thanh 14%), nen de null va luc tinh lai se lui
+   * ve ty le hien hanh = dung hanh vi cu, khong co cu nhay so bat ngo sau deploy.
+   */
+  taxPercent: number | null;
+  platformFeePercent: number | null;
+  userSharePercent: number | null;
   status: CommissionStatus;
   /** gan khi entry bi "giu" boi 1 yeu cau rut tien, null neu con kha dung */
   withdrawalId: string | null;

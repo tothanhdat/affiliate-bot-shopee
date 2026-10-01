@@ -354,8 +354,8 @@ export function renderWithdrawalsPage(
   <td>
     <form method="POST" action="/admin/withdrawals/${w.id}/mark-paid" enctype="multipart/form-data" class="payment-form" ${confirmOnSubmit(confirmMsg)}>
       <div>
-        <label for="proofImage-${w.id}">Ảnh chuyển khoản</label>
-        <input type="file" id="proofImage-${w.id}" name="proofImage" accept="image/*" required>
+        <label for="proofImage-${w.id}">Ảnh chuyển khoản (không bắt buộc)</label>
+        <input type="file" id="proofImage-${w.id}" name="proofImage" accept="image/*">
       </div>
       <div><button type="submit" class="primary">Đánh dấu đã trả</button></div>
     </form>
@@ -596,6 +596,11 @@ export function renderOrdersPage(
       // tang du lieu neu status khac "pending" (EntryNotPendingError) - day chi la an link o UI.
       const reverseLink =
         e.status === "pending" ? `<a class="link" href="/admin/orders/${e.id}/reverse">Huỷ đơn</a>` : "";
+      // % user nhan DA CHOT cua rieng don nay (2026-10-01) - doi % tren /admin/settings khong hoi
+      // to don da ghi, nen 2 don canh nhau co the khac %. "—" la don ghi truoc khi he thong chot ty
+      // le: KHONG suy nguoc tu 2 cot tien de dien so vao day, lam tron se ra % sai (xem taxFeePercents
+      // trong dashboardHtml.ts) va o day admin dung so nay de doi soat.
+      const lockedShare = e.userSharePercent === null ? `<span class="muted">—</span>` : `${e.userSharePercent}%`;
       return `<tr>
   <td>
     <div>${escapeHtml(e.orderId)}</div>
@@ -606,6 +611,7 @@ export function renderOrdersPage(
   <td>${nameCell(displayNames.get(nameKey(e.platform, e.userId)))}</td>
   <td>${getMerchantConfig(e.merchant).displayName}</td>
   <td>${product}</td>
+  <td>${lockedShare}</td>
   <td>${formatVnd(e.userShareAmount)}</td>
   <td>${formatVnd(e.afterTaxAmount - e.userShareAmount)}</td>
   <td><span class="badge badge-${badge.tone}">${badge.label}</span></td>
@@ -682,7 +688,7 @@ ${statusDropdownScript}
 ${
   entries.length > 0
     ? `<div class="table-scroll"><table>
-<thead><tr><th>Mã đơn</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Merchant</th><th>Sản phẩm</th><th>Khách nhận</th><th>Admin nhận</th><th>Trạng thái</th><th></th></tr></thead>
+<thead><tr><th>Mã đơn</th><th>Kênh</th><th>User ID</th><th>Tên</th><th>Merchant</th><th>Sản phẩm</th><th>% chốt</th><th>Khách nhận</th><th>Admin nhận</th><th>Trạng thái</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table></div>
 ${renderPagination(filters, pagination)}`

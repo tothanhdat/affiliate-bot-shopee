@@ -8,7 +8,6 @@ import {
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   MissingBankInfoError,
-  MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
 } from "../errors.js";
 
@@ -203,9 +202,7 @@ test("LedgerStore: confirmPendingEntry chuyen entry tu pending sang confirmed, t
     const confirmed = store.confirmPendingEntry(pending.id, {
       orderAmount: 100_000,
       commissionAmount: 10_000, // so that luc duyet - khac so uoc tinh luc hold
-      taxPercent: 0,
-      platformFeePercent: 0,
-      userSharePercent: 80,
+      fallbackPercents: { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80 },
       maxCommissionRatioPercent: 1000,
     });
 
@@ -494,15 +491,36 @@ test("LedgerStore: getUserSummary tra ve proofImagePath cho entry paid, null cho
   }
 });
 
-test("LedgerStore: markWithdrawalPaid nem MissingWithdrawalProofError neu thieu proofImagePath", () => {
+/**
+ * Anh chup chuyen khoan KHONG con bat buoc (2026-10-01, yeu cau cua user): admin danh dau da tra
+ * duoc ma khong can dinh kem anh. Chuoi rong/toan khoang trang duoc chuan hoa ve null thay vi luu
+ * nguyen - "" trong cot proof_image_path se lam cac cho kiem tra `w.proofImagePath ? ...` tuong la
+ * CO anh roi render link "Xem ảnh" tro vao file khong ton tai.
+ */
+test("LedgerStore: markWithdrawalPaid khong con bat buoc anh - null/chuoi rong deu danh dau duoc va luu null", () => {
   const store = new LedgerStore(":memory:");
   try {
     recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
     const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
 
-    assert.throws(() => store.markWithdrawalPaid(withdrawal.id, ""), MissingWithdrawalProofError);
-    assert.throws(() => store.markWithdrawalPaid(withdrawal.id, "   "), MissingWithdrawalProofError);
-    assert.equal(store.getPendingWithdrawal("telegram", "user-a")?.status, "requested");
+    const paid = store.markWithdrawalPaid(withdrawal.id, null);
+    assert.equal(paid.status, "paid");
+    assert.equal(paid.proofImagePath, null);
+    assert.ok(paid.paidAt);
+    assert.equal(store.getPendingWithdrawal("telegram", "user-a"), null);
+    assert.equal(store.listPaidWithdrawals()[0].proofImagePath, null);
+  } finally {
+    store.close();
+  }
+});
+
+test("LedgerStore: markWithdrawalPaid chuan hoa chuoi rong/khoang trang ve null", () => {
+  const store = new LedgerStore(":memory:");
+  try {
+    recordSample(store, { orderId: "order-1", commissionAmount: 100_000 });
+    const withdrawal = store.requestWithdrawal("telegram", "user-a", 50_000, BANK_INFO);
+
+    assert.equal(store.markWithdrawalPaid(withdrawal.id, "   ").proofImagePath, null);
   } finally {
     store.close();
   }

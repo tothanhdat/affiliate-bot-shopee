@@ -10,7 +10,6 @@ import {
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   MissingBankInfoError,
-  MissingWithdrawalProofError,
   WithdrawalAlreadyPendingError,
 } from "./errors.js";
 import type { MerchantId } from "./merchants.js";
@@ -35,6 +34,17 @@ import type {
  * buoc nay thi don tao tu 00:00 den 07:00 gio VN bi dem sang ngay hom truoc.
  */
 const DAY_EXPR = "COALESCE(order_date, date(created_at, '+7 hours'))";
+
+/**
+ * Bo 3 ty le dung de chia hoa hong 1 don. Truyen vao updatePendingEntry/confirmPendingEntry duoi vai
+ * FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don (xem
+ * CommissionEntry.userSharePercent), entry moi luon dung ty le da chot trong DB.
+ */
+export interface RatePercents {
+  taxPercent: number;
+  platformFeePercent: number;
+  userSharePercent: number;
+}
 
 export interface RecordConversionInput {
   subId: string;
@@ -135,6 +145,9 @@ export class LedgerStore {
         platform_fee_amount INTEGER NOT NULL,
         after_tax_amount INTEGER NOT NULL,
         user_share_amount INTEGER NOT NULL,
+        tax_percent REAL,
+        platform_fee_percent REAL,
+        user_share_percent REAL,
         status TEXT NOT NULL,
         withdrawal_id TEXT,
         note TEXT
@@ -148,6 +161,8 @@ export class LedgerStore {
     this.migrateAddTaxColumns();
     // DB tao truoc 2026-10-01 (truoc khi doc cot ngay dat don cua bao cao Shopee) se thieu cot nay.
     this.migrateAddOrderDateColumn();
+    // DB tao truoc 2026-10-01 (truoc khi ty le duoc CHOT theo tung don) se thieu 3 cot nay.
+    this.migrateAddRatePercentColumns();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawal_requests (
         id TEXT PRIMARY KEY,
@@ -247,6 +262,29 @@ export class LedgerStore {
     }
   }
 
+  /**
+   * DB tao truoc 2026-10-01 (truoc khi ty le duoc CHOT theo tung don, xem CommissionEntry.userSharePercent)
+   * se thieu 3 cot nay. Nullable CO CHU DICH - khong dat DEFAULT va khong backfill: ty le that luc ghi
+   * nhan don cu khong con luu o dau, va suy nguoc tu so tien thi sai khi hoa hong nho. Entry cu de NULL
+   * -> luc tinh lai se lui ve ty le hien hanh, dung bang hanh vi truoc khi co tinh nang nay.
+   */
+  private migrateAddRatePercentColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(commission_entries)").all() as Array<{
+      name: string;
+    }>;
+    const hasColumn = (name: string) => columns.some((col) => col.name === name);
+
+    if (!hasColumn("tax_percent")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN tax_percent REAL");
+    }
+    if (!hasColumn("platform_fee_percent")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN platform_fee_percent REAL");
+    }
+    if (!hasColumn("user_share_percent")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN user_share_percent REAL");
+    }
+  }
+
   /** DB tao truoc 2026-08-19 (truoc khi bat buoc dinh kem anh chuyen khoan) se thieu cot nay. */
   private migrateAddWithdrawalProofColumn(): void {
     const columns = this.db.prepare("PRAGMA table_info(withdrawal_requests)").all() as Array<{
@@ -337,8 +375,8 @@ export class LedgerStore {
       this.db
         .prepare(
           `INSERT INTO commission_entries
-            (id, created_at, order_date, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, status, withdrawal_id, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+            (id, created_at, order_date, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, tax_percent, platform_fee_percent, user_share_percent, status, withdrawal_id, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
         )
         .run(
           id,
@@ -356,6 +394,11 @@ export class LedgerStore {
           platformFeeAmount,
           afterTaxAmount,
           userShareAmount,
+          // 3 ty le duoc CHOT tai day va khong bao gio ghi de - moi lan tinh lai tien cho don nay
+          // deu doc lai 3 so nay (xem effectivePercents()).
+          input.taxPercent,
+          input.platformFeePercent,
+          input.userSharePercent,
           status,
           input.note ?? null
         );
@@ -382,6 +425,9 @@ export class LedgerStore {
       platformFeeAmount,
       afterTaxAmount,
       userShareAmount,
+      taxPercent: input.taxPercent,
+      platformFeePercent: input.platformFeePercent,
+      userSharePercent: input.userSharePercent,
       status,
       withdrawalId: null,
       note: input.note ?? null,
@@ -403,9 +449,7 @@ export class LedgerStore {
       orderAmount: number;
       commissionAmount: number;
       productName?: string | null;
-      taxPercent: number;
-      platformFeePercent: number;
-      userSharePercent: number;
+      fallbackPercents: RatePercents;
       maxCommissionRatioPercent: number;
     }
   ): CommissionEntry {
@@ -424,18 +468,18 @@ export class LedgerStore {
       );
     }
 
+    const percents = effectivePercents(existing, input.fallbackPercents);
     const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
       commissionAmount: input.commissionAmount,
-      taxPercent: input.taxPercent,
-      platformFeePercent: input.platformFeePercent,
-      userSharePercent: input.userSharePercent,
+      ...percents,
     });
     const productName = input.productName ?? existing.productName;
 
     this.db
       .prepare(
         `UPDATE commission_entries SET order_amount = ?, commission_amount = ?,
-          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?, product_name = ?
+          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?,
+          tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?, product_name = ?
          WHERE id = ?`
       )
       .run(
@@ -445,6 +489,12 @@ export class LedgerStore {
         platformFeeAmount,
         afterTaxAmount,
         userShareAmount,
+        // Ghi lai ty le VUA DUNG: voi entry da co ty le chot thi day la ghi de chinh no (vo hai),
+        // voi entry cu (null) thi day la lan CHOT dau tien - tu lan import sau no khong con troi
+        // theo % hien hanh nua.
+        percents.taxPercent,
+        percents.platformFeePercent,
+        percents.userSharePercent,
         productName,
         entryId
       );
@@ -457,6 +507,7 @@ export class LedgerStore {
       platformFeeAmount,
       afterTaxAmount,
       userShareAmount,
+      ...percents,
       productName,
     };
   }
@@ -475,9 +526,7 @@ export class LedgerStore {
       orderAmount: number;
       commissionAmount: number;
       productName?: string | null;
-      taxPercent: number;
-      platformFeePercent: number;
-      userSharePercent: number;
+      fallbackPercents: RatePercents;
       maxCommissionRatioPercent: number;
     }
   ): CommissionEntry {
@@ -496,18 +545,18 @@ export class LedgerStore {
       );
     }
 
+    const percents = effectivePercents(existing, input.fallbackPercents);
     const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
       commissionAmount: input.commissionAmount,
-      taxPercent: input.taxPercent,
-      platformFeePercent: input.platformFeePercent,
-      userSharePercent: input.userSharePercent,
+      ...percents,
     });
     const productName = input.productName ?? existing.productName;
 
     this.db
       .prepare(
         `UPDATE commission_entries SET status = 'confirmed', order_amount = ?, commission_amount = ?,
-          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?, product_name = ?
+          tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?,
+          tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?, product_name = ?
          WHERE id = ?`
       )
       .run(
@@ -517,6 +566,9 @@ export class LedgerStore {
         platformFeeAmount,
         afterTaxAmount,
         userShareAmount,
+        percents.taxPercent,
+        percents.platformFeePercent,
+        percents.userSharePercent,
         productName,
         entryId
       );
@@ -530,6 +582,7 @@ export class LedgerStore {
       platformFeeAmount,
       afterTaxAmount,
       userShareAmount,
+      ...percents,
       productName,
     };
   }
@@ -968,14 +1021,16 @@ export class LedgerStore {
 
   /**
    * Dung boi route admin/script sau khi da chuyen khoan tay xong. proofImagePath la ten file anh
-   * chup man hinh chuyen khoan thanh cong (da luu san trong WITHDRAWAL_PROOF_DIR boi noi goi) -
-   * BAT BUOC, khong nhan chuoi rong, de sau nay co bang chung doi chieu neu co tranh chap (rui ro
-   * so 7 trong rui-ro-can-giai-quyet.md).
+   * chup man hinh chuyen khoan thanh cong (da luu san trong WITHDRAWAL_PROOF_DIR boi noi goi).
+   *
+   * TUY CHON tu 2026-10-01 (yeu cau cua user) - truoc do BAT BUOC de co bang chung doi chieu neu
+   * tranh chap (rui ro so 7 trong rui-ro-can-giai-quyet.md); danh doi nay da duoc chap nhan de admin
+   * khong bi chan giua luc dang tra tien. Chuoi rong/toan khoang trang duoc chuan hoa ve null chu
+   * KHONG luu nguyen: moi noi hien thi deu kiem tra `proofImagePath ? ...` nen "" se bi hieu la CO
+   * anh roi render link "Xem ảnh" tro vao file khong ton tai.
    */
-  markWithdrawalPaid(withdrawalId: string, proofImagePath: string): WithdrawalRequest {
-    if (proofImagePath.trim() === "") {
-      throw new MissingWithdrawalProofError();
-    }
+  markWithdrawalPaid(withdrawalId: string, proofImagePath: string | null): WithdrawalRequest {
+    const storedProof = proofImagePath?.trim() ? proofImagePath.trim() : null;
 
     const row = this.db.prepare(`SELECT * FROM withdrawal_requests WHERE id = ?`).get(withdrawalId);
     if (!row) {
@@ -987,7 +1042,7 @@ export class LedgerStore {
     try {
       this.db
         .prepare(`UPDATE withdrawal_requests SET status = 'paid', paid_at = ?, proof_image_path = ? WHERE id = ?`)
-        .run(paidAt, proofImagePath, withdrawalId);
+        .run(paidAt, storedProof, withdrawalId);
       this.db
         .prepare(`UPDATE commission_entries SET status = 'paid' WHERE withdrawal_id = ?`)
         .run(withdrawalId);
@@ -998,7 +1053,7 @@ export class LedgerStore {
     }
 
     const updated = rowToWithdrawalRequest(row);
-    return { ...updated, status: "paid", paidAt, proofImagePath };
+    return { ...updated, status: "paid", paidAt, proofImagePath: storedProof };
   }
 
   /**
@@ -1392,6 +1447,22 @@ export class LedgerStore {
   }
 }
 
+/**
+ * Ty le DA CHOT cua 1 entry neu co, con khong thi ty le hien hanh do caller truyen vao. Dung boi
+ * updatePendingEntry/confirmPendingEntry: don "pending" con duoc cap nhat so lieu o moi lan import
+ * bao cao Shopee (hoa hong that con doi), nhung TIEN phai tinh bang ty le luc don duoc ghi nhan -
+ * ha % hom nay khong duoc ha tien cua don user mua tu tuan truoc.
+ *
+ * Chi lui ve fallback cho entry ghi TRUOC khi co 3 cot % (null) - xem migrateAddRatePercentColumns.
+ */
+function effectivePercents(existing: CommissionEntry, fallback: RatePercents): RatePercents {
+  return {
+    taxPercent: existing.taxPercent ?? fallback.taxPercent,
+    platformFeePercent: existing.platformFeePercent ?? fallback.platformFeePercent,
+    userSharePercent: existing.userSharePercent ?? fallback.userSharePercent,
+  };
+}
+
 function rowToCommissionEntry(row: unknown): CommissionEntry {
   const r = row as Record<string, unknown>;
   return {
@@ -1410,6 +1481,9 @@ function rowToCommissionEntry(row: unknown): CommissionEntry {
     platformFeeAmount: r.platform_fee_amount as number,
     afterTaxAmount: r.after_tax_amount as number,
     userShareAmount: r.user_share_amount as number,
+    taxPercent: (r.tax_percent as number | null) ?? null,
+    platformFeePercent: (r.platform_fee_percent as number | null) ?? null,
+    userSharePercent: (r.user_share_percent as number | null) ?? null,
     status: r.status as CommissionStatus,
     withdrawalId: (r.withdrawal_id as string | null) ?? null,
     note: (r.note as string | null) ?? null,

@@ -50,7 +50,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     default: String(env.commission.userSharePercent),
     min: 0,
     max: 100,
-    helpText: "Phần trăm user nhận trên hoa hồng sau khi trừ thuế/phí sàn (0-100). Phần còn lại thuộc về chủ bot. Lưu ý: đổi số này cũng áp dụng NGƯỢC cho các đơn đang \"Chờ xác nhận\" (pending) ở lần đối soát kế tiếp — mỗi lần import báo cáo Shopee, userShareAmount của đơn pending được tính lại theo % mới nhất, không giữ % lúc đơn được tạo. Chỉ đơn đã \"Khả dụng\"/\"Đã rút\" (confirmed/paid) mới giữ nguyên, không bị ảnh hưởng.",
+    helpText: "Phần trăm user nhận trên hoa hồng sau khi trừ thuế/phí sàn (0-100). Phần còn lại thuộc về chủ bot. Số này chỉ áp dụng cho đơn được ghi nhận TỪ ĐÂY TRỞ ĐI: mỗi đơn chốt tỉ lệ ngay lúc ghi nhận, nên đổi số này KHÔNG tính lại tiền cho đơn đã ghi — kể cả đơn đang \"Chờ xác nhận\" (pending), vì đó là đơn user đã mua, chỉ chờ Shopee duyệt. Đổi sai thì các đơn đã ghi trong lần import đó giữ luôn tỉ lệ sai, không tự chữa được bằng cách sửa lại số này.",
   },
   {
     key: SETTINGS_KEYS.withdrawalThresholdVnd,

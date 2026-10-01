@@ -331,9 +331,13 @@ export function importShopeeReport(
             orderAmount: order.orderAmount,
             commissionAmount: order.commissionAmount,
             productName: order.productName || undefined,
-            taxPercent: recordOrderConfig.taxPercent,
-            platformFeePercent: recordOrderConfig.platformFeePercent,
-            userSharePercent: recordOrderConfig.userSharePercent,
+            // FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don -
+            // entry moi giu nguyen ty le luc duoc ghi nhan (xem effectivePercents trong ledgerStore).
+            fallbackPercents: {
+              taxPercent: recordOrderConfig.taxPercent,
+              platformFeePercent: recordOrderConfig.platformFeePercent,
+              userSharePercent: recordOrderConfig.userSharePercent,
+            },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
           });
           result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
@@ -411,9 +415,13 @@ export function importShopeeReport(
             orderAmount: order.orderAmount,
             commissionAmount: order.commissionAmount,
             productName: order.productName || undefined,
-            taxPercent: recordOrderConfig.taxPercent,
-            platformFeePercent: recordOrderConfig.platformFeePercent,
-            userSharePercent: recordOrderConfig.userSharePercent,
+            // FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don -
+            // entry moi giu nguyen ty le luc duoc ghi nhan (xem effectivePercents trong ledgerStore).
+            fallbackPercents: {
+              taxPercent: recordOrderConfig.taxPercent,
+              platformFeePercent: recordOrderConfig.platformFeePercent,
+              userSharePercent: recordOrderConfig.userSharePercent,
+            },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
           });
           result.pendingUpdated += 1;

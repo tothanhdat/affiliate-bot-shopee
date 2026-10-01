@@ -424,26 +424,16 @@ export function createServer(
     requireAdminAuth,
     proofUpload.single("proofImage"),
     (req: Request, res: Response) => {
-      if (!req.file) {
-        res
-          .status(422)
-          .type("html")
-          .send(
-            renderWithdrawalsPage(
-              ledgerStore.listPendingWithdrawals(),
-              ledgerStore.listPaidWithdrawals(),
-              ledgerStore.getDisplayNamesMap(),
-              "Cần đính kèm ảnh chụp màn hình đã chuyển khoản thành công."
-            )
-          );
-        return;
-      }
-
       try {
-        mkdirSync(withdrawalProofDir, { recursive: true });
-        const ext = extname(req.file.originalname) || ".png";
-        const filename = `${req.params.id}-${Date.now()}${ext}`;
-        writeFileSync(join(withdrawalProofDir, filename), req.file.buffer);
+        // Anh chuyen khoan TUY CHON tu 2026-10-01 (yeu cau cua user) - khong co anh thi van danh dau
+        // da tra, chi la withdrawal do khong co bang chung doi chieu ve sau.
+        let filename: string | null = null;
+        if (req.file) {
+          mkdirSync(withdrawalProofDir, { recursive: true });
+          const ext = extname(req.file.originalname) || ".png";
+          filename = `${req.params.id}-${Date.now()}${ext}`;
+          writeFileSync(join(withdrawalProofDir, filename), req.file.buffer);
+        }
         const paid = ledgerStore.markWithdrawalPaid(req.params.id, filename);
         // Best-effort: loi gui thong bao khong duoc lam fail response, da danh dau "paid" trong DB roi.
         const { token } = ledgerStore.findOrCreateDashboardToken(paid.platform, paid.userId);

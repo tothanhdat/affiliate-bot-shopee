@@ -243,8 +243,8 @@ test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, lu
   }
 });
 
-test("POST /admin/withdrawals/:id/mark-paid khong dinh kem anh -> 422, khong chuyen trang thai", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
+test("POST /admin/withdrawals/:id/mark-paid KHONG kem anh -> van chuyen sang paid, bao user, khong luu bang chung", async () => {
+  const { ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
   try {
     ledgerStore.recordConversion({
       subId: "telegram-user-a-abc-123",
@@ -268,12 +268,18 @@ test("POST /admin/withdrawals/:id/mark-paid khong dinh kem anh -> 422, khong chu
       body: new FormData(),
       redirect: "manual",
     });
-    assert.equal(res.status, 422);
-    const html = await res.text();
-    assert.match(html, /Cần đính kèm ảnh/);
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getPendingWithdrawal("telegram", "user-a"), null);
 
-    const pending = ledgerStore.getPendingWithdrawal("telegram", "user-a");
-    assert.equal(pending?.status, "requested");
+    const paid = ledgerStore.listPaidWithdrawals()[0];
+    assert.equal(paid.status, "paid");
+    assert.equal(paid.proofImagePath, null);
+    assert.equal(notifyUserCalls.length, 1);
+
+    // Bang lich su khong duoc render link "Xem ảnh" tro vao file khong ton tai.
+    const cookie2 = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/withdrawals`, { headers: { cookie: cookie2! } })).text();
+    assert.doesNotMatch(html, /Xem ảnh/);
   } finally {
     cleanup();
   }
@@ -317,6 +323,37 @@ test("/admin/users tinh dung tong theo user", async () => {
     assert.match(html, /<td>user-a<\/td>/);
     assert.match(html, /Nguyễn Văn A/);
     assert.match(html, /80\.000đ/); // tong available = 40_000 + 40_000
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Ty le duoc chot theo TUNG don (2026-10-01) nen 2 don cua 2 user co the khac %. Cot "% chốt" cho
+ * admin doi chieu truc tiep tren /admin/orders thay vi suy nguoc tu 2 cot tien.
+ */
+test("/admin/orders hien cot % chot cua tung don", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-1",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-co-ty-le",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 65,
+      maxCommissionRatioPercent: 1000,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+
+    assert.match(html, /<th>% chốt<\/th>/);
+    assert.match(html, /<td>65%<\/td>/);
   } finally {
     cleanup();
   }

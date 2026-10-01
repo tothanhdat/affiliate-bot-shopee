@@ -13,9 +13,10 @@
  *     Shopee Affiliate, vd "AffiliateCommissionReport_*.csv" tu affiliate.shopee.vn/report/conversion_report
  *     - khong can doi ten cot truoc. Tu quyet dinh confirmed/pending/reversed theo cot "Trang thai san
  *     pham lien ket" trong file - xem core/shopeeReportImport.ts. Day la cong cu doi soat CHINH.)
- *   mark-withdrawal-paid --id= --proofImagePath=<duong dan anh chup man hinh da chuyen khoan>
+ *   mark-withdrawal-paid --id= [--proofImagePath=<duong dan anh chup man hinh da chuyen khoan>]
  *     (anh se duoc COPY vao WITHDRAWAL_PROOF_DIR, ban chi can tro toi 1 file da co san tren may -
- *     bat buoc, xem rui ro so 7 trong rui-ro-can-giai-quyet.md)
+ *     TUY CHON tu 2026-10-01, giong form tren /admin/withdrawals; khong co anh thi don rut do khong
+ *     co bang chung doi chieu, xem rui ro so 7 trong rui-ro-can-giai-quyet.md)
  *   reverse-entry --id= --reason=   (2026-08-20: huy duoc CA don "confirmed"/"Kha dung" - loi thoat
  *     rieng cho CLI, vi Shopee ghi tay khong co giai doan "pending". Tren admin web CHI huy duoc
  *     don "pending")
@@ -193,14 +194,19 @@ async function main(): Promise<void> {
 
       case "mark-withdrawal-paid": {
         const id = requireFlag(values, "id");
-        const proofImagePath = requireFlag(values, "proofImagePath");
-        if (!existsSync(proofImagePath)) {
-          fail(`Khong tim thay file anh "${proofImagePath}"`);
+        const proofImagePath = values.proofImagePath;
+        // Anh TUY CHON tu 2026-10-01 - nhung neu DA tro toi 1 duong dan thi duong dan do phai ton tai,
+        // khong im lang danh dau da tra voi bang chung rong khi admin chi go sai ten file.
+        let storedFilename: string | null = null;
+        if (proofImagePath) {
+          if (!existsSync(proofImagePath)) {
+            fail(`Khong tim thay file anh "${proofImagePath}"`);
+          }
+          mkdirSync(env.withdrawal.proofDir, { recursive: true });
+          const ext = extname(proofImagePath) || ".png";
+          storedFilename = `${id}-${Date.now()}${ext}`;
+          copyFileSync(proofImagePath, join(env.withdrawal.proofDir, storedFilename));
         }
-        mkdirSync(env.withdrawal.proofDir, { recursive: true });
-        const ext = extname(proofImagePath) || ".png";
-        const storedFilename = `${id}-${Date.now()}${ext}`;
-        copyFileSync(proofImagePath, join(env.withdrawal.proofDir, storedFilename));
         const result = ledgerStore.markWithdrawalPaid(id, storedFilename);
         console.log(JSON.stringify(result, null, 2));
         break;

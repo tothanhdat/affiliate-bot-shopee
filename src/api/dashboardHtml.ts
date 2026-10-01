@@ -13,18 +13,26 @@ import { confirmOnSubmit, copyButton, escapeHtml, formatDateTime, formatVnd, sta
  */
 
 function receivedPercent(entry: CommissionEntry): string {
+  // Ty le DA CHOT cua don (2026-10-01) - chinh xac tuyet doi. Suy nguoc chi la duong lui cho entry
+  // ghi truoc khi co cot nay, xem taxFeePercents().
+  if (entry.userSharePercent !== null) return `${entry.userSharePercent}%`;
   if (entry.afterTaxAmount <= 0) return "—";
   return `${Math.round((entry.userShareAmount / entry.afterTaxAmount) * 100)}%`;
 }
 
 /**
- * % thue/phi suy nguoc tu so tien da luu (khop dung ty le da dung luc tinh o
- * ledgerStore.recordConversion) - hien kem so tien trong the thong tin don hang.
+ * % thue/phi cua don, uu tien ty le DA CHOT trong DB (2026-10-01). Chi suy nguoc tu so tien cho
+ * entry cu chua co 3 cot % - va suy nguoc thi SAI khi hoa hong nho: thue 10% cua 7d lam tron con 1d,
+ * suy nguoc ra 14%. Do la ly do uu tien so chot chu khong phai chi de cho gon.
  */
 function taxFeePercents(entry: CommissionEntry): { taxPercent: number; feePercent: number } {
   const afterTaxOnly = entry.commissionAmount - entry.taxAmount;
-  const taxPercent = entry.commissionAmount > 0 ? Math.round((entry.taxAmount / entry.commissionAmount) * 100) : 0;
-  const feePercent = afterTaxOnly > 0 ? Math.round((entry.platformFeeAmount / afterTaxOnly) * 100) : 0;
+  const taxPercent =
+    entry.taxPercent ??
+    (entry.commissionAmount > 0 ? Math.round((entry.taxAmount / entry.commissionAmount) * 100) : 0);
+  const feePercent =
+    entry.platformFeePercent ??
+    (afterTaxOnly > 0 ? Math.round((entry.platformFeeAmount / afterTaxOnly) * 100) : 0);
   return { taxPercent, feePercent };
 }
 

@@ -184,15 +184,6 @@ export class EntryAlreadyWithdrawnError extends AppError {
   }
 }
 
-export class MissingWithdrawalProofError extends AppError {
-  constructor() {
-    super(
-      "MISSING_WITHDRAWAL_PROOF",
-      "Cần đính kèm ảnh chụp màn hình đã chuyển khoản thành công trước khi đánh dấu đã trả."
-    );
-  }
-}
-
 export class MissingBankInfoError extends AppError {
   constructor() {
     super("MISSING_BANK_INFO", "Vui lòng điền đầy đủ số tài khoản, tên chủ tài khoản và ngân hàng.");

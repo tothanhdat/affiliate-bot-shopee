@@ -79,6 +79,38 @@ test("GET /d/:token voi token khong ton tai -> 404", async () => {
   }
 });
 
+test("GET /d/:token hien ty le DA CHOT cua don, khong suy nguoc tu so tien", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+    // Hoa hong nho: suy nguoc tu so tien da lam tron se ra sai (thue 10% cua 7d = 1d -> suy nguoc
+    // thanh 14%; phi san 1% -> 0d -> suy nguoc thanh 0%; user nhan 80% cua 6d = 5d -> suy nguoc 83%).
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc-123",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-le",
+      orderAmount: 1_000,
+      commissionAmount: 7,
+      taxPercent: 10,
+      platformFeePercent: 1,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+    });
+
+    const res = await fetch(`${baseUrl}/d/${token}`);
+    const html = await res.text();
+    assert.match(html, /Thuế 10%/);
+    assert.match(html, /Phí sàn 1%/);
+    assert.doesNotMatch(html, /Thuế 14%/);
+    assert.doesNotMatch(html, /83%/);
+    assert.match(html, /<div class="value">80%<\/div>/);
+  } finally {
+    cleanup();
+  }
+});
+
 test("GET /d/:token duoi nguong -> khong co form rut tien", async () => {
   const { ledgerStore, baseUrl, cleanup } = setup();
   try {

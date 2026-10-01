@@ -28,6 +28,18 @@ test("handbook: % user nhan lay tu tham so, khong hardcode 90", () => {
   assert.ok(!html.includes("90%"), "khong duoc con dau vet cua 90% hardcode");
 });
 
+/**
+ * Cau nay da bi dao 2 lan (2026-10-01): truoc do ty le duoc tinh lai theo % hien hanh o moi lan
+ * import nen chi don "hoan thanh" moi thuc su an dinh. Tu khi ty le duoc CHOT luc ghi nhan
+ * (xem ledgerStore.effectivePercents), cau dung la "luc don duoc ghi nhan" - test de khoi dao lan 3.
+ */
+test("handbook: noi ty le chot luc don duoc GHI NHAN, khong phai luc don hoan thanh", () => {
+  const html = render();
+
+  assert.match(html, /chốt tại thời điểm đơn được ghi nhận/);
+  assert.doesNotMatch(html, /chốt tại thời điểm đơn hoàn thành/);
+});
+
 test("handbook: % chu bot giu la phan bu cua % user", () => {
   const html = render({ userSharePercent: 75 });
 
