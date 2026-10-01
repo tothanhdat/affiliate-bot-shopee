@@ -313,6 +313,16 @@ export class ZaloGroupBot {
     const userId = message.data.uidFrom;
     this.options.ledgerStore.upsertUserProfile("zalo", userId, message.data.dName ?? "");
 
+    // Tin nhan KHONG CO NOI DUNG CHU -> im lang tuyet doi (2026-10-01, bug that tren instance
+    // "sanhoantien"): khi khach CHAP NHAN loi moi ket ban, Zalo day vao thread DM mot tin nhan noi
+    // dung rong. Truoc day no di tiep xuong nhanh FAQ, classifier bi goi voi chuoi rong, Anthropic
+    // tra 400 "user messages must have non-empty content", nhanh catch coi nhu "khong nhan ra chu
+    // de" va bot gui cau "Cau hoi nay ngoai pham vi..." cho mot nguoi chua he hoi gi. Trong GROUP
+    // thi tin rong lai roi vao nhanh "khong co link" va bi tra USAGE_TEXT y het.
+    // Dat SAU upsertUserProfile co chu dich: van ghi lai ten hien thi cua khach (ham do tu bo qua
+    // ten rong), chi bo qua phan dinh tuyen lenh/link/FAQ - chuoi rong khong the la ca 3 thu do.
+    if (text.trim() === "") return;
+
     // T2.3: lenh "xemhh" chi hoat dong trong tin nhan rieng (DM), khong phai group - tranh
     // thanh vien khac trong group vo tinh kich hoat link ca nhan cua nguoi khac (link dashboard
     // se lo hoa hong/don hang ca nhan neu bot lo tra loi trong group).

@@ -283,3 +283,39 @@ test("notifyAdmin that bai -> khong lam hong resolve (best-effort)", async () =>
     ledgerStore.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-01 (bug that tren instance "sanhoantien"): khach CHAP NHAN loi moi ket ban -> Zalo day
+// vao thread DM mot tin nhan NOI DUNG RONG. Bot coi do la cau hoi, goi classifier voi chuoi rong,
+// Anthropic tra 400 "user messages must have non-empty content" -> nhanh catch coi nhu "khong nhan
+// ra chu de" -> bot gui "Cau hoi nay ngoai pham vi..." cho mot nguoi chua he hoi gi.
+// Chuoi rong KHONG PHAI cau hoi: phai im lang truoc ca buoc goi classifier.
+// ---------------------------------------------------------------------------
+
+test("FAQ: cau hoi rong -> IM LANG, khong goi classifier, khong bao admin", async () => {
+  let classifyCalls = 0;
+  const classifier: FaqClassifier = {
+    classify: async () => {
+      classifyCalls += 1;
+      return [];
+    },
+  };
+  const { service, input, adminMessages, cleanup } = setup(classifier);
+  try {
+    assert.equal(await service.resolve({ ...input, question: "" }), null);
+    assert.equal(classifyCalls, 0, "khong duoc ton 1 luot goi API cho chuoi rong");
+    assert.equal(adminMessages.length, 0, "khong phai cau hoi thi khong bao admin");
+  } finally {
+    cleanup();
+  }
+});
+
+test("FAQ: cau hoi chi co khoang trang/xuong dong -> IM LANG", async () => {
+  const { service, input, adminMessages, cleanup } = setup(fakeClassifier([]));
+  try {
+    assert.equal(await service.resolve({ ...input, question: "   \n  " }), null);
+    assert.equal(adminMessages.length, 0);
+  } finally {
+    cleanup();
+  }
+});

@@ -861,3 +861,50 @@ test("Zalo login: session vao duoc ngay lan dau -> chi goi login 1 lan", async (
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-01 (bug that): khach chap nhan loi moi ket ban -> Zalo day vao thread DM mot tin nhan
+// noi dung RONG, bot tra loi "Cau hoi nay ngoai pham vi..." cho nguoi chua he hoi gi.
+// ---------------------------------------------------------------------------
+
+test("Zalo DM: tin nhan noi dung RONG (vd khach vua chap nhan ket ban) -> im lang hoan toan", async () => {
+  const { sent, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    let classifyCalls = 0;
+    attachFaq(async () => {
+      classifyCalls += 1;
+      return [];
+    });
+
+    await handleMessage(makeMessage(ThreadType.User, ""));
+
+    assert.equal(sent.length, 0, "khong duoc gui gi ca");
+    assert.equal(classifyCalls, 0, "khong duoc dua chuoi rong vao classifier");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: tin nhan chi co khoang trang -> im lang hoan toan", async () => {
+  const { sent, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    attachFaq(async () => []);
+
+    await handleMessage(makeMessage(ThreadType.User, "   \n "));
+
+    assert.equal(sent.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group: tin nhan noi dung RONG -> khong tra huong dan su dung", async () => {
+  const { sent, handleMessage, cleanup } = setup();
+  try {
+    await handleMessage(makeMessage(ThreadType.Group, ""));
+
+    assert.equal(sent.length, 0, "tin rong khong phai 'khong biet dung bot', dung tra USAGE_TEXT");
+  } finally {
+    cleanup();
+  }
+});

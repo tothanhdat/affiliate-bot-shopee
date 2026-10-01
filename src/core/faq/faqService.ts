@@ -59,6 +59,13 @@ export class FaqService {
   async resolve(input: FaqResolveInput): Promise<string | null> {
     const { platform, threadId, userId, question } = input;
 
+    // Chuoi rong KHONG PHAI cau hoi - im lang TRUOC ca mute/rate-limit/classifier (2026-10-01).
+    // Zalo day tin nhan noi dung rong vao thread khi khach chap nhan loi moi ket ban; neu de no di
+    // toi classifier thi Anthropic tra 400 ("user messages must have non-empty content") va nhanh
+    // catch coi nhu "khong nhan ra chu de" -> bot gui cau "ngoai pham vi" cho nguoi chua hoi gi.
+    // Adapter da chan tu goc, day la chot thu hai: moi quyet dinh im/noi phai nam trong file nay.
+    if (question.trim() === "") return null;
+
     if (this.options.store.isFaqThreadMuted(platform, threadId, Date.now())) return null;
     if (!this.options.rateLimiter.checkAndRecord(`${platform}-faq:${userId}`).allowed) return null;
 
