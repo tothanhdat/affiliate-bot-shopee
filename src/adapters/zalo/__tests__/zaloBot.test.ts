@@ -8,6 +8,7 @@ import { LinkResolverService } from "../../../core/linkResolverService.js";
 import { RateLimiter } from "../../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../../core/providers/mockProvider.js";
 import { FaqService } from "../../../core/faq/faqService.js";
+import { GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT } from "../../shared/replyText.js";
 import { faqAnswerKey } from "../../../core/settingsKeys.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,25 +30,34 @@ function setup() {
   const sent: SentMessage[] = [];
   const groupInfoCalls: string[] = [];
   const friendRequests: { msg: string; userId: string }[] = [];
+  // Loi gia lap cho sendFriendRequest - that bai pho bien nhat: nguoi do DA LA BAN cua tai khoan bot.
+  let friendRequestError: Error | null = null;
   const reactions: { icon: unknown; msgId: string; threadId: string; type: ThreadType }[] = [];
   // Thu tu tuong doi giua "tha tim" va "gui tin" - dung de khang dinh tim duoc tha TRUOC khi
   // tra link (yeu cau cua user: user phai thay phan hoi ngay trong luc cho tao link).
   const timeline: string[] = [];
   // Loi gia lap cho DM (ThreadType.User): dung de tai hien case Zalo tu choi vi user chan nguoi la.
   let directMessageError: Error | null = null;
+  // Loi gia lap RIENG tung user - can cho case "1 nguoi loi khong duoc chan 2 nguoi con lai".
+  const directMessageErrorByUser = new Map<string, Error>();
   // Ten group gia lap tra ve boi getGroupInfo - test ghi vao day de kiem soat ket qua.
   const groupNames = new Map<string, string>([["group-1", "Group Hoàn Tiền"]]);
   let allGroupIds: string[] = [];
   const api = {
     sendMessage: async (payload: SentMessage["payload"], threadId: string, type: ThreadType) => {
-      if (type === ThreadType.User && directMessageError !== null) throw directMessageError;
+      if (type === ThreadType.User) {
+        const err = directMessageErrorByUser.get(threadId) ?? directMessageError;
+        if (err !== null && err !== undefined) throw err;
+      }
       sent.push({ payload, threadId, type });
       timeline.push("message");
       return {};
     },
     getOwnId: () => "bot-uid",
     sendFriendRequest: async (msg: string, userId: string) => {
+      if (friendRequestError !== null) throw friendRequestError;
       friendRequests.push({ msg, userId });
+      timeline.push("friend_request");
       return "";
     },
     addReaction: async (
@@ -170,6 +180,12 @@ function setup() {
     timeline,
     setDirectMessageError: (err: Error | null) => {
       directMessageError = err;
+    },
+    setDirectMessageErrorFor: (userId: string, err: Error) => {
+      directMessageErrorByUser.set(userId, err);
+    },
+    setFriendRequestError: (err: Error | null) => {
+      friendRequestError = err;
     },
     setLoggedIn,
     cleanup,
@@ -555,42 +571,163 @@ test("Zalo group join: DM bi chan -> gui luon loi moi ket ban toi user do", asyn
   }
 });
 
-test("Zalo group join: DM loi KHAC (mang/timeout) -> khong chao trong group, khong ket ban", async () => {
+// ---------------------------------------------------------------------------
+// 2026-10-01: su co that tren instance "sanhoantien" - 3 nguoi (Jessica, Tran Gia Bao, Nhat Huy)
+// join group bang LINK NHOM, log cho thay nhan du 3 group_event join nhung 2 nguoi khong nhan
+// duoc gi: Zalo tu choi DM bang MOT BIEN THE THONG BAO KHAC voi cum "nguoi la" da biet:
+//   code=127 "Khong the nhan tin nhan tu ban." (co dau: "Không thể nhận tin nhắn từ bạn.")
+// Vi isStrangerBlockedError chi khop "nguoi la" nen ca nhanh chao bu trong group LAN gui loi moi
+// ket ban deu khong chay -> user tuong bot hong.
+// ---------------------------------------------------------------------------
+
+const BLOCKED_ERROR_MESSAGE_CODE_127 = "Không thể nhận tin nhắn từ bạn.";
+
+/** ZaloApiError that mang theo `code` so lay tu error_code cua Zalo - gia lap dung hinh dang do. */
+function zaloApiError(message: string, code: number | null): Error {
+  const err = new Error(message);
+  (err as Error & { code: number | null }).code = code;
+  return err;
+}
+
+test("Zalo group join: DM bi tu choi code=127 (text khong co 'nguoi la') -> van chao bu + ket ban", async () => {
   const { sent, friendRequests, handleGroupEvent, setDirectMessageError, cleanup } = setup();
   try {
-    // Noi sai "ban dang chan tin nhan" khi that ra chi la loi mang thi con te hon im lang.
+    setDirectMessageError(zaloApiError(BLOCKED_ERROR_MESSAGE_CODE_127, 127));
+
+    await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Jessica" }]));
+
+    assert.equal(friendRequests.length, 1, "phai gui loi moi ket ban - cach duy nhat de ve sau DM duoc");
+    assert.equal(friendRequests[0].userId, "user-9");
+    assert.equal(sent.length, 1, "phai chao bu trong group");
+    assert.equal(sent[0].type, ThreadType.Group);
+    assert.ok(bodyOf(sent[0]).includes("@Jessica"), "phai tag ten nguoi moi");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: nhieu nguoi join cung luc - 1 nguoi DM loi khong lam mat phan 2 nguoi con lai", async () => {
+  const { sent, friendRequests, handleGroupEvent, setDirectMessageErrorFor, cleanup } = setup();
+  try {
+    // Nguoi giua bi Zalo tu choi; 2 nguoi con lai DM binh thuong.
+    setDirectMessageErrorFor("user-b", zaloApiError(BLOCKED_ERROR_MESSAGE_CODE_127, 127));
+
+    await handleGroupEvent(
+      makeJoinEvent([
+        { id: "user-a", dName: "Jessica" },
+        { id: "user-b", dName: "Tran Gia Bao" },
+        { id: "user-c", dName: "Nhật Huy" },
+      ])
+    );
+
+    const dms = sent.filter((m) => m.type === ThreadType.User).map((m) => m.threadId);
+    assert.deepEqual(dms.sort(), ["user-a", "user-c"], "2 nguoi con lai phai nhan DM chao mung");
+    assert.deepEqual(
+      friendRequests.map((r) => r.userId).sort(),
+      ["user-a", "user-b", "user-c"],
+      "ca 3 nguoi moi deu duoc gui loi moi ket ban"
+    );
+    const groupGreetings = sent.filter((m) => m.type === ThreadType.Group);
+    assert.equal(groupGreetings.length, 1, "chi chao bu trong group cho nguoi bi tu choi");
+    assert.ok(bodyOf(groupGreetings[0]).includes("@Tran Gia Bao"));
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: DM loi KHAC (mang/timeout) -> KHONG chao trong group", async () => {
+  const { sent, friendRequests, handleGroupEvent, setDirectMessageError, cleanup } = setup();
+  try {
+    // Noi sai "ban dang chan tin nhan cua em" khi that ra chi la loi mang thi con te hon im lang.
     setDirectMessageError(new Error("socket hang up"));
 
     await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
 
-    assert.equal(sent.length, 0);
-    assert.equal(friendRequests.length, 0);
+    assert.equal(sent.length, 0, "loi mang khong duoc keo theo tin chao bu trong group");
+    // Loi moi ket ban thi VAN gui (2026-10-01): no di TRUOC va khong phu thuoc DM thanh cong hay khong.
+    assert.equal(friendRequests.length, 1);
   } finally {
     cleanup();
   }
 });
 
-test("Zalo group join: DM gui duoc binh thuong -> khong chao trong group, khong ket ban", async () => {
+test("Zalo group join: DM gui duoc binh thuong -> khong chao trong group (nhung VAN ket ban)", async () => {
   const { sent, friendRequests, handleGroupEvent, cleanup } = setup();
   try {
     await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
 
-    assert.equal(sent.length, 1, "chi co dung DM chao mung");
+    assert.equal(sent.length, 1, "chi co dung DM chao mung, khong chao bu trong group");
     assert.equal(sent[0].type, ThreadType.User);
-    assert.equal(friendRequests.length, 0);
+    assert.equal(friendRequests.length, 1, "ket ban gui cho MOI nguoi moi, khong doi DM bi chan");
+    assert.equal(friendRequests[0].userId, "user-9");
   } finally {
     cleanup();
   }
 });
 
+// ---------------------------------------------------------------------------
+// 2026-10-01 (yeu cau truc tiep cua user): gui loi moi ket ban cho MOI thanh vien moi join group,
+// khong chi khi DM chao mung bi tu choi - ket ban la cach duy nhat de ve sau bot DM bao don duoc.
+// ---------------------------------------------------------------------------
+
+test("Zalo group join: loi moi ket ban gui TRUOC DM chao mung (DM co cau nhac chap nhan loi moi)", async () => {
+  const { timeline, handleGroupEvent, cleanup } = setup();
+  try {
+    await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
+
+    assert.deepEqual(timeline, ["friend_request", "message"], "ket ban phai den TRUOC DM");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: DM bi chan -> chi gui DUNG 1 loi moi ket ban (khong gui doi)", async () => {
+  const { sent, friendRequests, handleGroupEvent, setDirectMessageError, cleanup } = setup();
+  try {
+    setDirectMessageError(zaloApiError(BLOCKED_ERROR_MESSAGE_CODE_127, 127));
+
+    await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
+
+    assert.equal(friendRequests.length, 1, "nhanh chao bu KHONG duoc gui them loi moi lan 2");
+    assert.equal(sent.filter((m) => m.type === ThreadType.Group).length, 1, "van chao bu trong group");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: ket ban that bai (vd da la ban san) -> VAN gui DM chao mung", async () => {
+  const { sent, friendRequests, handleGroupEvent, setFriendRequestError, cleanup } = setup();
+  try {
+    setFriendRequestError(new Error("Đã là bạn bè"));
+
+    await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
+
+    assert.equal(friendRequests.length, 0);
+    assert.equal(sent.length, 1, "loi ket ban khong duoc chan DM chao mung");
+    assert.equal(sent[0].type, ThreadType.User);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: template chao mung phai nhac user chap nhan loi moi ket ban", () => {
+  // Bot gui loi moi ket ban cho moi nguoi moi - DM khong nhac thi user thay loi moi tu troi roi
+  // xuong, de ignore/tu choi. Day la cap doi di lien nhau, dung go 1 ben.
+  assert.ok(
+    GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT.includes("kết bạn"),
+    "GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT phai nhac toi loi moi ket ban"
+  );
+});
+
 test("Zalo group join: bo qua chinh bot khi bot duoc them vao group khac", async () => {
-  const { sent, handleGroupEvent, setDirectMessageError, cleanup } = setup();
+  const { sent, friendRequests, handleGroupEvent, setDirectMessageError, cleanup } = setup();
   try {
     setDirectMessageError(new Error(BLOCKED_ERROR_MESSAGE));
 
     await handleGroupEvent(makeJoinEvent([{ id: "bot-uid", dName: "Bot" }]));
 
     assert.equal(sent.length, 0, "khong chao chinh minh");
+    assert.equal(friendRequests.length, 0, "khong tu gui loi moi ket ban cho chinh minh");
   } finally {
     cleanup();
   }

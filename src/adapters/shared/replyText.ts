@@ -255,6 +255,7 @@ export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
   `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
   `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: {{handbookUrl}}\n\n` +
+  `Nhớ bấm chấp nhận lời mời kết bạn của em nha 🤝 Có đơn hoàn tiền là em nhắn báo riêng cho mình liền!\n\n` +
   `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
 
 export function formatGroupJoinWelcomeReply(template: string, handbookUrl: string): string {

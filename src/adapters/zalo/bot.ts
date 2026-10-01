@@ -623,29 +623,54 @@ export class ZaloGroupBot {
     const isFirstTime = this.options.ledgerStore.tryClaimGroupJoinMessage("zalo", userId);
     if (!isFirstTime) return;
 
+    await this.sendFriendRequestBestEffort(api, userId);
+
     try {
       const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
       await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template, this.handbookUrl()));
     } catch (err) {
       const detail = (err as Error).message;
-      // code cua ZaloApiError (neu co) - hien chua biet ma so that cua loi "chan nguoi la" nen van
-      // phai nhan dien bang text, log them code de sau nay siet lai theo ma so cho chac.
-      const code = (err as { code?: number | null }).code ?? "";
-      console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai (code=${code}):`, detail);
-      if (isStrangerBlockedError(detail)) {
+      // `code` cua ZaloApiError - la error_code that cua Zalo khi Zalo CO tra loi va tu choi; loi
+      // mang/timeout khong co field nay. Log luon de con phat hien bien the thong bao moi.
+      const rawCode = (err as { code?: unknown }).code;
+      const code = typeof rawCode === "number" ? rawCode : null;
+      console.warn(`[zalo] gui DM chao mung (group join) toi ${userId} that bai (code=${code ?? ""}):`, detail);
+      if (isStrangerBlockedError(detail, code)) {
         await this.greetBlockedUserInGroup(api, userId, displayName, groupId);
       }
     }
   }
 
   /**
-   * User bat "khong nhan tin nhan tu nguoi la" nen DM chao mung o tren bi Zalo tu choi (2026-09-24,
-   * yeu cau truc tiep cua user sau su co that - rat nhieu nguoi bat cai dat nay). Chao bu ngay
-   * trong group kem tag @ten, va gui LUON loi moi ket ban: ket ban la cach duy nhat de ve sau bot
-   * DM bao don hang cho ho duoc.
+   * Gui loi moi ket ban toi MOI thanh vien moi join group (2026-10-01, yeu cau truc tiep cua user -
+   * truoc do CHI gui khi DM chao mung bi Zalo tu choi). Ly do mo rong: ket ban la cach DUY NHAT de
+   * ve sau bot DM bao don hang cho ho duoc, nen khong doi den luc bi chan moi gui.
+   * Goi TRUOC khi gui DM chao mung CO CHU DICH: DM co cau nhac "bam chap nhan loi moi ket ban cua
+   * em" (xem GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT) nen loi moi phai den truoc de user doc DM la thay
+   * san thong bao - co test chan ca thu tu nay lan cau nhac trong template.
+   * Best-effort: that bai chi log, TUYET DOI khong duoc chan DM chao mung phia sau. That bai pho
+   * bien nhat khong phai loi he thong ma la nguoi do DA LA BAN cua tai khoan bot (ban be that cua
+   * chu bot vao group) - day cung la ly do cau nhac trong DM viet dang loi NHAC chap nhan chu khong
+   * khang dinh "em da gui loi moi roi": khang dinh se thanh noi sai trong dung case pho bien nhat.
+   */
+  private async sendFriendRequestBestEffort(api: API, userId: string): Promise<void> {
+    try {
+      const friendRequestMessage = this.options.ledgerStore.getFriendRequestMessage(FRIEND_REQUEST_MESSAGE_DEFAULT);
+      await api.sendFriendRequest(friendRequestMessage, userId);
+    } catch (err) {
+      console.warn(`[zalo] gui loi moi ket ban toi ${userId} that bai:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * User khong nhan duoc tin nhan tu nguoi chua ket ban nen DM chao mung o tren bi Zalo tu choi
+   * (2026-09-24, yeu cau truc tiep cua user sau su co that - rat nhieu nguoi bat cai dat nay).
+   * Chao bu ngay trong group kem tag @ten de ho khong bi im lang hoan toan.
+   * KHONG gui loi moi ket ban o day nua (2026-10-01): sendFriendRequestBestEffort() da gui cho MOI
+   * nguoi moi TRUOC khi thu DM, nen gui lai o day la gui doi cho cung 1 nguoi - co test chan.
    * CHI chay khi dung loi bi chan - loi khac (mang/timeout) giu nguyen hanh vi cu la im lang, vi
    * noi "ban dang chan tin nhan cua em" khi that ra la loi mang thi con te hon khong noi gi.
-   * Ca 2 buoc deu best-effort, loi chi log - day la nhanh phu, khong duoc lam hong gi them.
+   * Best-effort, loi chi log - day la nhanh phu, khong duoc lam hong gi them.
    */
   private async greetBlockedUserInGroup(
     api: API,
@@ -653,13 +678,6 @@ export class ZaloGroupBot {
     displayName: string,
     groupId: string
   ): Promise<void> {
-    try {
-      const friendRequestMessage = this.options.ledgerStore.getFriendRequestMessage(FRIEND_REQUEST_MESSAGE_DEFAULT);
-      await api.sendFriendRequest(friendRequestMessage, userId);
-    } catch (err) {
-      console.warn(`[zalo] gui loi moi ket ban toi ${userId} that bai:`, (err as Error).message);
-    }
-
     try {
       const template = this.options.ledgerStore.getGroupJoinBlockedReplyTemplate(
         GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT
@@ -732,16 +750,33 @@ function extractMessageText(content: string | TAttachmentContent | Record<string
   return null;
 }
 
+/** Ma error_code cua Zalo khi tu choi DM toi nguoi chua ket ban (quan sat that 2026-10-01). */
+const STRANGER_BLOCKED_ERROR_CODE = 127;
+
 /**
- * Zalo tu choi DM vi nguoi nhan bat "khong nhan tin nhan tu nguoi la" - thong bao that quan sat
- * duoc (2026-09-24): "Bạn chưa thể gửi tin nhắn đến người này vì người này chặn không nhận tin
- * nhắn từ người lạ.". ZaloApiError co mang theo `code` so nhung chua biet ma so cua rieng loi nay
- * (log cu chi in message), nen tam nhan dien bang text - doi lay duoc ma so that thi siet lai.
- * Chi bat dung cum "nguoi la": cum "chan" khong thoi con trung ca case user chan han bot, luc do
- * gui loi moi ket ban chi la lam phien.
+ * Cac cum tu da quan sat duoc trong thong bao tu choi. Chi bat cum chi RO phia nguoi nhan khong
+ * nhan duoc tin: "chan" khong thoi con trung ca case user chan han bot, luc do gui loi moi ket
+ * ban chi la lam phien.
  */
-function isStrangerBlockedError(message: string): boolean {
-  return message.normalize("NFC").toLowerCase().includes("người lạ");
+const STRANGER_BLOCKED_PHRASES = ["người lạ", "không thể nhận tin nhắn"];
+
+/**
+ * Zalo tu choi DM vi nguoi nhan khong nhan tin nhan tu nguoi chua ket ban. **CO IT NHAT 2 BIEN THE
+ * THONG BAO KHAC NHAU cho CUNG mot tinh huong**, deu quan sat duoc tren production:
+ *  - (2026-09-24, instance sanhoantien2) "Bạn chưa thể gửi tin nhắn đến người này vì người này
+ *    chặn không nhận tin nhắn từ người lạ." - luc do log chua in `code` nen ma so khong biet.
+ *  - (2026-10-01, instance sanhoantien) **code 127** "Không thể nhận tin nhắn từ bạn." - su co that:
+ *    3 nguoi join group bang link nhom, log nhan DU 3 group_event join nhung 2 nguoi cuoi khong
+ *    nhan duoc gi. Vi ban cu CHI khop chuoi "nguoi la" nen ca nhanh chao bu trong group LAN gui
+ *    loi moi ket ban deu khong chay -> 2 user im lang hoan toan, chu bot tuong bot hong.
+ * Bai hoc: **dung khop dung 1 chuoi**. Khop theo MA SO truoc (chac chan nhat, khong phu thuoc Zalo
+ * doi cach dien dat), roi moi lui ve danh sach cum tu da biet. Loi mang/timeout khong mang `code`
+ * va khong chua cum nao -> van tra false, giu nguyen hanh vi im lang (xem greetBlockedUserInGroup).
+ */
+function isStrangerBlockedError(message: string, code: number | null): boolean {
+  if (code === STRANGER_BLOCKED_ERROR_CODE) return true;
+  const normalized = message.normalize("NFC").toLowerCase();
+  return STRANGER_BLOCKED_PHRASES.some((phrase) => normalized.includes(phrase));
 }
 
 export function createZaloGroupBot(resolver: LinkResolverService, options: ZaloGroupBotOptions): ZaloGroupBot {
