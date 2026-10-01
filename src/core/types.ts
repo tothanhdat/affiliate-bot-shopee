@@ -67,6 +67,13 @@ export type CommissionStatus = "pending" | "confirmed" | "paid" | "reversed";
 export interface CommissionEntry {
   id: string;
   createdAt: string;
+  /**
+   * Ngay user DAT don that ("YYYY-MM-DD", gio VN) - lay tu cot "Thời Gian Đặt Hàng" cua bao cao
+   * Shopee (2026-10-01). KHAC createdAt (= luc admin import bao cao vao he thong): import tre hay
+   * gop nhieu ngay mot luc khong lam lech thong ke theo ngay. null cho don ghi tay hoac don da ghi
+   * truoc khi co cot nay - moi thong ke tu lui ve createdAt, xem dashboardStats.ts.
+   */
+  orderDate: string | null;
   platform: Platform;
   userId: string;
   merchant: MerchantId;

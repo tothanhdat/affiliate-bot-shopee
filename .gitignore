@@ -17,3 +17,8 @@ data/withdrawal-proofs/
 # kinh doanh) - khong dua len repo cong khai.
 rui-ro-can-giai-quyet.md
 product-backlog.md
+
+# Bao cao goc Shopee Affiliate dung lam mau khi phat trien - chua du lieu don hang THAT
+# (ma don, ten shop, item id, Sub_id1-5 suy nguoc ra user id cua khach). Test dung du lieu
+# tong hop tu viet, KHONG dung file nay lam fixture.
+data/report_template/

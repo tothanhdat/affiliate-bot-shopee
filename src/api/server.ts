@@ -2,6 +2,11 @@ import express, { type Request, type Response, type NextFunction } from "express
 import multer from "multer";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import { adminShell } from "./adminHtml.js";
+// renderAdminDashboardPage: dat ten khac renderDashboardPage cua dashboardHtml.ts (trang
+// dashboard CUA USER) - 2 trang hoan toan khac nhau, trung ten se de goi nham.
+import { renderAdminDashboardPage } from "./adminDashboardHtml.js";
+import { computeDashboardStats, parseDashboardRange } from "../core/dashboardStats.js";
 import {
   renderAdminLoginPage,
   renderOrdersPage,
@@ -390,7 +395,18 @@ export function createServer(
   });
 
   app.get("/admin", requireAdminAuth, (_req: Request, res: Response) => {
-    res.redirect(303, "/admin/withdrawals");
+    res.redirect(303, "/admin/dashboard");
+  });
+
+  /**
+   * Trang tong quan (2026-10-01). Khac cac trang /admin con lai o cho: renderDashboardPage() tra ve
+   * PHAN THAN, server tu boc adminShell - de adminDashboardHtml.ts khong phai import nguoc lai
+   * adminHtml.ts (adminHtml.ts da import dashboardStyles() tu do, boc 2 chieu se thanh vong tron).
+   */
+  app.get("/admin/dashboard", requireAdminAuth, (req: Request, res: Response) => {
+    const range = parseDashboardRange(req.query.range);
+    const stats = computeDashboardStats(ledgerStore, logStore, range);
+    res.type("html").send(adminShell("dashboard", "Tổng quan", renderAdminDashboardPage(stats)));
   });
 
   app.get("/admin/withdrawals", requireAdminAuth, (_req: Request, res: Response) => {

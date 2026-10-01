@@ -29,6 +29,13 @@ import type {
   ZaloGroup,
 } from "./types.js";
 
+/**
+ * Bieu thuc SQL cho "ngay cua 1 don" theo gio VN. order_date da la ngay VN san (doc tu bao cao
+ * Shopee) nen dung thang; created_at luu ISO UTC nen phai +7 gio TRUOC khi cat lay ngay - thieu
+ * buoc nay thi don tao tu 00:00 den 07:00 gio VN bi dem sang ngay hom truoc.
+ */
+const DAY_EXPR = "COALESCE(order_date, date(created_at, '+7 hours'))";
+
 export interface RecordConversionInput {
   subId: string;
   platform: Platform;
@@ -52,6 +59,12 @@ export interface RecordConversionInput {
    * Hoa hong affiliate that thuong chi vai % - vai chuc %, khong bao gio gan/vuot gia tri don hang.
    */
   maxCommissionRatioPercent: number;
+  /**
+   * Ngay user DAT don that, dang "YYYY-MM-DD" theo gio VN (tu cot "Thời Gian Đặt Hàng" cua bao cao
+   * Shopee). null khi nguon khong cho biet (ghi don le bang tay, bao cao cu khong co cot nay) - luc
+   * do moi thong ke se tu lui ve created_at. KHONG bao gio doan ngay.
+   */
+  orderDate?: string | null;
   status?: CommissionStatus;
   note?: string;
 }
@@ -133,6 +146,8 @@ export class LedgerStore {
     // DB tao truoc khi co buoc tru thue/phi (2026-08-17) se thieu 3 cot nay - them vao neu chua co,
     // khong mat du lieu cu. Dung DEFAULT 0 vi cac entry cu khong co du lieu thue/phi that.
     this.migrateAddTaxColumns();
+    // DB tao truoc 2026-10-01 (truoc khi doc cot ngay dat don cua bao cao Shopee) se thieu cot nay.
+    this.migrateAddOrderDateColumn();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawal_requests (
         id TEXT PRIMARY KEY,
@@ -216,6 +231,20 @@ export class LedgerStore {
     this.migrateAddWithdrawalProofColumn();
     // DB tao truoc khi co form ngan hang bat buoc (2026-08-20) se thieu 3 cot nay.
     this.migrateAddBankInfoColumns();
+  }
+
+  /**
+   * DB tao truoc 2026-10-01 (truoc khi trang /admin/dashboard can ngay dat don that) se thieu cot
+   * nay. KHONG backfill duoc: bao cao Shopee da import xong khong con luu lai o dau, nen entry cu
+   * de NULL va moi thong ke tu lui ve created_at qua COALESCE (xem dashboardStats.ts).
+   */
+  private migrateAddOrderDateColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(commission_entries)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((col) => col.name === "order_date")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN order_date TEXT");
+    }
   }
 
   /** DB tao truoc 2026-08-19 (truoc khi bat buoc dinh kem anh chuyen khoan) se thieu cot nay. */
@@ -308,12 +337,13 @@ export class LedgerStore {
       this.db
         .prepare(
           `INSERT INTO commission_entries
-            (id, created_at, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, status, withdrawal_id, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+            (id, created_at, order_date, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, status, withdrawal_id, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
         )
         .run(
           id,
           createdAt,
+          input.orderDate ?? null,
           input.platform,
           input.userId,
           input.merchant,
@@ -339,6 +369,7 @@ export class LedgerStore {
     return {
       id,
       createdAt,
+      orderDate: input.orderDate ?? null,
       platform: input.platform,
       userId: input.userId,
       merchant: input.merchant,
@@ -1121,6 +1152,203 @@ export class LedgerStore {
    * that bai truoc khi xu ly (vd thieu file, sai tham so) - loi da hien ngay tren trang, khong can
    * luu lai.
    */
+  // ===========================================================================
+  // Tong hop cho trang /admin/dashboard (2026-10-01).
+  //
+  // Tat ca deu tinh bang SQL GROUP BY thay vi keo het row len JS roi reduce - bang tien chi tang
+  // chu khong giam, nen "doc het roi tinh" se cham dan theo thoi gian ma khong ai de y.
+  //
+  // Ngay cua 1 don = DAY_EXPR: uu tien order_date (ngay DAT don that tu bao cao Shopee), thieu thi
+  // lui ve created_at quy doi sang gio VN (+7). Dung COALESCE chu khong phai "WHERE order_date IS
+  // NOT NULL" - don ghi truoc 2026-10-01 khong co order_date, loc di la chung BIEN MAT khoi chart.
+  // ===========================================================================
+
+  /**
+   * Khoang ngay nhan vao luon la "YYYY-MM-DD" (gio VN) va duoc so sanh dang CHUOI - dung duoc vi
+   * dinh dang nay sap xep theo thu tu tu dien trung voi thu tu thoi gian.
+   */
+  getDashboardMoneyTotals(
+    fromKey: string,
+    toKey: string
+  ): { commission: number; ownerProfit: number; userShare: number; orderCount: number } {
+    const row = this.db
+      .prepare(
+        `SELECT
+           COALESCE(SUM(commission_amount), 0) AS commission,
+           COALESCE(SUM(after_tax_amount - user_share_amount), 0) AS owner_profit,
+           COALESCE(SUM(user_share_amount), 0) AS user_share,
+           COUNT(*) AS order_count
+         FROM commission_entries
+         WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
+    return {
+      commission: row.commission,
+      ownerProfit: row.owner_profit,
+      userShare: row.user_share,
+      orderCount: row.order_count,
+    };
+  }
+
+  /** So don MOI trong ky, tach theo trang thai HIEN TAI cua don - du lieu cua chart chinh. */
+  countEntriesByDayAndStatus(
+    fromKey: string,
+    toKey: string
+  ): Array<{ day: string; status: CommissionStatus; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT ${DAY_EXPR} AS day, status, COUNT(*) AS count
+         FROM commission_entries
+         WHERE ${DAY_EXPR} BETWEEN ? AND ?
+         GROUP BY day, status`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      day: r.day as string,
+      status: r.status as CommissionStatus,
+      count: r.count as number,
+    }));
+  }
+
+  sumCommissionByDay(
+    fromKey: string,
+    toKey: string
+  ): Array<{ day: string; commission: number; ownerProfit: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT ${DAY_EXPR} AS day,
+           COALESCE(SUM(commission_amount), 0) AS commission,
+           COALESCE(SUM(after_tax_amount - user_share_amount), 0) AS owner_profit
+         FROM commission_entries
+         WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?
+         GROUP BY day`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      day: r.day as string,
+      commission: r.commission as number,
+      ownerProfit: r.owner_profit as number,
+    }));
+  }
+
+  countEntriesByStatus(fromKey: string, toKey: string): Array<{ status: CommissionStatus; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT status, COUNT(*) AS count
+         FROM commission_entries
+         WHERE ${DAY_EXPR} BETWEEN ? AND ?
+         GROUP BY status`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({ status: r.status as CommissionStatus, count: r.count as number }));
+  }
+
+  /** Gia tri user se nhan cua cac don dang "pending" trong ky - tien CHUA chac chan. */
+  getPendingOrdersInRange(fromKey: string, toKey: string): { count: number; userShareAmount: number } {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(user_share_amount), 0) AS amount
+         FROM commission_entries
+         WHERE status = 'pending' AND ${DAY_EXPR} BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
+    return { count: row.count, userShareAmount: row.amount };
+  }
+
+  /**
+   * LEFT JOIN user_profiles de lay ten hien thi: bang do chi co user da tung nhan tin voi bot
+   * (adapter goi upsertUserProfile), nen JOIN THUONG se lam BIEN MAT user co don nhung chua co
+   * ho so - displayName ve null va cho goi tu lui ve userId.
+   */
+  topUsersByCommission(
+    fromKey: string,
+    toKey: string,
+    limit: number
+  ): Array<{
+    platform: Platform;
+    userId: string;
+    displayName: string | null;
+    commission: number;
+    orderCount: number;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT ce.platform AS platform, ce.user_id AS user_id, up.display_name AS display_name,
+           COALESCE(SUM(ce.commission_amount), 0) AS commission, COUNT(*) AS order_count
+         FROM commission_entries ce
+         LEFT JOIN user_profiles up ON up.platform = ce.platform AND up.user_id = ce.user_id
+         WHERE ce.status != 'reversed'
+           AND COALESCE(ce.order_date, date(ce.created_at, '+7 hours')) BETWEEN ? AND ?
+         GROUP BY ce.platform, ce.user_id, up.display_name
+         ORDER BY commission DESC, user_id ASC
+         LIMIT ?`
+      )
+      .all(fromKey, toKey, limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      platform: r.platform as Platform,
+      userId: r.user_id as string,
+      displayName: (r.display_name as string | null) ?? null,
+      commission: r.commission as number,
+      orderCount: r.order_count as number,
+    }));
+  }
+
+  /**
+   * So du TOAN THOI GIAN, KHONG cat theo ky xem - day la tien that dang treo, doi ky xem tren giao
+   * dien khong duoc lam no doi. owedToUsers = phan user da duoc xac nhan va chua bi giu boi 1 yeu
+   * cau rut nao (dung dung cong thuc cua getAvailableBalance, chi bo dieu kien theo user).
+   */
+  getOutstandingTotals(): {
+    owedToUsers: number;
+    pendingWithdrawalCount: number;
+    pendingWithdrawalAmount: number;
+    totalUsers: number;
+  } {
+    const owed = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(user_share_amount), 0) AS amount
+         FROM commission_entries
+         WHERE status = 'confirmed' AND withdrawal_id IS NULL`
+      )
+      .get() as Record<string, number>;
+    const withdrawals = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
+         FROM withdrawal_requests WHERE status = 'requested'`
+      )
+      .get() as Record<string, number>;
+    const users = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM (SELECT DISTINCT platform, user_id FROM commission_entries)`)
+      .get() as Record<string, number>;
+    return {
+      owedToUsers: owed.amount,
+      pendingWithdrawalCount: withdrawals.count,
+      pendingWithdrawalAmount: withdrawals.amount,
+      totalUsers: users.count,
+    };
+  }
+
+  /** Tien da chuyen cho user trong ky - theo paid_at (luc bam "da chuyen khoan"), gio VN. */
+  getPaidWithdrawalTotal(fromKey: string, toKey: string): { count: number; amount: number } {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
+         FROM withdrawal_requests
+         WHERE status = 'paid' AND paid_at IS NOT NULL
+           AND date(paid_at, '+7 hours') BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
+    return { count: row.count, amount: row.amount };
+  }
+
+  /** Bu order_date cho 1 entry da ghi truoc khi biet ngay dat don. CHI ghi khi dang NULL - bao cao
+   * sau khong duoc quyen ghi de ngay da chot (Shopee liet ke lai ca lich su o moi lan import). */
+  backfillOrderDate(entryId: string, orderDate: string): void {
+    this.db
+      .prepare(`UPDATE commission_entries SET order_date = ? WHERE id = ? AND order_date IS NULL`)
+      .run(orderDate, entryId);
+  }
+
   recordImportHistory(input: {
     actionType: ImportActionType;
     newOrderIds: string[];
@@ -1169,6 +1397,7 @@ function rowToCommissionEntry(row: unknown): CommissionEntry {
   return {
     id: r.id as string,
     createdAt: r.created_at as string,
+    orderDate: (r.order_date as string | null) ?? null,
     platform: r.platform as Platform,
     userId: r.user_id as string,
     merchant: r.merchant as MerchantId,

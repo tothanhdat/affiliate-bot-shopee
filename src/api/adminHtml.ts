@@ -9,6 +9,7 @@ import type {
   WithdrawalRequest,
   ZaloGroup,
 } from "../core/types.js";
+import { dashboardStyles } from "./adminDashboardHtml.js";
 import {
   confirmOnSubmit,
   escapeHtml,
@@ -26,6 +27,7 @@ import {
  */
 
 const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: string }> = [
+  { key: "dashboard", href: "/admin/dashboard", label: "Tổng quan", icon: "📊" },
   { key: "withdrawals", href: "/admin/withdrawals", label: "Yêu cầu rút tiền", icon: "💸" },
   { key: "users", href: "/admin/users", label: "Người dùng", icon: "👥" },
   { key: "orders", href: "/admin/orders", label: "Đơn hàng", icon: "📦" },
@@ -252,10 +254,11 @@ function shellStyles(): string {
     .settings-form input[type="number"] { width: 100%; }
     .totals .stat { flex: 1 1 100%; }
   }
+${dashboardStyles()}
 </style>`;
 }
 
-function adminShell(activeNav: string, pageTitle: string, bodyHtml: string): string {
+export function adminShell(activeNav: string, pageTitle: string, bodyHtml: string): string {
   const navLinks = NAV_ITEMS.map(
     (item) =>
       `<a href="${item.href}" class="${item.key === activeNav ? "active" : ""}"><span class="icon">${item.icon}</span><span class="label">${item.label}</span></a>`

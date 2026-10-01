@@ -162,6 +162,66 @@ export class LogStore {
     return rows.map(rowToEntry);
   }
 
+  // ===========================================================================
+  // Tong hop cho trang /admin/dashboard (2026-10-01) - do SUC KHOE cua bot (co ai dung khong, co
+  // loi khong), doc lap hoan toan voi viec da import bao cao hoa hong hay chua.
+  //
+  // timestamp luu ISO UTC nen phai +7 gio truoc khi cat lay ngay, de khop voi cach cat ngay cua
+  // ledgerStore (xem DAY_EXPR o do) - 2 chart canh nhau ma lech mui gio thi khong doi chieu duoc.
+  // ===========================================================================
+
+  countRequestsByDayAndOutcome(
+    fromKey: string,
+    toKey: string
+  ): Array<{ day: string; outcome: RequestOutcome; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT date(timestamp, '+7 hours') AS day, outcome, COUNT(*) AS count
+         FROM requests
+         WHERE date(timestamp, '+7 hours') BETWEEN ? AND ?
+         GROUP BY day, outcome`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      day: r.day as string,
+      outcome: r.outcome as RequestOutcome,
+      count: r.count as number,
+    }));
+  }
+
+  getRequestTotals(
+    fromKey: string,
+    toKey: string
+  ): { total: number; success: number; activeUsers: number } {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+           COALESCE(SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END), 0) AS success,
+           COUNT(DISTINCT platform || ':' || user_id) AS active_users
+         FROM requests
+         WHERE date(timestamp, '+7 hours') BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
+    return { total: row.total, success: row.success, activeUsers: row.active_users };
+  }
+
+  /**
+   * User MOI = user co luot tao link DAU TIEN roi vao ky nay. Tinh tu requests.db (khong phai tu
+   * welcome_messages) vi bang do chi co user Zalo - user Telegram khong bao gio duoc DM chao mung,
+   * dem theo do se bao cao thieu nguoi.
+   */
+  countNewUsers(fromKey: string, toKey: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM (
+           SELECT platform, user_id, MIN(timestamp) AS first_seen
+           FROM requests GROUP BY platform, user_id
+         ) WHERE date(first_seen, '+7 hours') BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
+    return row.count;
+  }
+
   /** Dung boi ledgerAdmin.ts de suy ra platform/userId/merchant tu 1 subId da ghi log truoc do. */
   findBySubId(subId: string): RequestLogEntry | null {
     const rows = this.db

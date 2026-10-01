@@ -95,8 +95,39 @@ function classifyRowStatus(raw: string): RowStatus {
   return "unknown";
 }
 
+/**
+ * Ngay DAT don that tu cot "Thời Gian Đặt Hàng" (dinh dang "YYYY-MM-DD HH:mm:ss", gio VN) -> chi
+ * giu phan ngay. Tra null khi thieu/sai dinh dang: day la cot THONG KE, khong duoc quyen lam hong
+ * viec ghi nhan hoa hong (bang tien). KHONG doan dinh dang khac ("30/09/2026" co the la dd/mm hoac
+ * mm/dd tuy locale may xuat file - doan sai se lech ngay am tham ca thang).
+ *
+ * Luu y ten cot: Shopee viet hoa "G"/"H" giua cau o rieng cot nay ("Thời Gian Đặt Hàng") trong khi
+ * 2 cot ngay ke ben viet thuong ("Thời gian hoàn thành", "Thời gian Click") - da doi chieu file
+ * that, dung "sua lai cho dong nhat".
+ */
+export function parseShopeeOrderDate(raw: string | undefined): string | null {
+  const text = raw?.trim();
+  if (!text) return null;
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T]|$)/.exec(text);
+  if (!match) return null;
+
+  const [, year, month, day] = match;
+  const monthNum = Number(month);
+  const dayNum = Number(day);
+  if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return null;
+
+  // Chan ngay khong ton tai that (vd 2026-02-30): dung ngay UTC de khong dinh mui gio may chay.
+  const probe = new Date(`${year}-${month}-${day}T12:00:00Z`);
+  if (Number.isNaN(probe.getTime()) || probe.getUTCDate() !== dayNum) return null;
+
+  return `${year}-${month}-${day}`;
+}
+
 interface ShopeeReportRow {
   orderId: string;
+  /** "YYYY-MM-DD" gio VN, null khi bao cao khong co cot ngay hoac gia tri hong. */
+  orderDate: string | null;
   productName: string;
   orderAmount: number;
   commissionAmount: number;
@@ -113,6 +144,7 @@ function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
 
     return {
       orderId: row["ID đơn hàng"]?.trim() ?? "",
+      orderDate: parseShopeeOrderDate(row["Thời Gian Đặt Hàng"]),
       productName: row["Tên Item"]?.trim() ?? "",
       orderAmount: Number(row["Giá trị đơn hàng (₫)"]),
       commissionAmount: Number(row["Tổng hoa hồng sản phẩm(₫)"]),
@@ -137,6 +169,8 @@ function groupRowsByOrderId(rows: ShopeeReportRow[]): Map<string, ShopeeReportRo
 
 interface MergedOrder {
   orderId: string;
+  /** Ngay dat SOM NHAT trong cac dong cua don - don gop nhieu san pham co the lech gio nhau. */
+  orderDate: string | null;
   subId: string | null;
   productName: string;
   orderAmount: number;
@@ -177,6 +211,13 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
     );
   }
 
+  // Ngay dat cua ca don = ngay SOM NHAT trong cac dong doc duoc (dong qua tang/mua kem co the ghi
+  // gio khac). Lay tu TAT CA cac dong cua don, ke ca dong bi huy - don van duoc dat vao ngay do.
+  const orderDate = rows
+    .map((r) => r.orderDate)
+    .filter((d): d is string => d !== null)
+    .sort()[0] ?? null;
+
   const active = counted.filter((c) => c.status !== "reversed");
   const status: MergedOrder["status"] =
     active.length === 0 ? "reversed" : active.some((c) => c.status === "pending") ? "pending" : "confirmed";
@@ -198,7 +239,7 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
 
   return {
     kind: "ok",
-    order: { orderId, subId, productName, orderAmount, commissionAmount, status, rawStatusLabel, warnings },
+    order: { orderId, orderDate, subId, productName, orderAmount, commissionAmount, status, rawStatusLabel, warnings },
   };
 }
 
@@ -261,6 +302,13 @@ export function importShopeeReport(
 
     const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId);
 
+    // Bu ngay dat don cho entry da ghi TRUOC khi he thong biet doc cot nay (hoac truoc 2026-10-01).
+    // Dat o day de ap dung cho MOI nhanh trang thai ben duoi - khong chi don duoc confirm. Chi ghi
+    // khi dang trong (xem backfillOrderDate), nen bao cao sau khong ghi de ngay da chot.
+    if (existing && order.orderDate) {
+      ledgerStore.backfillOrderDate(existing.id, order.orderDate);
+    }
+
     if (targetStatus === "confirmed") {
       if (existing?.status === "confirmed" || existing?.status === "paid") {
         // "paid" la trang thai SAU "confirmed" (chi dat duoc qua markWithdrawalPaid, xem ledgerStore.ts)
@@ -299,6 +347,7 @@ export function importShopeeReport(
             productName: order.productName || undefined,
             orderAmount: order.orderAmount,
             commissionAmount: order.commissionAmount,
+            orderDate: order.orderDate,
             taxPercent: recordOrderConfig.taxPercent,
             platformFeePercent: recordOrderConfig.platformFeePercent,
             userSharePercent: recordOrderConfig.userSharePercent,
@@ -389,6 +438,7 @@ export function importShopeeReport(
         platformFeePercent: recordOrderConfig.platformFeePercent,
         userSharePercent: recordOrderConfig.userSharePercent,
         maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+        orderDate: order.orderDate,
         status: "pending",
         note: "Nhap tu bao cao Shopee - dang cho xu ly",
       });
