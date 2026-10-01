@@ -48,10 +48,11 @@ export interface FaqResolveInput {
 
 
 /**
- * Dieu phoi FAQ: mute -> rate limit -> classify -> lay cau tra loi soan san -> render placeholder.
- * Tra ve null nghia la IM LANG (adapter khong gui gi ca) - CHI xay ra khi thread dang bi khoa (admin
- * dang go tay / lenh "/im") hoac qua rate limit. Cau hoi khong nhan ra chu de nao van CO tra loi (xem
- * outOfScopeReply) chu khong con im lang - moi quyet dinh im/noi nam o day, adapter khong tu suy luan.
+ * Dieu phoi FAQ: cau hoi rong -> mute -> rate limit -> classify -> lay cau tra loi soan san ->
+ * render placeholder. Tra ve null nghia la IM LANG (adapter khong gui gi ca), xay ra khi: cau hoi
+ * rong, thread dang bi khoa (admin dang go tay / lenh "/im"), qua rate limit, HOAC classifier LOI
+ * (2026-10-01). Cau hoi da duoc classifier doc xong ma khong khop chu de nao thi van CO tra loi
+ * (xem outOfScopeReply) - moi quyet dinh im/noi nam o day, adapter khong tu suy luan.
  */
 export class FaqService {
   constructor(private readonly options: FaqServiceOptions) {}
@@ -69,13 +70,18 @@ export class FaqService {
     if (this.options.store.isFaqThreadMuted(platform, threadId, Date.now())) return null;
     if (!this.options.rateLimiter.checkAndRecord(`${platform}-faq:${userId}`).allowed) return null;
 
-    let topicIds: string[] = [];
+    let topicIds: string[];
     try {
       topicIds = await this.options.classifier.classify(question, FAQ_TOPICS);
     } catch (err: unknown) {
-      // Loi API khong duoc lam hong luong tin nhan - xu ly y het "khong nhan ra cau hoi".
-      console.warn("[faq] classifier loi:", err instanceof Error ? err.message : err);
-      topicIds = [];
+      // Loi API (het han muc / 500 / mang / 401 key het han) KHAC HAN "chay xong ma khong khop chu
+      // de nao" (2026-10-01, yeu cau truc tiep cua user - truoc do 2 nhanh bi gop): luc API sap,
+      // bot CHUA HE doc duoc cau hoi, noi "cau hoi nay ngoai pham vi" la noi SAI voi khach va con
+      // duoi ho di. Gio IM LANG voi khach + bao admin kem ly do de admin tra loi tay.
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn("[faq] classifier loi:", detail);
+      this.escalateClassifierFailure(input, detail);
+      return null;
     }
 
     const topics = topicIds
@@ -116,9 +122,31 @@ export class FaqService {
    * zalo/bot.ts) hoac go lenh "/im" (muteByAdminCommand) - khong phai do bot tu doan.
    */
   private escalateToAdmin(input: FaqResolveInput): void {
-    const message =
+    this.notifyAdmin(
       `❓ [${input.platform}] ${input.userDisplayName} (${input.userId}) vừa hỏi câu bot không hiểu:\n` +
-      `"${input.question}"`;
+        `"${input.question}"`
+    );
+  }
+
+  /**
+   * Classifier LOI (khac han "khong nhan ra chu de") -> bot da im lang voi khach, nen admin la
+   * nguoi DUY NHAT con co the tra loi ho: bat buoc phai bao, kem ca cau hoi lan ly do loi.
+   * Tin nay CO Y khac han tin cua escalateToAdmin: admin doc 1 dong phai biet ngay day la bot LOI
+   * (di sua API/han muc) chu khong phai khach hoi cau ngoai kich ban (di soan cau tra loi moi) -
+   * co test chan viec dung chung cau cho 2 viec.
+   * Danh doi da duoc user chap nhan 2026-10-01: API sap thi MOI tin DM sinh 1 thong bao cho admin.
+   */
+  private escalateClassifierFailure(input: FaqResolveInput, detail: string): void {
+    this.notifyAdmin(
+      `⚠️ [${input.platform}] Không đọc được câu hỏi của ${input.userDisplayName} (${input.userId}):\n` +
+        `"${input.question}"\n` +
+        `Lỗi: ${detail}\n` +
+        `Bot đã im lặng với khách, cần trả lời tay.`
+    );
+  }
+
+  /** Bao chu bot, best-effort - loi gui chi log (dung chung boi 2 nhanh escalate o tren). */
+  private notifyAdmin(message: string): void {
     this.options.notifyAdmin(message).catch((err: unknown) => {
       console.warn("[faq] khong bao duoc admin:", err instanceof Error ? err.message : err);
     });

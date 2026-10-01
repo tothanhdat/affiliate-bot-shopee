@@ -134,15 +134,51 @@ test("resolve: khong biet -> tra loi cau co dinh bao doi admin, VAN bao admin, K
   }
 });
 
-test("resolve: classifier throw (API loi) -> xu ly y het 'khong biet', khong nem ra ngoai, KHONG khoa thread", async () => {
+// ---------------------------------------------------------------------------
+// 2026-10-01 (yeu cau truc tiep cua user): classifier LOI (het han muc API / 500 / mang / 401 key
+// het han) KHAC HAN "classifier chay xong va khong khop chu de nao". Truoc do 2 nhanh nay bi gop:
+// API sap thi MOI cau hoi deu nhan "Cau hoi nay ngoai pham vi..." du bot chua he doc duoc cau hoi,
+// tuc la noi SAI voi khach. Gio loi -> IM LANG voi khach + bao admin kem ly do de admin tra loi tay.
+// ---------------------------------------------------------------------------
+
+test("resolve: classifier throw (API loi) -> IM LANG voi khach, KHONG gui cau ngoai pham vi", async () => {
   const { service, ledgerStore, adminMessages, input, cleanup } = setup(
     fakeClassifier(new Error("API 500"))
   );
   try {
     const answer = await service.resolve(input);
-    assert.equal(answer, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT);
-    assert.equal(adminMessages.length, 1);
+    assert.equal(answer, null, "loi API thi khong duoc noi gi voi khach");
+    assert.notEqual(answer, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT);
+    assert.equal(adminMessages.length, 1, "van phai bao admin - khach dang cho tra loi tay");
     assert.equal(ledgerStore.isFaqThreadMuted("zalo", "user-1", Date.now()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("resolve: tin bao admin khi classifier loi phai NOI RO la loi he thong, kem ly do", async () => {
+  const { service, adminMessages, input, cleanup } = setup(
+    fakeClassifier(new Error("429 rate_limit_error"))
+  );
+  try {
+    await service.resolve(input);
+
+    const message = adminMessages[0];
+    assert.match(message, /429 rate_limit_error/, "phai kem ly do that de admin biet dang bi gi");
+    assert.match(message, /hoàn tiền như thế nào vậy ad/, "phai kem cau hoi de admin tra loi tay");
+    // Phan biet voi tin "cau hoi khong hieu": admin doc 1 dong phai biet day la bot LOI, khong
+    // phai khach hoi cau la - 2 viec can 2 hanh dong khac nhau (sua API vs soan cau tra loi moi).
+    assert.ok(!message.includes("không hiểu"), "khong duoc dung chung cau voi nhanh 'khong hieu'");
+  } finally {
+    cleanup();
+  }
+});
+
+test("resolve: classifier chay xong + mang RONG -> VAN gui cau ngoai pham vi (khong tron 2 nhanh)", async () => {
+  const { service, adminMessages, input, cleanup } = setup(fakeClassifier([]));
+  try {
+    assert.equal(await service.resolve(input), FAQ_OUT_OF_SCOPE_REPLY_DEFAULT);
+    assert.match(adminMessages[0], /không hiểu/, "nhanh nay van dung tin 'cau hoi khong hieu' cu");
   } finally {
     cleanup();
   }

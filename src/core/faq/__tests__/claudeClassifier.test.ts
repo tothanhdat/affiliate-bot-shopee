@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildClassifierSystemPrompt, parseTopicIds } from "../providers/claudeClassifier.js";
-import { createFaqClassifier } from "../providers/index.js";
 import { FAQ_TOPICS } from "../faqTopics.js";
 
 test("buildClassifierSystemPrompt: liet ke du id + mo ta cua moi chu de", () => {
@@ -42,14 +41,4 @@ test("parseTopicIds: qua 2 id -> coi nhu khong dang tin, tra rong", () => {
 
 test("parseTopicIds: id trung lap chi tinh 1 lan", () => {
   assert.deepEqual(parseTopicIds("xem_so_du xem_so_du", FAQ_TOPICS), ["xem_so_du"]);
-});
-
-test("createFaqClassifier: provider 'off' luon tra rong", async () => {
-  const classifier = createFaqClassifier({ provider: "off", apiKey: "", model: "claude-haiku-4-5" });
-  assert.deepEqual(await classifier.classify("hoàn tiền sao?", FAQ_TOPICS), []);
-});
-
-test("createFaqClassifier: provider 'claude' thieu apiKey -> rot ve off thay vi crash luc khoi dong", async () => {
-  const classifier = createFaqClassifier({ provider: "claude", apiKey: "", model: "claude-haiku-4-5" });
-  assert.deepEqual(await classifier.classify("hoàn tiền sao?", FAQ_TOPICS), []);
 });

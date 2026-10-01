@@ -82,18 +82,27 @@ const notifyAdmin = createAdminNotifier({
 // chu bot khi gap cau hoi khong nhan ra. Rate limiter RIENG cho FAQ - khong dung chung voi rate
 // limit tao link, de 1 user hoi nhieu khong bi chan mat quyen tao link (va nguoc lai).
 const faqRateLimiter = new RateLimiter(env.faq.rateLimit.maxRequests, env.faq.rateLimit.windowMs);
-const faqService = new FaqService({
-  classifier: createFaqClassifier({
-    provider: env.faq.provider,
-    apiKey: env.faq.apiKey,
-    model: env.faq.model,
-  }),
-  store: ledgerStore,
-  rateLimiter: faqRateLimiter,
-  notifyAdmin,
-  defaultUserSharePercent: env.commission.userSharePercent,
-  defaultWithdrawalThresholdVnd: env.withdrawal.thresholdVnd,
+// createFaqClassifier tra `null` khi FAQ khong chay duoc (provider=off, mac dinh; hoac thieu
+// ANTHROPIC_API_KEY) - luc do KHONG tao FaqService, va `faqService: undefined` lam adapter im lang
+// tuyet doi y het hanh vi truoc khi co tinh nang FAQ (2026-10-01). Truoc day factory tra ve mot
+// classifier "rong" luon tra mang rong, ma mang rong lai roi vao nhanh "khong nhan ra chu de" nen
+// bot tra "Cau hoi nay ngoai pham vi..." cho MOI tin DM du FAQ dang tat - xem providers/index.ts.
+const faqClassifier = createFaqClassifier({
+  provider: env.faq.provider,
+  apiKey: env.faq.apiKey,
+  model: env.faq.model,
 });
+const faqService =
+  faqClassifier === null
+    ? undefined
+    : new FaqService({
+        classifier: faqClassifier,
+        store: ledgerStore,
+        rateLimiter: faqRateLimiter,
+        notifyAdmin,
+        defaultUserSharePercent: env.commission.userSharePercent,
+        defaultWithdrawalThresholdVnd: env.withdrawal.thresholdVnd,
+      });
 
 // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc admin ghi nhan (qua
 // /admin/record-orders hoac ledgerAdmin.ts). Chi dinh tuyen Telegram/Zalo - "http" khong co noi
