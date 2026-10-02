@@ -2,23 +2,18 @@ import express, { type Request, type Response, type NextFunction } from "express
 import multer from "multer";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import { adminShell } from "./adminHtml.js";
-// renderAdminDashboardPage: dat ten khac renderDashboardPage cua dashboardHtml.ts (trang
-// dashboard CUA USER) - 2 trang hoan toan khac nhau, trung ten se de goi nham.
-import { renderAdminDashboardPage } from "./adminDashboardHtml.js";
-import { computeDashboardStats, parseDashboardRange } from "../core/dashboardStats.js";
+// TAM THOI (2026-10-02): moi trang /admin duoc render qua ui(req) de chon giao dien cu/moi, xem
+// adminRenderers.ts. Khi chot giao dien moi thi import thang lai nhu truoc.
+import { adminRenderers } from "./adminRenderers.js";
 import {
-  renderAdminLoginPage,
-  renderOrdersPage,
-  ORDERS_PAGE_SIZE,
-  renderRecordOrdersPage,
-  renderReverseConfirmPage,
-  renderSettingsPage,
-  renderUsersPage,
-  renderUserCommissionPage,
-  renderWithdrawalsPage,
-  type OrdersFilters,
-} from "./adminHtml.js";
+  ADMIN_UI_COOKIE,
+  adminUiSwitcherHtml,
+  parseAdminUiVersion,
+  resolveAdminUiVersion,
+  safeAdminBackPath,
+} from "./adminUiVersion.js";
+import { computeDashboardStats, parseDashboardRange } from "../core/dashboardStats.js";
+import { ORDERS_PAGE_SIZE, type OrdersFilters } from "./adminHtml.js";
 import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js";
 import { renderHandbookPage } from "./handbookHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
@@ -147,6 +142,46 @@ export function createServer(
     }
     next();
   }
+
+  /**
+   * TAM THOI (2026-10-02) — bo ham render cua giao dien dang bat. Mac dinh la ban CU: thieu cookie,
+   * cookie rac, hay instance chua ai bam nut deu ra y het hom qua. Xem adminUiVersion.ts.
+   */
+  function ui(req: Request) {
+    return adminRenderers(resolveAdminUiVersion(parseCookies(req.headers.cookie)));
+  }
+
+  /**
+   * TAM THOI (2026-10-02) — chen nut chuyen giao dien vao cuoi moi trang HTML cua khu /admin.
+   *
+   * Lam o day thay vi sua `adminShell()` CO CHU DICH: ban `v2` se duoc dung lai tu dau va co the
+   * thay sach ca shell lan CSS, nhung nut nay van phai con de con duong quay ve ban cu. Go bo chi
+   * la xoa nguyen khoi nay.
+   */
+  app.use("/admin", (req: Request, res: Response, next: NextFunction) => {
+    const originalSend = res.send.bind(res);
+    res.send = ((body?: unknown) => {
+      if (typeof body === "string" && body.includes("</body>")) {
+        const version = resolveAdminUiVersion(parseCookies(req.headers.cookie));
+        const widget = adminUiSwitcherHtml(version, req.originalUrl);
+        // Ham thay the (khong phai chuoi) de cac mau "$&"/"$1" trong widget khong bi dien lai.
+        return originalSend(body.replace("</body>", () => widget + "</body>"));
+      }
+      return originalSend(body as never);
+    }) as typeof res.send;
+    next();
+  });
+
+  /** TAM THOI (2026-10-02) — bam nut chuyen giao dien: ghi cookie roi quay lai dung trang dang xem. */
+  app.get("/admin/ui/:version", requireAdminAuth, (req: Request, res: Response) => {
+    const version = parseAdminUiVersion(req.params.version);
+    if (!version) {
+      res.status(404).type("text/plain").send("Khong co giao dien nay.");
+      return;
+    }
+    res.cookie(ADMIN_UI_COOKIE, version, { httpOnly: true, sameSite: "lax" });
+    res.redirect(303, safeAdminBackPath(req.query.back));
+  });
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -356,8 +391,8 @@ export function createServer(
   // dinh (ADMIN_PASSWORD trong env). Khong co form tao/sua don hang - viec do van qua CSV/CLI
   // (ledgerAdmin.ts), xem quy-trinh-van-hanh-cashback.md.
 
-  app.get("/admin/login", (_req: Request, res: Response) => {
-    res.type("html").send(renderAdminLoginPage());
+  app.get("/admin/login", (req: Request, res: Response) => {
+    res.type("html").send(ui(req).renderAdminLoginPage());
   });
 
   // Rui ro so 1 (rui-ro-can-giai-quyet.md): chan brute-force ADMIN_PASSWORD - toi da
@@ -372,7 +407,7 @@ export function createServer(
         .status(429)
         .type("html")
         .send(
-          renderAdminLoginPage(
+          ui(req).renderAdminLoginPage(
             `Thử sai quá nhiều lần, vui lòng đợi ${Math.ceil(rateCheck.retryAfterSeconds / 60)} phút rồi thử lại.`
           )
         );
@@ -382,7 +417,7 @@ export function createServer(
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const token = adminSessionStore.login(password);
     if (!token) {
-      res.status(401).type("html").send(renderAdminLoginPage("Sai mật khẩu."));
+      res.status(401).type("html").send(ui(req).renderAdminLoginPage("Sai mật khẩu."));
       return;
     }
     res.cookie(ADMIN_SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax" });
@@ -408,12 +443,12 @@ export function createServer(
   app.get("/admin/dashboard", requireAdminAuth, (req: Request, res: Response) => {
     const range = parseDashboardRange(req.query.range);
     const stats = computeDashboardStats(ledgerStore, logStore, range);
-    res.type("html").send(adminShell("dashboard", "Tổng quan", renderAdminDashboardPage(stats)));
+    res.type("html").send(ui(req).adminShell("dashboard", "Tổng quan", ui(req).renderAdminDashboardPage(stats)));
   });
 
-  app.get("/admin/withdrawals", requireAdminAuth, (_req: Request, res: Response) => {
+  app.get("/admin/withdrawals", requireAdminAuth, (req: Request, res: Response) => {
     res.type("html").send(
-      renderWithdrawalsPage(
+      ui(req).renderWithdrawalsPage(
         ledgerStore.listPendingWithdrawals(),
         ledgerStore.listPaidWithdrawals(),
         ledgerStore.getDisplayNamesMap()
@@ -454,7 +489,7 @@ export function createServer(
           .status(422)
           .type("html")
           .send(
-            renderWithdrawalsPage(
+            ui(req).renderWithdrawalsPage(
               ledgerStore.listPendingWithdrawals(),
               ledgerStore.listPaidWithdrawals(),
               ledgerStore.getDisplayNamesMap(),
@@ -473,9 +508,9 @@ export function createServer(
     });
   });
 
-  app.get("/admin/users", requireAdminAuth, (_req: Request, res: Response) => {
+  app.get("/admin/users", requireAdminAuth, (req: Request, res: Response) => {
     const generalSharePercent = ledgerStore.getUserSharePercent(orderConfig.userSharePercent);
-    res.type("html").send(renderUsersPage(ledgerStore.listUsers(), generalSharePercent, todayVnIso()));
+    res.type("html").send(ui(req).renderUsersPage(ledgerStore.listUsers(), generalSharePercent, todayVnIso()));
   });
 
   // --- % hoa hong RIENG tung user (2026-10-01) ---------------------------------------------------
@@ -497,7 +532,7 @@ export function createServer(
     const params = readUserRouteParams(req, res);
     if (!params) return;
     res.type("html").send(
-      renderUserCommissionPage({
+      ui(req).renderUserCommissionPage({
         platform: params.platform,
         userId: params.userId,
         displayName: ledgerStore.getDisplayName(params.platform, params.userId),
@@ -516,7 +551,7 @@ export function createServer(
     const generalSharePercent = ledgerStore.getUserSharePercent(orderConfig.userSharePercent);
     const renderError = (message: string): void => {
       res.status(422).type("html").send(
-        renderUserCommissionPage({
+        ui(req).renderUserCommissionPage({
           platform: params.platform,
           userId: params.userId,
           displayName: ledgerStore.getDisplayName(params.platform, params.userId),
@@ -597,7 +632,7 @@ export function createServer(
     });
     res
       .type("html")
-      .send(renderOrdersPage(entries, filters, ledgerStore.getDisplayNamesMap(), { page, totalPages, totalEntries }));
+      .send(ui(req).renderOrdersPage(entries, filters, ledgerStore.getDisplayNamesMap(), { page, totalPages, totalEntries }));
   });
 
   app.get("/admin/orders/:id/reverse", requireAdminAuth, (req: Request, res: Response) => {
@@ -613,7 +648,7 @@ export function createServer(
       entry.status !== "pending"
         ? "Chỉ huỷ được đơn đang ở trạng thái \"Chờ xác nhận\" - đơn này đã \"Khả dụng\" (hoặc đã rút/đã huỷ), được xem là đã hoàn tất, không thể huỷ qua đây nữa."
         : null;
-    res.type("html").send(renderReverseConfirmPage(entry, displayName, blockedMessage));
+    res.type("html").send(ui(req).renderReverseConfirmPage(entry, displayName, blockedMessage));
   });
 
   app.post("/admin/orders/:id/reverse", requireAdminAuth, (req: Request, res: Response) => {
@@ -625,7 +660,7 @@ export function createServer(
     const displayName = ledgerStore.getDisplayNamesMap().get(`${entry.platform}:${entry.userId}`) ?? null;
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
     if (reason === "") {
-      res.status(422).type("html").send(renderReverseConfirmPage(entry, displayName));
+      res.status(422).type("html").send(ui(req).renderReverseConfirmPage(entry, displayName));
       return;
     }
     try {
@@ -633,15 +668,15 @@ export function createServer(
       res.redirect(303, "/admin/orders");
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res.status(422).type("html").send(renderReverseConfirmPage(entry, displayName, message));
+      res.status(422).type("html").send(ui(req).renderReverseConfirmPage(entry, displayName, message));
     }
   });
 
   // Ghi nhan don hang tren web - THEM lua chon ngoai CLI ledgerAdmin.ts record-conversion /
   // record-shopee-report. Dung chung logic qua core/orderIngest.ts
   // de khong lap lai (tra subId -> platform/userId/merchant -> ledgerStore.recordConversion).
-  app.get("/admin/record-orders", requireAdminAuth, (_req: Request, res: Response) => {
-    res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20)));
+  app.get("/admin/record-orders", requireAdminAuth, (req: Request, res: Response) => {
+    res.type("html").send(ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20)));
   });
 
   app.post("/admin/record-orders/single", requireAdminAuth, (req: Request, res: Response) => {
@@ -658,7 +693,7 @@ export function createServer(
 
     if (!subId || !orderId || !Number.isFinite(orderAmount) || !Number.isFinite(commissionAmount)) {
       res.status(422).type("html").send(
-        renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
+        ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
           ok: false,
           message: "Thiếu subId/orderId hoặc orderAmount/commissionAmount không phải số.",
         })
@@ -709,14 +744,14 @@ export function createServer(
           ? `dự kiến user nhận ~${formatVnd(entry.userShareAmount)} khi được xác nhận`
           : `user nhận ${formatVnd(entry.userShareAmount)}`;
       res.type("html").send(
-        renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
+        ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20), {
           ok: true,
           message: `Đã ghi nhận đơn "${entry.orderId}" (${statusLabel}) - ${amountHint}.`,
         })
       );
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res.status(422).type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }));
+      res.status(422).type("html").send(ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }));
     }
   });
 
@@ -751,7 +786,7 @@ export function createServer(
           .status(422)
           .type("html")
           .send(
-            renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.")
+            ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.")
           );
         return;
       }
@@ -790,7 +825,7 @@ export function createServer(
         newOrderIds: result.newOrderIds,
         statusTransitions: result.statusTransitions,
       });
-      res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result));
+      res.type("html").send(ui(req).renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result));
     }
   );
 
@@ -805,7 +840,7 @@ export function createServer(
         : req.query.groupsSaved === "1"
           ? "Đã lưu danh sách group Zalo nhận thông báo."
           : null;
-    res.type("html").send(renderSettingsPage(currentValues, null, successMessage, ledgerStore.listZaloGroups()));
+    res.type("html").send(ui(req).renderSettingsPage(currentValues, null, successMessage, ledgerStore.listZaloGroups()));
   });
 
   app.post("/admin/settings", requireAdminAuth, (req: Request, res: Response) => {
@@ -851,7 +886,7 @@ export function createServer(
       res
         .status(422)
         .type("html")
-        .send(renderSettingsPage(previewValues, errors.join(" "), null, ledgerStore.listZaloGroups()));
+        .send(ui(req).renderSettingsPage(previewValues, errors.join(" "), null, ledgerStore.listZaloGroups()));
       return;
     }
 
