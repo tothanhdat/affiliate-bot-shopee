@@ -105,13 +105,18 @@ function runSettingsScript() {
   const insertButtons = [insertBtn];
 
   const dirtyCountEl = { textContent: "" };
-  const dirtyBarEl = { hidden: true };
-  const bottomBarEl = { hidden: false };
+  // style.display, KHONG phai .hidden - script dung setHidden() set thang style.display vi
+  // ".hidden=true" tren phan tu co class "flex" khong an duoc gi tren trinh duyet that (xem
+  // comment setHidden() trong adminHtml.ts). Gia lap dung co che nay de test khong "xanh gia".
+  const dirtyBarEl = { style: { display: "" } };
+  const topBarEl = { style: { display: "" } };
+  const bottomBarEl = { style: { display: "" } };
 
   const byId = new Map<string, unknown>([
     ["settings-form", form],
     ["settings-dirty-count", dirtyCountEl],
     ["settings-dirty-bar", dirtyBarEl],
+    ["settings-top-bar", topBarEl],
     ["settings-bottom-bar", bottomBarEl],
     ["field-a", fieldA],
     ["field-b", fieldB],
@@ -144,6 +149,7 @@ function runSettingsScript() {
     insertBtn,
     dirtyCountEl,
     dirtyBarEl,
+    topBarEl,
     bottomBarEl,
   };
 }
@@ -159,27 +165,38 @@ test("chuyen tab: bam tab khac an panel dang mo, hien panel duoc chon", () => {
   assert.equal(panelCommission.hidden, false);
 });
 
-test("nut 'Luu tat ca thay doi' o cuoi trang chi thuoc 3 tab trong #settings-form, an di o tab notify-groups", () => {
-  const { tabNotifyGroups, tabFaq, bottomBarEl } = runSettingsScript();
-  assert.equal(bottomBarEl.hidden, false, "mac dinh (tab faq) phai hien");
+test("ca 2 thanh 'Luu cau hinh' (dau) va 'Luu tat ca thay doi' (cuoi) chi thuoc 3 tab trong #settings-form, an di o tab notify-groups", () => {
+  const { tabNotifyGroups, tabFaq, topBarEl, bottomBarEl } = runSettingsScript();
+  assert.notEqual(topBarEl.style.display, "none", "mac dinh (tab faq) phai hien");
+  assert.notEqual(bottomBarEl.style.display, "none", "mac dinh (tab faq) phai hien");
 
   tabNotifyGroups.click();
-  assert.equal(bottomBarEl.hidden, true, "tab notify-groups co nut Luu rieng, khong duoc hien nut nay");
+  assert.equal(topBarEl.style.display, "none", "tab notify-groups co nut Luu rieng, khong duoc hien nut nay");
+  assert.equal(bottomBarEl.style.display, "none", "tab notify-groups co nut Luu rieng, khong duoc hien nut nay");
 
   tabFaq.click();
-  assert.equal(bottomBarEl.hidden, false, "quay lai tab trong form thi hien lai");
+  assert.notEqual(topBarEl.style.display, "none", "quay lai tab trong form thi hien lai");
+  assert.notEqual(bottomBarEl.style.display, "none", "quay lai tab trong form thi hien lai");
 });
 
 test("dem thay doi chua luu: 0 luc tai trang, tang khi sua field va go 'input'", () => {
   const { fieldA, form, dirtyCountEl, dirtyBarEl } = runSettingsScript();
   assert.equal(dirtyCountEl.textContent, "0");
-  assert.equal(dirtyBarEl.hidden, true);
+  assert.equal(dirtyBarEl.style.display, "none");
 
   fieldA.value = "giá trị gốc đã sửa";
   form.fireInput();
 
   assert.equal(dirtyCountEl.textContent, "1");
-  assert.equal(dirtyBarEl.hidden, false);
+  assert.notEqual(dirtyBarEl.style.display, "none");
+});
+
+test("topBar/bottomBar/dirtyBar an/hien bang style.display, KHONG dung thuoc tinh 'hidden' (bug that: '.hidden=true' tren phan tu co class 'flex' khong co tac dung gi tren trinh duyet that, vi trang khong nap preflight nen '[hidden]' cua UA thua '.flex{display:flex}' cua Tailwind)", () => {
+  const script = extractScript();
+  assert.match(script, /function setHidden/, "phai dung helper setHidden() set style.display");
+  assert.doesNotMatch(script, /topBar\.hidden\s*=/, "KHONG duoc quay lai dung topBar.hidden =");
+  assert.doesNotMatch(script, /bottomBar\.hidden\s*=/, "KHONG duoc quay lai dung bottomBar.hidden =");
+  assert.doesNotMatch(script, /dirtyBar\.hidden\s*=/, "KHONG duoc quay lai dung dirtyBar.hidden =");
 });
 
 test("chen bien vao dung vi tri con tro, khong ghi de toan bo noi dung", () => {

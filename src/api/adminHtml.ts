@@ -2410,8 +2410,10 @@ export function renderSettingsPage(
     "Xác nhận lưu thay đổi cấu hình này? Áp dụng ngay lập tức, không cần khởi động lại bot."
   );
 
-  const topBar = `<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-  <div id="settings-dirty-bar" hidden class="flex items-center gap-2 text-xs text-slate-500">
+  // id rieng de pageScript an di khi dang o tab "notify-groups" - CUNG LY DO voi settings-bottom-bar
+  // ben duoi: nut nay nop #settings-form, khong co y nghia gi tren tab chi hien danh sach group Zalo.
+  const topBar = `<div id="settings-top-bar" class="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <div id="settings-dirty-bar" style="display:none" class="flex items-center gap-2 text-xs text-slate-500">
     <span class="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true"></span>
     Thay đổi chưa lưu: <span id="settings-dirty-count" class="font-semibold text-amber-600">0</span>
   </div>
@@ -2447,9 +2449,23 @@ export function renderSettingsPage(
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll("[data-settings-tab]"));
   var panels = Array.prototype.slice.call(document.querySelectorAll("[data-settings-panel]"));
-  // Nut "Luu tat ca thay doi" o cuoi trang CHI thuoc ve #settings-form (3 tab faq/commission/
-  // messages) - tab "notify-groups" co form/nut Luu RIENG trong renderZaloGroupsCard(), nen phai
-  // an bar nay di luc dang o tab do, khong thi no treo lo lung khong gan voi field nao dang hien.
+
+  // BUG THAT da gap (2026-10-05): dat ".hidden = true" tren mot phan tu VON co class "flex"
+  // (topBar/bottomBar/dirtyBar deu dung flex de xep hang ngang) KHONG an duoc gi ca - trang
+  // KHONG nap preflight nen khong co rule "[hidden]{display:none}" du manh de thang author rule
+  // ".flex{display:flex}" cua Tailwind (ca hai cung "normal importance", author LUON thang UA bat
+  // ke class nao khai bao truoc/sau). Da verify bang getComputedStyle(): .hidden=true tren phan tu
+  // co class flex van tra ve display:"flex". Phai TU tay set style.display thay vi dua vao thuoc
+  // tinh "hidden" - inline style luon thang moi class du co "flex" hay khong.
+  function setHidden(el, hide) {
+    if (el) el.style.display = hide ? "none" : "";
+  }
+
+  // Thanh "Luu cau hinh" (dau trang) va "Luu tat ca thay doi" (cuoi trang) CHI thuoc ve
+  // #settings-form (3 tab faq/commission/messages) - tab "notify-groups" co form/nut Luu RIENG
+  // trong renderZaloGroupsCard(), nen phai an ca 2 thanh nay luc dang o tab do, khong thi nut nop
+  // mot form dang bi an se treo lo lung tren man hinh, gay cam giac "qua nhieu nut".
+  var topBar = document.getElementById("settings-top-bar");
   var bottomBar = document.getElementById("settings-bottom-bar");
   function showTab(name) {
     tabs.forEach(function (t) {
@@ -2460,7 +2476,8 @@ export function renderSettingsPage(
         .replace(/font-bold|font-medium/, on ? "font-bold" : "font-medium")
         .replace(/text-indigo-600|text-slate-400/, on ? "text-indigo-600" : "text-slate-400");
     });
-    if (bottomBar) bottomBar.hidden = name === "notify-groups";
+    setHidden(topBar, name === "notify-groups");
+    setHidden(bottomBar, name === "notify-groups");
     panels.forEach(function (p) { p.hidden = p.dataset.settingsPanel !== name; });
   }
   tabs.forEach(function (t) { t.addEventListener("click", function () { showTab(t.dataset.settingsTab); }); });
@@ -2476,7 +2493,7 @@ export function renderSettingsPage(
     var fields = Array.prototype.slice.call(form.querySelectorAll("input[name], textarea[name]"));
     var n = fields.filter(function (f) { return f.value !== f.defaultValue; }).length;
     if (dirtyCountEl) dirtyCountEl.textContent = String(n);
-    if (dirtyBar) dirtyBar.hidden = n === 0;
+    setHidden(dirtyBar, n === 0);
   }
   if (form) {
     form.addEventListener("input", refreshDirty);
