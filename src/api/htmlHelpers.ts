@@ -23,6 +23,27 @@ export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
+/**
+ * Cung moc thoi gian nhu formatDateTime() nhung tach lam 2 manh, de trang /admin/orders xep "gio •
+ * ngay" tren 1 dong phu duoi ma don. Dinh dang CO DINH (2 chu so, 24h, dd/mm/yyyy) chu khong theo
+ * mac dinh cua locale: hang nay nam duoi ma don o cot hep nhat cua bang, de locale tu chon thi
+ * "9:05:55" va "09:05:55" lan nhau lam cac dong lech chieu ngang.
+ */
+export function formatDateTimeParts(iso: string): { time: string; date: string } {
+  const value = new Date(iso);
+  const timeZone = "Asia/Ho_Chi_Minh";
+  return {
+    time: value.toLocaleTimeString("vi-VN", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }),
+    date: value.toLocaleDateString("vi-VN", { timeZone, day: "2-digit", month: "2-digit", year: "numeric" }),
+  };
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -67,6 +88,27 @@ export function copyButton(value: string, label = "Copy"): string {
   return (
     `<button type="button" class="copy-btn" onclick="navigator.clipboard.writeText('${safeValue}')` +
     `.then(()=>{this.textContent='Đã copy';setTimeout(()=>{this.textContent='${safeLabel}'},1200)})">${safeLabel}</button>`
+  );
+}
+
+/**
+ * Ban chi-co-icon cua copyButton(), dung trong o bang chat hep (ma don o /admin/orders) - nhan chu
+ * "Copy" canh moi ma don lam cot do rong them ~4rem va keo mat khoi chinh no.
+ *
+ * Phan hoi "da copy" lam bang CACH DOI ICON (copy -> dau tich) chu khong chi doi mau: doi mau don
+ * thuan thi nguoi mu mau khong thay gi xay ra. Hai icon nam san trong nut, CSS (.copy-icon /
+ * .copy-icon.copied trong adminHtml.ts) chon hien cai nao - nho vay onclick khong phai nhoi mot
+ * chuoi SVG vao trong attribute HTML.
+ */
+export function copyIconButton(value: string, ariaLabel: string): string {
+  const safeValue = escapeHtml(jsStringLiteral(value));
+  return (
+    `<button type="button" class="copy-icon" title="${escapeHtml(ariaLabel)}" aria-label="${escapeHtml(ariaLabel)}"` +
+    ` onclick="navigator.clipboard.writeText('${safeValue}')` +
+    `.then(()=>{this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1200)})">` +
+    `<span class="i-copy" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>` +
+    `<span class="i-done" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>` +
+    `</button>`
   );
 }
 

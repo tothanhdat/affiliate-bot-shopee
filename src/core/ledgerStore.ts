@@ -95,11 +95,33 @@ export interface CommissionEntryFilters {
   merchant?: MerchantId;
   /** Nhieu trang thai cung luc (form admin dung checkbox). Rong/undefined = khong loc theo trang thai. */
   statuses?: CommissionStatus[];
+  /**
+   * O tim kiem 1 dong cua /admin/orders (2026-10-04): khop MOT PHAN ma don, userId, hoac ten hien thi.
+   * Khac `userId` o tren - cai do khop CHINH XAC va duoc dung khi admin bam tu /admin/users sang, con
+   * cai nay la admin tu go vao o tim. Giu ca 2 vi 2 muc dich khac nhau: bam tu /admin/users phai ra
+   * DUNG user do, khong duoc keo theo user khac co userId chua chuoi tuong tu.
+   */
+  search?: string;
 }
 
 /**
- * Dung menh de WHERE dung chung cho listCommissionEntries/countCommissionEntries - 2 ham nay BAT BUOC
- * phai loc y het nhau, neu khong thi tong so trang se khong khop voi so don that su hien ra.
+ * Chuan bi 1 chuoi nguoi dung go thanh toan hang `LIKE`.
+ *
+ * BAT BUOC escape `%` va `_` - do la wildcard cua LIKE, de nguyen thi go "%" se khop MOI don (vo
+ * nghia nhung khong sai) con go "1_2" se khop ca "132" (sai that). Ky tu escape la `\` nen ban than
+ * `\` cung phai nhan doi, va moi menh de LIKE dung chuoi nay PHAI kem `ESCAPE '\'`.
+ *
+ * Luu y da biet: LIKE cua SQLite chi khong phan biet hoa/thuong voi ASCII, nen go "thao" khong khop
+ * "Thảo". Chap nhan duoc vi cong dung chinh cua o tim la ma don (toan chu in + so).
+ */
+function likePattern(raw: string): string {
+  return `%${raw.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/**
+ * Dung menh de WHERE dung chung cho listCommissionEntries/countCommissionEntries/getOrdersFilterTotals -
+ * 3 ham nay BAT BUOC phai loc y het nhau, neu khong thi tong so trang va cac the KPI dau trang se
+ * khong khop voi so don that su hien ra trong bang.
  */
 function buildCommissionEntriesWhere(filters?: CommissionEntryFilters): { where: string; params: (string | number)[] } {
   const conditions: string[] = [];
@@ -120,7 +142,35 @@ function buildCommissionEntriesWhere(filters?: CommissionEntryFilters): { where:
     conditions.push(`status IN (${filters.statuses.map(() => "?").join(", ")})`);
     params.push(...filters.statuses);
   }
+  const search = filters?.search?.trim();
+  if (search) {
+    // Ten hien thi nam o bang KHAC (user_profiles) nen phai di qua subquery tuong quan thay vi JOIN:
+    // JOIN se nhan ban dong neu 1 user co nhieu ho so, va lam LEFT JOIN thi phai sua ca 3 ham dung
+    // menh de nay. EXISTS giu nguyen hinh dang "FROM commission_entries <where>" cua ca 3.
+    conditions.push(
+      `(order_id LIKE ? ESCAPE '\\' OR user_id LIKE ? ESCAPE '\\' OR EXISTS (
+         SELECT 1 FROM user_profiles p
+         WHERE p.platform = commission_entries.platform
+           AND p.user_id = commission_entries.user_id
+           AND p.display_name LIKE ? ESCAPE '\\'
+       ))`
+    );
+    const pattern = likePattern(search);
+    params.push(pattern, pattern, pattern);
+  }
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+/** So lieu cho 4 the KPI dau trang /admin/orders - xem getOrdersFilterTotals(). */
+export interface OrdersFilterTotals {
+  /** Tong so don khop bo loc (dung luon lam co so tinh so trang). */
+  totalEntries: number;
+  /** So don dang "pending" TRONG pham vi bo loc - loc status=confirmed thi so nay la 0, dung nhu vay. */
+  pendingEntries: number;
+  /** Tong tien user nhan, KHONG tinh don da huy. */
+  userShareTotal: number;
+  /** Tong phan con lai cua chu bot (sau thue/phi san), KHONG tinh don da huy. */
+  ownerShareTotal: number;
 }
 
 export class LedgerStore {
@@ -1026,6 +1076,44 @@ export class LedgerStore {
       total: number;
     };
     return row.total;
+  }
+
+  /**
+   * So lieu cho 4 the KPI dau trang /admin/orders, tinh TREN DUNG bo loc dang ap (2026-10-04).
+   *
+   * Dung CHUNG buildCommissionEntriesWhere() voi bang ben duoi - neu lech thi the KPI noi mot so ma
+   * bang liet ke mot so khac, va admin dung trang nay de doi soat tien nen sai lech o day la nang.
+   * `totalEntries` thay luon cho countCommissionEntries() o route /admin/orders: mot truy van, mot
+   * bo so, khong the venh nhau.
+   *
+   * Tien KHONG tinh don "reversed": don da huy khong sinh dong tien nao, cong vao se bien the
+   * "Khach nhan" thanh so tien khong ai duoc nhan. Mat khac van dem no trong `totalEntries` (don huy
+   * la don co that trong lich su). The KPI co ghi ro dieu nay de admin khong doc nham.
+   * Tinh bang SUM trong SQL chu khong keo row len JS - bang tien chi tang chu khong giam.
+   */
+  getOrdersFilterTotals(filters?: CommissionEntryFilters): OrdersFilterTotals {
+    const { where, params } = buildCommissionEntriesWhere(filters);
+    const row = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total_entries,
+           COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_entries,
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN user_share_amount ELSE 0 END), 0) AS user_share_total,
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN after_tax_amount - user_share_amount ELSE 0 END), 0) AS owner_share_total
+         FROM commission_entries ${where}`
+      )
+      .get(...params) as {
+      total_entries: number;
+      pending_entries: number;
+      user_share_total: number;
+      owner_share_total: number;
+    };
+    return {
+      totalEntries: row.total_entries,
+      pendingEntries: row.pending_entries,
+      userShareTotal: row.user_share_total,
+      ownerShareTotal: row.owner_share_total,
+    };
   }
 
   /** Dung boi trang xac nhan huy don tren admin. */

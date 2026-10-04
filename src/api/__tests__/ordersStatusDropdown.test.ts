@@ -5,10 +5,11 @@ import { renderOrdersPage, type OrdersFilters } from "../adminHtml.js";
 import type { CommissionStatus } from "../../core/types.js";
 
 const PAGINATION = { page: 1, totalPages: 1, totalEntries: 0 };
+const TOTALS = { totalEntries: 0, pendingEntries: 0, userShareTotal: 0, ownerShareTotal: 0 };
 
 function render(statuses?: CommissionStatus[]): string {
   const filters: OrdersFilters = statuses ? { statuses } : {};
-  return renderOrdersPage([], filters, new Map(), PAGINATION);
+  return renderOrdersPage([], filters, new Map(), PAGINATION, TOTALS);
 }
 
 /** Nhan hien tren nut dropdown (phan nguoi dung thay khi dropdown dang dong). */

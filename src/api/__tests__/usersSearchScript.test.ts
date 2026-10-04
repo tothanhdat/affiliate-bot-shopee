@@ -10,12 +10,21 @@ import { renderUsersPage } from "../adminHtml.js";
  */
 
 interface FakeRow {
-  dataset: { search: string };
+  dataset: { search: string; orders: string; paid: string; index: string };
   hidden: boolean;
 }
 
-function buildFakeDom(rows: FakeRow[]) {
-  const input = {
+/** Tao 1 dong gia; `index` la thu tu goc do server tra ve (dung lam tiebreak khi sap xep). */
+function row(search: string, orders: number, paid: number, index: number): FakeRow {
+  return {
+    dataset: { search, orders: String(orders), paid: String(paid), index: String(index) },
+    hidden: false,
+  };
+}
+
+/** O nhap/o chon gia - "go" hay "chon" deu chay lai cac listener da dang ky. */
+function makeControl() {
+  return {
     value: "",
     listeners: [] as Array<() => void>,
     addEventListener(_event: string, fn: () => void) {
@@ -26,11 +35,28 @@ function buildFakeDom(rows: FakeRow[]) {
       for (const fn of this.listeners) fn();
     },
   };
+}
+
+function buildFakeDom(rows: FakeRow[]) {
+  const input = makeControl();
+  const sortSelect = makeControl();
   const counter = { textContent: "" };
   const emptyHint = { hidden: true };
+  // appendChild() that se DI CHUYEN dong xuong cuoi tbody - mo phong dung the de doc duoc thu tu
+  // cuoi cung ma script sap xep ra.
+  const order: FakeRow[] = [];
+  const tbody = {
+    appendChild(node: FakeRow) {
+      const at = order.indexOf(node);
+      if (at !== -1) order.splice(at, 1);
+      order.push(node);
+    },
+  };
   const document = {
     getElementById(id: string) {
       if (id === "user-search") return input;
+      if (id === "user-sort") return sortSelect;
+      if (id === "users-tbody") return tbody;
       if (id === "users-count") return counter;
       if (id === "users-no-match") return emptyHint;
       return null;
@@ -39,7 +65,7 @@ function buildFakeDom(rows: FakeRow[]) {
       return rows;
     },
   };
-  return { document, input, counter, emptyHint };
+  return { document, input, sortSelect, counter, emptyHint, order };
 }
 
 /** Lay noi dung <script> trong trang /admin/users da render. */
@@ -69,8 +95,8 @@ function runScript(rows: FakeRow[]) {
 
 test("search /admin/users: an cac dong khong khop tu khoa", () => {
   const rows: FakeRow[] = [
-    { dataset: { search: "trần bảo u-001" }, hidden: false },
-    { dataset: { search: "nguyễn an u-002" }, hidden: false },
+    row("trần bảo u-001", 1, 0, 0),
+    row("nguyễn an u-002", 1, 0, 1),
   ];
   const { input } = runScript(rows);
 
@@ -80,8 +106,8 @@ test("search /admin/users: an cac dong khong khop tu khoa", () => {
 
 test("search /admin/users: khop ca User ID chu khong chi Ten", () => {
   const rows: FakeRow[] = [
-    { dataset: { search: "trần bảo u-001" }, hidden: false },
-    { dataset: { search: " u-002" }, hidden: false }, // user chua co ten hien thi
+    row("trần bảo u-001", 1, 0, 0),
+    row(" u-002", 1, 0, 1), // user chua co ten hien thi
   ];
   const { input } = runScript(rows);
 
@@ -91,8 +117,8 @@ test("search /admin/users: khop ca User ID chu khong chi Ten", () => {
 
 test("search /admin/users: xoa het tu khoa thi hien lai tat ca", () => {
   const rows: FakeRow[] = [
-    { dataset: { search: "trần bảo u-001" }, hidden: false },
-    { dataset: { search: "nguyễn an u-002" }, hidden: false },
+    row("trần bảo u-001", 1, 0, 0),
+    row("nguyễn an u-002", 1, 0, 1),
   ];
   const { input } = runScript(rows);
 
@@ -103,8 +129,8 @@ test("search /admin/users: xoa het tu khoa thi hien lai tat ca", () => {
 
 test("search /admin/users: cap nhat so dem va hien dong 'khong tim thay' khi rong", () => {
   const rows: FakeRow[] = [
-    { dataset: { search: "trần bảo u-001" }, hidden: false },
-    { dataset: { search: "nguyễn an u-002" }, hidden: false },
+    row("trần bảo u-001", 1, 0, 0),
+    row("nguyễn an u-002", 1, 0, 1),
   ];
   const { input, counter, emptyHint } = runScript(rows);
 
@@ -115,4 +141,58 @@ test("search /admin/users: cap nhat so dem va hien dong 'khong tim thay' khi ron
   input.type("khong-co-ai");
   assert.equal(counter.textContent, "0");
   assert.equal(emptyHint.hidden, false);
+});
+
+test("sap xep /admin/users: 'Số đơn nhiều nhất' xep giam dan theo so don", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 9, 0, 1), row("c u-003", 5, 100, 2)];
+  const { sortSelect, order } = runScript(rows);
+
+  sortSelect.type("orders");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["b u-002", "c u-003", "a u-001"]);
+});
+
+test("sap xep /admin/users: 'Hoa hồng đã nhận nhiều nhất' xep giam dan theo so tien", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 9, 0, 1), row("c u-003", 5, 100, 2)];
+  const { sortSelect, order } = runScript(rows);
+
+  sortSelect.type("paid");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["a u-001", "c u-003", "b u-002"]);
+});
+
+test("sap xep /admin/users: quay ve 'Mặc định' thi tra dung thu tu goc cua server", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 9, 0, 1), row("c u-003", 5, 100, 2)];
+  const { sortSelect, order } = runScript(rows);
+
+  sortSelect.type("orders");
+  sortSelect.type("");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["a u-001", "b u-002", "c u-003"]);
+});
+
+/**
+ * Phan lon user that co CUNG so don (1) va CUNG so tien da nhan (0d). Khong co tiebreak theo thu tu
+ * goc thi moi lan doi tieu chi, cac dong bang nhau se giu thu tu cua lan sap xep truoc - danh sach
+ * xao dan sau vai lan bam, va admin tuong du lieu doi.
+ */
+test("sap xep /admin/users: cac dong bang diem giu NGUYEN thu tu goc, doi qua doi lai khong xao", () => {
+  const rows = [row("a u-001", 1, 0, 0), row("b u-002", 1, 0, 1), row("c u-003", 1, 0, 2)];
+  const { sortSelect, order } = runScript(rows);
+
+  sortSelect.type("orders");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["a u-001", "b u-002", "c u-003"]);
+
+  sortSelect.type("paid");
+  sortSelect.type("orders");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["a u-001", "b u-002", "c u-003"]);
+});
+
+test("sap xep /admin/users: khong dung toi trang thai an/hien cua o tim kiem", () => {
+  const rows = [row("trần bảo u-001", 2, 0, 0), row("nguyễn an u-002", 9, 0, 1)];
+  const { input, sortSelect, order } = runScript(rows);
+
+  input.type("bảo");
+  assert.deepEqual(rows.map((r) => r.hidden), [false, true]);
+
+  sortSelect.type("orders");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["nguyễn an u-002", "trần bảo u-001"]);
+  assert.deepEqual(rows.map((r) => r.hidden), [false, true], "sap xep khong duoc lam hien lai dong da bi loc");
 });

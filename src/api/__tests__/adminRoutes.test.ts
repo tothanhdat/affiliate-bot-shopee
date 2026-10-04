@@ -325,8 +325,11 @@ test("/admin/users tinh dung tong theo user", async () => {
     const cookie = await loginAndGetCookie(baseUrl);
     const res = await fetch(`${baseUrl}/admin/users`, { headers: { cookie: cookie! } });
     const html = await res.text();
-    assert.match(html, /<td>telegram<\/td>/);
-    assert.match(html, /<td>user-a<\/td>/);
+    // Khop theo NOI DUNG, khong khop ca the: kenh gio la chip co class va ten viet hoa, userId nam
+    // trong khoi co avatar + nut copy. Ghim nguyen van "<td>telegram</td>" se vo moi lan chinh
+    // giao dien du du lieu van dung.
+    assert.match(html, />Telegram</);
+    assert.match(html, /user-a/);
     assert.match(html, /Nguyễn Văn A/);
     assert.match(html, /80\.000đ/); // tong available = 40_000 + 40_000
   } finally {
@@ -358,8 +361,11 @@ test("/admin/orders hien cot % chot cua tung don", async () => {
     const cookie = await loginAndGetCookie(baseUrl);
     const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
 
-    assert.match(html, /<th>% chốt<\/th>/);
-    assert.match(html, /<td>65%<\/td>/);
+    // Khop theo NOI DUNG o, khong khop ca the: the <th>/<td> cua trang nay mang class dinh dang
+    // (can le phai, co chu, tabular-nums) nen ghim nguyen van "<th>% chốt</th>" se vo moi lan
+    // chinh giao dien, du cot van hien dung.
+    assert.match(html, />% chốt</);
+    assert.match(html, />65%</);
   } finally {
     cleanup();
   }
@@ -489,7 +495,7 @@ test("GET /admin/record-orders hien du 2 form (ghi 1 don le + import bao cao Sho
     const cookie = await loginAndGetCookie(baseUrl);
     const html = await (await fetch(`${baseUrl}/admin/record-orders`, { headers: { cookie: cookie! } })).text();
     assert.match(html, /Ghi 1 đơn lẻ/);
-    assert.match(html, /Import báo cáo gốc Shopee Affiliate/);
+    assert.match(html, /Import báo cáo Shopee Affiliate/);
   } finally {
     cleanup();
   }
@@ -783,7 +789,7 @@ test("POST /admin/settings voi % ngoai khoang 0-100 -> 422, khong luu gi ca", as
     });
     assert.equal(res.status, 422);
     const html = await res.text();
-    assert.match(html, /class="error"/);
+    assert.match(html, /border-rose-200 bg-rose-50/);
     // Khong co gia tri nao duoc luu - kiem tra field khong lien quan (usage_text) cung KHONG duoc
     // luu, xac nhan hanh vi "tat ca hoac khong gi" (atomic) thay vi luu rieng le tung field hop le.
     assert.equal(ledgerStore.getSetting("usage_text", "__default__"), "__default__");
@@ -1347,7 +1353,8 @@ test("/admin/users hien cot % hoa hong rieng + nut cau hinh", async () => {
     const cookie = await loginAndGetCookie(baseUrl);
     const html = await (await fetch(`${baseUrl}/admin/users`, { headers: { cookie: cookie! } })).text();
 
-    assert.match(html, /<th>% hoa h\u1ed3ng<\/th>/);
+    // Khop theo noi dung o, khong khop ca the - <th> mang class dinh dang (can giua, co chu).
+    assert.match(html, />% hoa h\u1ed3ng</);
     assert.match(html, /95%/);
     assert.match(html, /31\/10\/2026/);
     assert.match(html, new RegExp(COMMISSION_PATH));

@@ -22,3 +22,7 @@ product-backlog.md
 # (ma don, ten shop, item id, Sub_id1-5 suy nguoc ra user id cua khach). Test dung du lieu
 # tong hop tu viet, KHONG dung file nay lam fixture.
 data/report_template/
+
+# CSS da build cua khu /admin (sinh boi `npm run build:css` tu src/api/styles/admin.css).
+# La san pham build nhu dist/ - khong dua vao git.
+public/

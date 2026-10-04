@@ -1,0 +1,202 @@
+/*
+ * Nguon CSS cua khu /admin (2026-10-04). Build ra public/admin.css bang `npm run build:css`.
+ *
+ * KHONG NAP PREFLIGHT - co chu dich, day la quyet dinh quan trong nhat cua file nay.
+ * `@import "tailwindcss"` se keo theo preflight (phan reset cua Tailwind), ma reset do doi hinh
+ * MOI trang cung mot luc: <h2> mat font-weight dam, <p> mat margin mac dinh, <ul> mat dau chAm,
+ * control ve kieu tran. Dot nay chi lam lai /admin/orders + vo trang; 5 trang con lai
+ * (withdrawals, users, record-orders, settings, dashboard) van dung CSS tay trong adminHtml.ts va
+ * phai trong Y HET truoc. Nen o day chi nap theme + utilities, roi tu reset dung nhung thu can o
+ * @layer base ben duoi.
+ *
+ * He qua phai nho: control nao dung trong markup moi thi TU reset du (vien, nen, font) - khong co
+ * preflight do ho. Xem W9 trong skill evon:ui-ux (references/tailwind-v4-traps.md).
+ *
+ * Khi nao bo duoc ghi chu nay: luc ca 6 trang /admin da chuyen sang utilities va khong con class
+ * nao trong shellStyles() duoc dung - luc do doi sang `@import "tailwindcss"` cho du preflight.
+ */
+
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/*
+ * Tailwind v4 tu do file de tim class, nhung class cua du an nay nam trong CHUOI TEMPLATE cua file
+ * .ts (HTML viet tay, khong co file .html/.jsx nao) - khai bao tuong minh de khong phu thuoc vao
+ * suy doan cua bo quet.
+ */
+@source "../../**/*.ts";
+
+@theme {
+  /*
+   * Inter la font cua design ref. Chuoi du phong giu nguyen font he thong cua ban cu, de khi
+   * Google Fonts bi chan thi trang ve dung font truoc day chu khong roi xuong Times.
+   */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+@layer base {
+  /*
+   * Phan reset TOI THIEU thay cho preflight. Moi dong o day deu phai an toan voi 5 trang chua lam
+   * lai - tuc la chi dat nhung thu ma CSS tay trong adminHtml.ts da tu dat roi, hoac khong trang
+   * nao dua vao gia tri mac dinh cua trinh duyet.
+   */
+
+  /*
+   * Khong co preflight thi utility `border` cua Tailwind khong co border-style de dua vao. Dat
+   * bien nay o day de moi `border`/`border-t`/`border-b` deu ra duong lien - thieu no thi class co
+   * trong DOM ma khong thay vien nao (W4).
+   */
+  *,
+  ::before,
+  ::after {
+    --tw-border-style: solid;
+  }
+
+  /*
+   * Form control khong thua font cua trang: khong co dong nay thi moi <select>/<input>/<button>
+   * dung font mac dinh cua trinh duyet (Arial 13.33px) ngay giua mot trang Inter. Dat o day thay
+   * vi tung component vi no ap cho CA 5 trang cu - do chinh la phan "doi vo cho ca 6 trang".
+   */
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
+  /*
+   * <button> tran mang vien `outset` + nen xam cua trinh duyet. Khong co preflight thi no hien ra
+   * ngay: da dinh BA LAN (nut copy ma don thanh o vuong xam, nut tab va nut "Đánh dấu đã trả" co
+   * vien toi bao quanh). Reset mot lan o day thay vi nho `border-0` tren tung nut - de sot la lai
+   * mot nut co vien la giua trang.
+   *
+   * An toan voi 5 trang chua lam lai: moi <button> trong khu /admin deu co class dat ro nen/vien
+   * (`.primary`, `.danger`, `.logout`, hoac utilities cua Tailwind), va ca hai nhom do deu THANG
+   * lop base nay. File CSS nay cung chi duoc nap boi /admin, khong cham toi dashboard nguoi dung
+   * (/d/:token) hay So tay (/so-tay).
+   */
+  button {
+    border: 0;
+    padding: 0;
+    background: none;
+  }
+
+  /*
+   * Tailwind v4 bo `cursor: pointer` cho <button> (preflight cua v4 tra ve hanh vi goc cua trinh
+   * duyet la mui tron). Du khong nap preflight thi trinh duyet cung cho <button> mui tron, nen
+   * phai tu tra lai - neu khong thi trong CUNG mot sidebar, muc la <a> hien ban tay con nut
+   * "Dang xuat" hien mui tron (W7, cach 1: mot cho, khong sot nut nao).
+   */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  /*
+   * SVG inline nam tren duong co chu (baseline) nen de lai khoang trong cua net xuoi ben duoi,
+   * lam icon lech so voi chu canh no. Preflight xu ly bang display:block; o day chi dat cho icon
+   * cua rieng giao dien moi (.icon-svg) de khong dong vao SVG nao khac.
+   */
+  svg.icon-svg {
+    display: block;
+    flex-shrink: 0;
+  }
+}
+
+@layer components {
+  /*
+   * Mui nhon xo xuong cho MOI <select> cua giao dien moi (SELECT_CHEVRON_CLASS trong adminHtml.ts
+   * tro vao class nay). `appearance-none` cua Tailwind go sach mui nhon mac dinh trinh duyet, nen
+   * phai tu ve lai bang background-image - dat o DAY (CSS that, khong phai utility `bg-[url(...)]`
+   * cua Tailwind) vi chuoi SVG co dau cach (vd "viewBox='0 0 24 24'"): bo quet @source cua Tailwind
+   * v4 cat token tai khoang trang DAU TIEN trong 1 class, nen class do bi coi khong hop le va
+   * KHONG SINH RA CSS NAO - da dinh that, mui ten tren ca 3 trang (orders/users/record-orders) am
+   * tham bien mat ma build khong bao loi gi. Viet CSS that thi khong con bi gioi han do.
+   */
+  .field-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1rem;
+    padding-right: 2rem;
+  }
+
+  /*
+   * Nut copy ma don trong bang (copyIconButton() trong htmlHelpers.ts).
+   *
+   * Phai TU reset het vien/nen/padding: khong co preflight nen <button> tran mang san vien noi +
+   * nen xam cua trinh duyet, va no da tung hien ra dung nhu vay - mot o vuong xam canh moi ma don
+   * (W9: "dung chi reset nut va danh sach"). Hai icon ben trong cung phai tu dat kich thuoc, vi
+   * khong co gi quy dinh kich thuoc mac dinh cho <svg> inline.
+   */
+  .copy-icon {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: #94a3b8;
+    line-height: 0;
+  }
+  .copy-icon:hover {
+    color: #4f46e5;
+    background: #f1f5f9;
+  }
+  .copy-icon:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 1px;
+  }
+  .copy-icon svg {
+    display: block;
+    width: 0.8rem;
+    height: 0.8rem;
+  }
+  /*
+   * Doi icon copy -> dau tich khi copy xong. Mau khong duoc la kenh phan hoi duy nhat, nen doi han
+   * hinh icon chu khong chi to xanh.
+   */
+  .copy-icon .i-copy,
+  .copy-icon .i-done {
+    display: inline-flex;
+    line-height: 0;
+  }
+  .copy-icon .i-done {
+    display: none;
+  }
+  .copy-icon.copied {
+    color: #16a34a;
+  }
+  .copy-icon.copied .i-copy {
+    display: none;
+  }
+  .copy-icon.copied .i-done {
+    display: inline-flex;
+  }
+
+  /*
+   * Popover ma QR trong o "Tai khoan thu huong". <details> lam nut bat/tat (khong can JS), panel ben
+   * trong dat tuyet doi de khong day cao ca hang bang khi mo.
+   *
+   * `position: relative` phai nam o CHINH <details>, khong phai o <td>: dat o <td> thi Chrome va
+   * Safari tinh goc toa do khac nhau cho o bang (Safari bo qua position tren <td> o mot so che do
+   * layout), panel se nhay sang cho khac.
+   */
+  .qr-pop {
+    position: relative;
+    display: inline-block;
+  }
+  .qr-pop > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /*
+   * Card collapse/expand cua trang /admin/settings (settingCard() trong adminHtml.ts). `list-none`
+   * cua Tailwind tren <summary> khong du de an het mui tam giac mac dinh tren Safari - cung bay
+   * nhu .qr-pop o tren, can them pseudo-element nay.
+   */
+  .details-plain > summary::-webkit-details-marker {
+    display: none;
+  }
+}
