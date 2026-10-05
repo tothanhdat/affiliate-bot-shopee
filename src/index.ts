@@ -74,7 +74,7 @@ const notifyAdmin = createAdminNotifier({
   resolveZaloSender: () =>
     zaloBot && env.adminZaloUserId !== ""
       ? async (message: string) => {
-          await zaloBot!.sendDirectMessage(env.adminZaloUserId, message);
+          await zaloBot!.sendDirectMessage(env.adminZaloUserId, { text: message });
         }
       : null,
 });
@@ -110,9 +110,17 @@ const faqService =
 // nhan (khong phai chat platform), rot xuong nhanh else cuoi (chi log).
 const notifyUser: NotifyUser = async (platform, userId, notification) => {
   if (platform === "telegram" && telegramBot) {
-    await telegramBot.telegram.sendMessage(userId, notification.text);
+    if (notification.image) {
+      await telegramBot.telegram.sendPhoto(
+        userId,
+        { source: notification.image.data },
+        { caption: notification.text }
+      );
+    } else {
+      await telegramBot.telegram.sendMessage(userId, notification.text);
+    }
   } else if (platform === "zalo" && zaloBot) {
-    await zaloBot.sendDirectMessage(userId, notification.text);
+    await zaloBot.sendDirectMessage(userId, notification);
   } else {
     console.warn(
       `[user-notify] khong the gui thong bao (${platform}/${userId} chua co bot tuong ung):`,

@@ -9,8 +9,10 @@ import {
   type API,
   type Credentials,
   type TAttachmentContent,
+  type AttachmentSource,
 } from "zca-js";
 import { AppError } from "../../core/errors.js";
+import type { OutgoingNotification } from "../../core/notification.js";
 import type { LedgerStore } from "../../core/ledgerStore.js";
 import type { CommissionEstimate } from "../../core/affiliateProvider.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
@@ -74,6 +76,43 @@ export interface ZaloGroupBotOptions {
  * nay phan biet DM vs group, vi truoc gio chi tra loi giong het nhau ca 2 loai thread.
  */
 /** Cho lan thu dang nhap lai khi listener bao "closed" ma khong phai do stop() chu dich. */
+/**
+ * Gom MOI msgId tu ket qua api.sendMessage. zca-js tra { message, attachment[] } - khi co dinh
+ * kem thi CHU co the di cung attachment va `message` la null. Bo sot attachment se lam bot khong
+ * nhan ra tin cua chinh minh, roi handleSelfMessage hieu nham la admin go tay va TU KHOA FAQ cua
+ * chinh no (xem SentMessageTracker + src/adapters/zalo/CLAUDE.md).
+ *
+ * Tra [null] khi khong co msgId nao de van ghi dau vet theo noi dung.
+ */
+export function collectSentMsgIds(
+  result: { message?: { msgId?: number } | null; attachment?: Array<{ msgId?: number }> } | undefined
+): Array<number | null> {
+  const ids: Array<number | null> = [];
+  if (result?.message?.msgId !== undefined) ids.push(result.message.msgId);
+  for (const att of result?.attachment ?? []) {
+    if (att?.msgId !== undefined) ids.push(att.msgId);
+  }
+  return ids.length > 0 ? ids : [null];
+}
+
+/** Chuoi thuan khi khong co anh; object MessageContent kem attachments khi co. */
+export function buildDirectMessagePayload(
+  notification: OutgoingNotification
+): string | { msg: string; attachments: AttachmentSource[] } {
+  const image = notification.image;
+  if (!image) return notification.text;
+  return {
+    msg: notification.text,
+    attachments: [
+      {
+        data: image.data,
+        filename: image.filename,
+        metadata: { totalSize: image.data.length, width: image.width, height: image.height },
+      },
+    ],
+  };
+}
+
 const RECONNECT_DELAY_MS = 10_000;
 /** So lan thu dang nhap bang session da luu truoc khi chiu thua va chuyen sang QR - xem loginWithSavedSession. */
 const SESSION_LOGIN_MAX_ATTEMPTS = 5;
@@ -332,11 +371,13 @@ export class ZaloGroupBot {
         const dashboardLinkTemplate = this.options.ledgerStore.getDashboardLinkReplyTemplate(
           DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT
         );
-        await this.sendTrackedDirect(
-          api,
-          message.threadId,
-          formatDashboardLinkReply(dashboardLinkTemplate, `${this.options.dashboardBaseUrl}/d/${token}`, userId)
-        );
+        await this.sendTrackedDirect(api, message.threadId, {
+          text: formatDashboardLinkReply(
+            dashboardLinkTemplate,
+            `${this.options.dashboardBaseUrl}/d/${token}`,
+            userId
+          ),
+        });
         return;
       }
 
@@ -355,7 +396,7 @@ export class ZaloGroupBot {
 
       await this.maybeSendWelcomeMessage(api, userId);
       await this.processProductLinks(userId, dmLinks, (body) =>
-        this.sendTrackedDirect(api, message.threadId, body)
+        this.sendTrackedDirect(api, message.threadId, { text: body })
       );
       return;
     }
@@ -467,11 +508,19 @@ export class ZaloGroupBot {
    * Gui DM va GHI NHAN msgId - bat buoc dung cho MOI tin bot gui trong DM. Gui thang qua
    * api.sendMessage ma quen ghi nhan se lam bot tuong do la tin admin go tay roi TU KHOA CHINH MINH.
    */
-  private async sendTrackedDirect(api: API, threadId: string, body: string): Promise<void> {
-    const result = (await api.sendMessage(body, threadId, ThreadType.User)) as
-      | { message?: { msgId?: number } | null }
+  private async sendTrackedDirect(
+    api: API,
+    threadId: string,
+    notification: OutgoingNotification
+  ): Promise<void> {
+    const payload = buildDirectMessagePayload(notification);
+    const result = (await api.sendMessage(payload, threadId, ThreadType.User)) as
+      | { message?: { msgId?: number } | null; attachment?: Array<{ msgId?: number }> }
       | undefined;
-    this.sentTracker.record(result?.message?.msgId, body);
+    // Ghi nhan MOI msgId tra ve, khong chi result.message - xem doc comment cua collectSentMsgIds.
+    for (const msgId of collectSentMsgIds(result)) {
+      this.sentTracker.record(msgId, notification.text);
+    }
   }
 
   /**
@@ -521,7 +570,7 @@ export class ZaloGroupBot {
       dashboardUrl: `${this.options.dashboardBaseUrl}/d/${token}`,
     });
     if (answer === null) return;
-    await this.sendTrackedDirect(api, message.threadId, answer);
+    await this.sendTrackedDirect(api, message.threadId, { text: answer });
   }
 
   /**
@@ -591,7 +640,7 @@ export class ZaloGroupBot {
       await this.sendTrackedDirect(
         api,
         userId,
-        formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd, dashboardUrl)
+        { text: formatWelcomeReply(welcomeTemplate, userSharePercent, withdrawalThresholdVnd, dashboardUrl) }
       );
     } catch (err) {
       console.warn(`[zalo] gui DM chao mung toi ${userId} that bai:`, (err as Error).message);
@@ -637,7 +686,9 @@ export class ZaloGroupBot {
 
     try {
       const template = this.options.ledgerStore.getGroupJoinWelcomeTemplate(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT);
-      await this.sendTrackedDirect(api, userId, formatGroupJoinWelcomeReply(template, this.handbookUrl()));
+      await this.sendTrackedDirect(api, userId, {
+        text: formatGroupJoinWelcomeReply(template, this.handbookUrl()),
+      });
     } catch (err) {
       const detail = (err as Error).message;
       // `code` cua ZaloApiError - la error_code that cua Zalo khi Zalo CO tra loi va tu choi; loi
@@ -719,11 +770,11 @@ export class ZaloGroupBot {
    * notifyUser trong index.ts de bao user khi don duoc admin ghi nhan (phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md
    * muc 1). Nem loi neu chua dang nhap (this.api null) - goi noi dung tu bat try/catch.
    */
-  async sendDirectMessage(userId: string, message: string): Promise<void> {
+  async sendDirectMessage(userId: string, notification: OutgoingNotification): Promise<void> {
     if (!this.api) {
       throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
     }
-    await this.sendTrackedDirect(this.api, userId, message);
+    await this.sendTrackedDirect(this.api, userId, notification);
   }
 
   /**
