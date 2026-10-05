@@ -33,6 +33,7 @@ import {
 import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
+import type { NotifyUser } from "../core/notification.js";
 import {
   formatGroupReportUpdatedReply,
   formatOrdersConfirmedReply,
@@ -126,7 +127,7 @@ export function createServer(
   withdrawalProofDir: string,
   adminLoginRateLimiter: RateLimiter,
   dashboardBaseUrl: string,
-  notifyUser: (platform: Platform, userId: string, message: string) => Promise<void>,
+  notifyUser: NotifyUser,
   /**
    * Gui 1 tin nhan vao 1 GROUP Zalo (2026-09-11) - khac notifyUser (DM cho 1 user cuoi). Do index.ts
    * truyen vao, tro vao ZaloGroupBot.sendGroupMessage(). undefined khi ZALO_GROUP_ENABLED=false (hoac
@@ -362,11 +363,9 @@ export function createServer(
       const withdrawalRequestedTemplate = ledgerStore.getWithdrawalRequestedTemplate(
         WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT
       );
-      notifyUser(
-        identity.platform,
-        identity.userId,
-        formatWithdrawalRequestedReply(withdrawalRequestedTemplate, withdrawal.amount)
-      ).catch((notifyErr) => {
+      notifyUser(identity.platform, identity.userId, {
+        text: formatWithdrawalRequestedReply(withdrawalRequestedTemplate, withdrawal.amount),
+      }).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao xac nhan yeu cau rut tien that bai:", notifyErr);
         }
       );
@@ -479,11 +478,9 @@ export function createServer(
         // Best-effort: loi gui thong bao khong duoc lam fail response, da danh dau "paid" trong DB roi.
         const { token } = ledgerStore.findOrCreateDashboardToken(paid.platform, paid.userId);
         const withdrawalPaidTemplate = ledgerStore.getWithdrawalPaidTemplate(WITHDRAWAL_PAID_TEMPLATE_DEFAULT);
-        notifyUser(
-          paid.platform,
-          paid.userId,
-          formatWithdrawalPaidReply(withdrawalPaidTemplate, `${dashboardBaseUrl}/d/${token}`)
-        ).catch((notifyErr) => {
+        notifyUser(paid.platform, paid.userId, {
+          text: formatWithdrawalPaidReply(withdrawalPaidTemplate, `${dashboardBaseUrl}/d/${token}`),
+        }).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao da chuyen khoan that bai:", notifyErr);
         });
         res.redirect(303, "/admin/withdrawals");
@@ -745,15 +742,13 @@ export function createServer(
       if (entry.status === "confirmed") {
         const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
         const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        notifyUser(
-          entry.platform,
-          entry.userId,
-          formatOrdersConfirmedReply(
+        notifyUser(entry.platform, entry.userId, {
+          text: formatOrdersConfirmedReply(
             ordersConfirmedTemplate,
             [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
             `${dashboardBaseUrl}/d/${token}`
-          )
-        ).catch((notifyErr) => {
+          ),
+        }).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
         });
       }
@@ -830,11 +825,9 @@ export function createServer(
       for (const summary of result.confirmedByUser) {
         const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
         const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        notifyUser(
-          summary.platform,
-          summary.userId,
-          formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${dashboardBaseUrl}/d/${token}`)
-        ).catch((notifyErr) => {
+        notifyUser(summary.platform, summary.userId, {
+          text: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${dashboardBaseUrl}/d/${token}`),
+        }).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
         });
       }

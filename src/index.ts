@@ -9,6 +9,7 @@ import { LinkResolverService } from "./core/linkResolverService.js";
 import { RateLimiter } from "./core/rateLimiter.js";
 import { createAffiliateProvider } from "./core/providers/index.js";
 import type { Platform } from "./core/types.js";
+import type { NotifyUser } from "./core/notification.js";
 import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
 import { FaqService } from "./core/faq/faqService.js";
 import { createFaqClassifier } from "./core/faq/providers/index.js";
@@ -107,13 +108,16 @@ const faqService =
 // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc admin ghi nhan (qua
 // /admin/record-orders hoac ledgerAdmin.ts). Chi dinh tuyen Telegram/Zalo - "http" khong co noi
 // nhan (khong phai chat platform), rot xuong nhanh else cuoi (chi log).
-const notifyUser = async (platform: Platform, userId: string, message: string): Promise<void> => {
+const notifyUser: NotifyUser = async (platform, userId, notification) => {
   if (platform === "telegram" && telegramBot) {
-    await telegramBot.telegram.sendMessage(userId, message);
+    await telegramBot.telegram.sendMessage(userId, notification.text);
   } else if (platform === "zalo" && zaloBot) {
-    await zaloBot.sendDirectMessage(userId, message);
+    await zaloBot.sendDirectMessage(userId, notification.text);
   } else {
-    console.warn(`[user-notify] khong the gui thong bao (${platform}/${userId} chua co bot tuong ung):`, message);
+    console.warn(
+      `[user-notify] khong the gui thong bao (${platform}/${userId} chua co bot tuong ung):`,
+      notification.text
+    );
   }
 };
 

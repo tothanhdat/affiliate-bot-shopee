@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../server.js";
 import { AdminSessionStore } from "../../core/adminAuth.js";
+import type { NotifyUser } from "../../core/notification.js";
 import { LedgerStore } from "../../core/ledgerStore.js";
 import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
@@ -30,9 +31,14 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
 
   const notifyAdmin = async (): Promise<void> => {};
-  const notifyUserCalls: Array<{ platform: string; userId: string; message: string }> = [];
-  const notifyUser = async (platform: string, userId: string, message: string): Promise<void> => {
-    notifyUserCalls.push({ platform, userId, message });
+  const notifyUserCalls: Array<{ platform: string; userId: string; message: string; hasImage: boolean }> = [];
+  const notifyUser: NotifyUser = async (platform, userId, notification): Promise<void> => {
+    notifyUserCalls.push({
+      platform,
+      userId,
+      message: notification.text,
+      hasImage: notification.image !== undefined,
+    });
   };
 
   const notifyZaloGroupCalls: Array<{ groupId: string; message: string }> = [];
