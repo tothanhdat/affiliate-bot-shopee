@@ -16,6 +16,8 @@ export const SETTINGS_KEYS = {
   friendRequestMessage: "friend_request_message",
   dashboardLinkReplyTemplate: "dashboard_link_reply_template",
   ordersConfirmedTemplate: "orders_confirmed_template",
+  /** Caption di kem ANH bao don ve (2026-10-05) - xem ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT. */
+  ordersConfirmedCaptionTemplate: "orders_confirmed_caption_template",
   withdrawalRequestedTemplate: "withdrawal_requested_template",
   withdrawalPaidTemplate: "withdrawal_paid_template",
   groupReportUpdatedTemplate: "group_report_updated_template",

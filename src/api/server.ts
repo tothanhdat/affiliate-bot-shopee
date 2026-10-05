@@ -34,6 +34,7 @@ import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { CommissionStatus, Platform } from "../core/types.js";
 import type { NotifyUser } from "../core/notification.js";
+import { buildOrdersConfirmedNotification } from "../core/orderImage/ordersConfirmedNotification.js";
 import {
   formatGroupReportUpdatedReply,
   formatOrdersConfirmedReply,
@@ -41,6 +42,8 @@ import {
   formatWithdrawalRequestedReply,
   GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+  ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
+  formatOrdersConfirmedCaption,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
@@ -133,7 +136,12 @@ export function createServer(
    * truyen vao, tro vao ZaloGroupBot.sendGroupMessage(). undefined khi ZALO_GROUP_ENABLED=false (hoac
    * trong test khong quan tam) - route import bao cao bo qua buoc thong bao group, khong loi.
    */
-  notifyZaloGroup?: (groupId: string, message: string) => Promise<void>
+  notifyZaloGroup?: (groupId: string, message: string) => Promise<void>,
+  /**
+   * Co ORDER_IMAGE_ENABLED (2026-10-05). Tat thi 2 nhanh bao don confirmed quay ve gui tin van
+   * ban thuan nhu truoc. Mac dinh true de cac cho goi cu (test) khong phai sua.
+   */
+  orderImageEnabled = true
 ) {
   const app = express();
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
@@ -741,16 +749,27 @@ export function createServer(
       // lam fail response, don da ghi vao ledger roi.
       if (entry.status === "confirmed") {
         const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+        const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
         const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        notifyUser(entry.platform, entry.userId, {
-          text: formatOrdersConfirmedReply(
-            ordersConfirmedTemplate,
-            [{ orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount }],
-            `${dashboardBaseUrl}/d/${token}`
-          ),
-        }).catch((notifyErr) => {
-          console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
-        });
+        const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(
+          ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT
+        );
+        const confirmedItems = [
+          { orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount },
+        ];
+        // So du doc SAU khi don da ghi vao ledger - doc truoc thi anh bao thieu dung don vua ghi.
+        buildOrdersConfirmedNotification({
+          items: confirmedItems,
+          availableVnd: ledgerStore.getAvailableBalance(entry.platform, entry.userId),
+          withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl),
+          imageEnabled: orderImageEnabled,
+        })
+          .then((notification) => notifyUser(entry.platform, entry.userId, notification))
+          .catch((notifyErr) => {
+            console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
+          });
       }
       // Lich su (2026-08-23): form "Ghi 1 don le" luon tao 1 entry MOI (recordSingleOrder
       // chi INSERT, khong bao gio UPDATE entry co san) - vi vay khong bao gio co statusTransitions.
@@ -824,12 +843,25 @@ export function createServer(
       );
       for (const summary of result.confirmedByUser) {
         const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+        const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
         const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        notifyUser(summary.platform, summary.userId, {
-          text: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, `${dashboardBaseUrl}/d/${token}`),
-        }).catch((notifyErr) => {
-          console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
-        });
+        const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(
+          ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT
+        );
+        // So du doc SAU khi importShopeeReport da ghi xong - doc truoc thi anh bao thieu dung
+        // cac don vua import.
+        buildOrdersConfirmedNotification({
+          items: summary.items,
+          availableVnd: ledgerStore.getAvailableBalance(summary.platform, summary.userId),
+          withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl),
+          imageEnabled: orderImageEnabled,
+        })
+          .then((notification) => notifyUser(summary.platform, summary.userId, notification))
+          .catch((notifyErr) => {
+            console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
+          });
       }
       // 2026-09-11 (yeu cau truc tiep cua user): bao CA GROUP biet du lieu hoa hong vua duoc cap nhat,
       // thay vi chi DM rieng tung user co don moi. Gui MOI lan import thanh cong - ke ca khi 0 don moi

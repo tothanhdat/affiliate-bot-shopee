@@ -165,7 +165,8 @@ const app = createServer(
   adminLoginRateLimiter,
   env.dashboard.baseUrl,
   notifyUser,
-  notifyZaloGroup
+  notifyZaloGroup,
+  env.orderImage.enabled
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);
