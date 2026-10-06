@@ -12,8 +12,8 @@ import { renderOrderCountBadge } from "./orderCountBadge.js";
  * DOI TEMPLATE DO PHAN GIAI CAO HON: chi can doi 2 hang so nay cho khop file moi. Toan bo toa
  * do/co chu ben duoi viet trong he thiet ke 1024x572 roi nhan voi K, nen tu dong giãn theo.
  */
-export const ORDER_IMAGE_WIDTH = 1024;
-export const ORDER_IMAGE_HEIGHT = 572;
+export const ORDER_IMAGE_WIDTH = 1678;
+export const ORDER_IMAGE_HEIGHT = 937;
 
 /** He toa do thiet ke - moi hang so hinh hoc duoi day deu tinh theo khung nay. */
 const BASE_WIDTH = 1024;
@@ -52,12 +52,14 @@ const FONTS = [
  * giu dung ty le da duyet o ban truoc, co day xuong mot chut vi tieu de moi ket thuc thap hon.
  */
 /**
- * Khe so don. cx/cy va fontSize do bang cach so net chu THAT voi chu hoa cua tieu de in san:
- * chu hoa "B"/"N"/"C" cua "BẠN CÓ" nam o y 100-133 (cao 34, chan 133), nen so phai cao 34 va
- * chan cung o 133 thi moi doc ra nhu cung mot cau. fontSize 46 cho net cao dung 34 voi
- * Montserrat ExtraBold; hop cao 54 de con cho cho bong do.
+ * Khe so don. cx/cy va fontSize do bang cach so net chu THAT voi chu hoa cua tieu de in san,
+ * tren CHINH file template dang dung (he 1678x937): chu hoa cao 62px va chan o y=223, tuong
+ * duong he thiet ke la cao 38 va chan 136. So phai trung ca hai thi moi doc ra nhu cung 1 cau.
+ *
+ * **Do lai moi khi doi file template** - ban 1678x937 KHONG phai ban phong deu cua ban 1024x572
+ * truoc do (chu tieu de to hon ~11% so voi khung), nen suy ra bang phep nhan la sai.
  */
-const SLOT = { cx: 416, cy: 116, w: 90, h: 54, fontSize: 46 };
+const SLOT = { cx: 414, cy: 117, w: 90, h: 54, fontSize: 52 };
 const CARD = { y: 160, h: 246, w: 287, xs: [65, 369, 673] };
 const CARD_GAP = CARD.xs[1] - CARD.xs[0] - CARD.w;
 const OVERFLOW_Y = 410;
