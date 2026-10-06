@@ -53,13 +53,19 @@ const FONTS = [
  */
 /**
  * Khe so don. cx/cy va fontSize do bang cach so net chu THAT voi chu hoa cua tieu de in san,
- * tren CHINH file template dang dung (he 1678x937): chu hoa cao 62px va chan o y=223, tuong
- * duong he thiet ke la cao 38 va chan 136. So phai trung ca hai thi moi doc ra nhu cung 1 cau.
+ * tren CHINH file template dang dung (he 1678x937): chu hoa cao 62px va chan o y=223.
+ *
+ * fontSize 49 (= 80px that) la lua chon CO Y cua chu bot: net so cao ~58px, THAP hon chu hoa
+ * mot chut cho do nang, vi Montserrat ExtraBold dac hon han font cua template nen de cao bang
+ * dung thi con so trong "nang" hon cum chu xung quanh.
+ *
+ * cy=118 de DUONG CHAN van nam o y=223 nhu chu hai ben: chu so duoc can GIUA trong hop, nen
+ * doi fontSize ma giu nguyen cy se lam chan nhich len - phai bu lai.
  *
  * **Do lai moi khi doi file template** - ban 1678x937 KHONG phai ban phong deu cua ban 1024x572
  * truoc do (chu tieu de to hon ~11% so voi khung), nen suy ra bang phep nhan la sai.
  */
-const SLOT = { cx: 414, cy: 117, w: 90, h: 54, fontSize: 52 };
+const SLOT = { cx: 414, cy: 118, w: 90, h: 54, fontSize: 49 };
 const CARD = { y: 160, h: 246, w: 287, xs: [65, 369, 673] };
 const CARD_GAP = CARD.xs[1] - CARD.xs[0] - CARD.w;
 const OVERFLOW_Y = 410;
