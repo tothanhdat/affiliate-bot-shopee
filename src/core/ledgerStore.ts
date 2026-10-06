@@ -308,10 +308,94 @@ export class LedgerStore {
       );
       CREATE INDEX IF NOT EXISTS idx_import_history_created ON import_history(created_at);
     `);
+    this.migrateCreateSeenOrdersTable();
     // DB tao truoc khi co yeu cau dinh kem bang chung chuyen khoan (2026-08-19) se thieu cot nay.
     this.migrateAddWithdrawalProofColumn();
     // DB tao truoc khi co form ngan hang bat buoc (2026-08-20) se thieu 3 cot nay.
     this.migrateAddBankInfoColumns();
+  }
+
+  /**
+   * imported_orders (2026-10-06): moi ma don DUOC BAO CAO SHOPEE NHAC TOI LAN DAU, kem trang thai
+   * luc do va NGAY IMPORT (gio VN) - nguon cua chart "Don hang moi moi ngay" tren /admin/dashboard.
+   * Bang RIENG voi commission_entries vi don MOI ma da huy ngay tu lan dau KHONG bao gio duoc ghi
+   * vao commission_entries (importShopeeReport bo qua - khong co tien de chia), nhung van phai dem
+   * la "don moi", va phai nho la da dem de lan import sau (bao cao liet ke lai ca lich su) khong
+   * dem lai lan nua. PRIMARY KEY (merchant, order_id) + INSERT OR IGNORE = chi lan DAU thang.
+   *
+   * Backfill 1 lan luc bang vua duoc tao, tu import_history (newOrderIds cua cac lan import "csv"):
+   * ngay = ngay import that, nhung trang thai CHI biet trang thai HIEN TAI cua entry (khong con
+   * ban ghi trang thai luc import) va don huy-ngay-tu-dau khong the khoi phuc - chap nhan duoc.
+   */
+  private migrateCreateSeenOrdersTable(): void {
+    const existed = this.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'imported_orders'")
+      .get();
+    if (existed) return;
+    this.db.exec(`
+      CREATE TABLE imported_orders (
+        merchant TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        import_day TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (merchant, order_id)
+      );
+      CREATE INDEX idx_imported_orders_day ON imported_orders(import_day);
+    `);
+    const history = this.db
+      .prepare("SELECT created_at, new_order_ids FROM import_history WHERE action_type = 'csv' ORDER BY created_at ASC")
+      .all() as Array<{ created_at: string; new_order_ids: string }>;
+    const findEntry = this.db.prepare("SELECT merchant, status FROM commission_entries WHERE order_id = ?");
+    const insert = this.db.prepare(
+      "INSERT OR IGNORE INTO imported_orders (merchant, order_id, status, import_day, created_at) VALUES (?, ?, ?, ?, ?)"
+    );
+    for (const h of history) {
+      const importDay = new Date(new Date(h.created_at).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+      for (const orderId of JSON.parse(h.new_order_ids) as string[]) {
+        const entry = findEntry.get(orderId) as { merchant: string; status: string } | undefined;
+        if (!entry) continue;
+        insert.run(entry.merchant, orderId, entry.status === "paid" ? "confirmed" : entry.status, importDay, h.created_at);
+      }
+    }
+  }
+
+  /**
+   * Ghi nhan 1 don Shopee vua xuat hien trong bao cao import. Tra true neu day la LAN DAU he thong
+   * thay ma don nay (don moi that su), false neu da thay roi - lan sau khong doi trang thai/ngay.
+   */
+  recordSeenOrder(
+    merchant: string,
+    orderId: string,
+    status: "pending" | "confirmed" | "reversed",
+    importDay: string
+  ): boolean {
+    const result = this.db
+      .prepare(
+        "INSERT OR IGNORE INTO imported_orders (merchant, order_id, status, import_day, created_at) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(merchant, orderId, status, importDay, new Date().toISOString());
+    return Number(result.changes) > 0;
+  }
+
+  /** So don MOI theo ngay import va trang thai LUC IMPORT - du lieu chart "Don hang moi moi ngay". */
+  countSeenOrdersByDayAndStatus(
+    fromKey: string,
+    toKey: string
+  ): Array<{ day: string; status: "pending" | "confirmed" | "reversed"; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT import_day AS day, status, COUNT(*) AS count
+         FROM imported_orders
+         WHERE import_day BETWEEN ? AND ?
+         GROUP BY import_day, status`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      day: r.day as string,
+      status: r.status as "pending" | "confirmed" | "reversed",
+      count: r.count as number,
+    }));
   }
 
   /**

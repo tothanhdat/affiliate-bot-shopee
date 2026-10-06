@@ -123,6 +123,11 @@ test("computeDashboardStats lastMonth: chi lay don cua thang truoc", () => {
   seedEntry(ledgerStore, { orderId: "M3", orderDate: "2026-10-01", commissionAmount: 99_000 });
   seedEntry(ledgerStore, { orderId: "M4", orderDate: "2026-08-31", commissionAmount: 77_000 });
 
+  // "Don moi" dem theo don lan dau thay luc import (khong theo order_date).
+  ledgerStore.recordSeenOrder("shopee", "M1", "confirmed", "2026-09-16");
+  ledgerStore.recordSeenOrder("shopee", "M2", "confirmed", "2026-09-30");
+  ledgerStore.recordSeenOrder("shopee", "M3", "confirmed", "2026-10-01");
+
   const stats = computeDashboardStats(ledgerStore, logStore, "lastMonth", new Date("2026-10-05T05:00:00Z"));
 
   assert.equal(stats.orders.newCount, 2);
@@ -200,46 +205,46 @@ test("computeDashboardStats: ky rong -> tra ve toan so 0, khong crash", () => {
   assert.equal(stats.activity.errorRatePercent, 0);
   assert.equal(stats.charts.ordersByDay.days.length, 7);
   assert.deepEqual(stats.charts.ordersByDay.series.confirmed, [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(stats.charts.ordersByDay.series.reversed, [0, 0, 0, 0, 0, 0, 0]);
   assert.equal(stats.charts.topUsers.length, 0);
 
   logStore.close();
   ledgerStore.close();
 });
 
-test("computeDashboardStats: gom don theo order_date THAT, khong theo ngay import", () => {
+test("computeDashboardStats: chart don moi dem theo NGAY IMPORT + trang thai luc import, KHONG theo order_date", () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
 
-  // 3 don ghi nhan CUNG LUC (hom nay) nhung dat vao 3 ngay khac nhau - neu gom theo created_at
-  // thi ca 3 se don vao 1 cot, lam bieu do "su phat trien" sai hoan toan.
-  seedEntry(ledgerStore, { orderId: "A1", orderDate: "2026-09-29" });
-  seedEntry(ledgerStore, { orderId: "A2", orderDate: "2026-09-30" });
-  seedEntry(ledgerStore, { orderId: "A3", orderDate: "2026-10-01" });
+  // order_date cua cac don khac xa ngay import - chart khong duoc nhin vao no.
+  seedEntry(ledgerStore, { orderId: "A1", orderDate: "2026-09-01" });
+  ledgerStore.recordSeenOrder("shopee", "A1", "confirmed", "2026-09-30");
+  ledgerStore.recordSeenOrder("shopee", "A2", "pending", "2026-09-30");
+  // Don MOI ma da huy ngay lan dau: khong co trong commission_entries nhung van phai dem.
+  ledgerStore.recordSeenOrder("shopee", "A3", "reversed", "2026-10-01");
 
   const stats = computeDashboardStats(ledgerStore, logStore, "7d", new Date("2026-10-01T05:00:00Z"));
   const { days, series } = stats.charts.ordersByDay;
 
-  assert.equal(series.confirmed[days.indexOf("2026-09-29")], 1);
   assert.equal(series.confirmed[days.indexOf("2026-09-30")], 1);
-  assert.equal(series.confirmed[days.indexOf("2026-10-01")], 1);
-  assert.equal(stats.orders.newCount, 3);
+  assert.equal(series.pending[days.indexOf("2026-09-30")], 1);
+  assert.equal(series.reversed[days.indexOf("2026-10-01")], 1);
+  // Ngay khong import -> rong.
+  assert.equal(series.confirmed[days.indexOf("2026-09-29")], 0);
 
   logStore.close();
   ledgerStore.close();
 });
 
-test("computeDashboardStats: don cu khong co order_date -> fallback ve created_at (gio VN)", () => {
-  const logStore = new LogStore(":memory:");
+test("recordSeenOrder: chi lan DAU thang - lan import sau khong dem lai, khong doi ngay/trang thai", () => {
   const ledgerStore = new LedgerStore(":memory:");
 
-  // Entry cu (truoc migration) khong co order_date - van phai len chart chu khong bien mat.
-  seedEntry(ledgerStore, { orderId: "OLD", orderDate: null });
+  assert.equal(ledgerStore.recordSeenOrder("shopee", "X1", "pending", "2026-10-01"), true);
+  assert.equal(ledgerStore.recordSeenOrder("shopee", "X1", "confirmed", "2026-10-03"), false);
 
-  const stats = computeDashboardStats(ledgerStore, logStore, "7d", new Date());
-  const total = stats.charts.ordersByDay.series.confirmed.reduce((a, b) => a + b, 0);
-  assert.equal(total, 1);
+  const rows = ledgerStore.countSeenOrdersByDayAndStatus("2026-10-01", "2026-10-05");
+  assert.deepEqual(rows, [{ day: "2026-10-01", status: "pending", count: 1 }]);
 
-  logStore.close();
   ledgerStore.close();
 });
 
@@ -314,6 +319,9 @@ test("computeDashboardStats: don NGOAI ky khong duoc tinh vao so lieu cua ky", (
 
   seedEntry(ledgerStore, { orderId: "IN", orderDate: "2026-10-01", commissionAmount: 100_000 });
   seedEntry(ledgerStore, { orderId: "OUT", orderDate: "2026-08-15", commissionAmount: 999_000 });
+
+  ledgerStore.recordSeenOrder("shopee", "IN", "confirmed", "2026-10-01");
+  ledgerStore.recordSeenOrder("shopee", "OUT", "confirmed", "2026-08-15");
 
   const stats = computeDashboardStats(ledgerStore, logStore, "today", new Date("2026-10-01T05:00:00Z"));
 

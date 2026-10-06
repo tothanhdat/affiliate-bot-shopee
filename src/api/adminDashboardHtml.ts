@@ -2,6 +2,7 @@ import {
   DASHBOARD_RANGES,
   type DashboardRange,
   type DashboardStats,
+  type NewOrderStatus,
 } from "../core/dashboardStats.js";
 import type { CommissionStatus } from "../core/types.js";
 import { escapeHtml, formatVnd } from "./htmlHelpers.js";
@@ -51,6 +52,11 @@ const STATUS_CHART_META: Array<{ status: CommissionStatus; label: string; color:
   { status: "reversed", label: "Đã huỷ", color: "#dc2626" },
 ];
 
+/** Chart "Don hang moi": chi 3 trang thai (khong co "Da rut" - do la trang thai sau nay, khong phai luc import). */
+const NEW_ORDER_CHART_META = STATUS_CHART_META.filter((m) => m.status !== "paid") as Array<
+  (typeof STATUS_CHART_META)[number] & { status: NewOrderStatus }
+>;
+
 /** Hoa hong goc vs phan chu bot giu - 2 series categorical, da qua validator (ΔE 24.7 CVD). */
 const COMMISSION_COLOR = "#2a78d6";
 const OWNER_PROFIT_COLOR = "#eb6834";
@@ -87,7 +93,7 @@ export function renderAdminDashboardPage(stats: DashboardStats): string {
   const chartData = {
     ordersByDay: {
       days: stats.charts.ordersByDay.days.map(toDdMm),
-      series: STATUS_CHART_META.map((meta) => ({
+      series: NEW_ORDER_CHART_META.map((meta) => ({
         label: meta.label,
         color: meta.color,
         data: stats.charts.ordersByDay.series[meta.status],
@@ -139,14 +145,14 @@ ${renderKpiGrid(stats)}
   <div class="card chart-card">
     <div class="chart-head">
       <h2>Đơn hàng mới mỗi ngày</h2>
-      <p class="chart-sub">Theo <strong>ngày khách đặt đơn</strong> (không phải ngày import báo cáo), nên import trễ hay gộp nhiều ngày cũng không làm méo biểu đồ. Bấm vào tên trạng thái ở chú thích để ẩn/hiện trạng thái đó.</p>
+      <p class="chart-sub">Số đơn <strong>lần đầu xuất hiện</strong> trong báo cáo Shopee được import vào ngày đó, theo trạng thái lúc import (Chờ xác nhận / Khả dụng / Đã huỷ). Đơn đã từng có trong hệ thống không đếm lại. Ngày không import báo cáo thì cột để trống. Bấm vào tên trạng thái ở chú thích để ẩn/hiện.</p>
     </div>
     <div class="chart-box chart-box-tall"><canvas id="chart-orders"></canvas></div>
     ${renderDayTable(
       stats.charts.ordersByDay.days,
-      STATUS_CHART_META.map((m) => m.label),
+      NEW_ORDER_CHART_META.map((m) => m.label),
       stats.charts.ordersByDay.days.map((_, i) =>
-        STATUS_CHART_META.map((m) => stats.charts.ordersByDay.series[m.status][i])
+        NEW_ORDER_CHART_META.map((m) => stats.charts.ordersByDay.series[m.status][i])
       ),
       "Chưa có đơn nào trong kỳ này."
     )}
@@ -256,7 +262,7 @@ function renderKpiGrid(stats: DashboardStats): string {
       group: "Đơn hàng",
       label: "Đơn mới",
       value: formatCount(orders.newCount),
-      hint: `Theo ngày khách đặt · ${periodNote}`,
+      hint: `Đơn lần đầu thấy khi import · ${periodNote}`,
     },
     {
       group: "Đơn hàng",

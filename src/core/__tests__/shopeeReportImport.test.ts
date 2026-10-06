@@ -811,3 +811,27 @@ test("importShopeeReport: vong doi 'Chua thanh toan' -> 'Da huy' -> entry chuyen
     ledgerStore.close();
   }
 });
+
+test("importShopeeReport: don MOI da huy ngay lan dau van duoc dem la don moi, dem 1 lan duy nhat", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const csv = buildCsv([
+      { orderId: "CX1", orderAmount: 100_000, commissionAmount: 10_000, status: "Đã hủy", subIdParts: ["zalo", "user-a", "abc", "def"] },
+      { orderId: "CX2", orderAmount: 100_000, commissionAmount: 10_000, status: "Đang chờ xử lý", subIdParts: ["zalo", "user-a", "abc", "def"] },
+    ]);
+    const run = () =>
+      importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, csv);
+    run();
+    run(); // bao cao liet ke lai lich su - khong duoc dem lan 2
+
+    const rows = ledgerStore.countSeenOrdersByDayAndStatus("2000-01-01", "2999-12-31");
+    const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.count]));
+    assert.deepEqual(byStatus, { reversed: 1, pending: 1 });
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "CX1"), null);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});

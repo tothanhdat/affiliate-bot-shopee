@@ -301,6 +301,12 @@ export function importShopeeReport(
       continue;
     }
 
+    // Ghi nhan "don moi" cho chart dashboard TRUOC moi nhanh trang thai ben duoi: don huy ngay tu
+    // lan dau se khong bao gio vao commission_entries nhung van phai dem 1 lan (xem
+    // LedgerStore.migrateCreateSeenOrdersTable). Chi lan DAU thang nen bao cao liet ke lai lich su
+    // o cac lan import sau khong dem lai.
+    ledgerStore.recordSeenOrder(requestEntry.merchant, orderId, targetStatus, todayVnIso());
+
     const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId);
 
     // Bu ngay dat don cho entry da ghi TRUOC khi he thong biet doc cot nay (hoac truoc 2026-10-01).

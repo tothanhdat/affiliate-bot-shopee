@@ -210,6 +210,9 @@ test("GET /admin/dashboard: chart chinh LUON kem bang so lieu (CDN hong van doc 
     ...ORDER_CONFIG,
   });
 
+  // Chart don moi dem theo don DA THAY trong bao cao import (ngay import), khong theo commission_entries.
+  ledgerStore.recordSeenOrder("shopee", "ORD-B", "confirmed", todayVn());
+
   const cookie = await loginAndGetCookie(baseUrl);
   const html = await fetch(`${baseUrl}/admin/dashboard?range=today`, { headers: { cookie } }).then((r) =>
     r.text()

@@ -81,7 +81,7 @@ export interface DashboardStats {
     totalUsers: number;
   };
   charts: {
-    ordersByDay: { days: string[]; series: Record<CommissionStatus, number[]> };
+    ordersByDay: { days: string[]; series: Record<NewOrderStatus, number[]> };
     commissionByDay: { days: string[]; commission: number[]; ownerProfit: number[] };
     statusBreakdown: Array<{ status: CommissionStatus; count: number }>;
     linksByDay: { days: string[]; success: number[]; failed: number[] };
@@ -175,6 +175,9 @@ function spreadByDay<T>(dayKeys: string[], rows: T[], keyOf: (row: T) => string,
   return dayKeys.map((day) => map.get(day) ?? 0);
 }
 
+export const NEW_ORDER_STATUSES = ["pending", "confirmed", "reversed"] as const;
+export type NewOrderStatus = (typeof NEW_ORDER_STATUSES)[number];
+
 export function computeDashboardStats(
   ledgerStore: LedgerStore,
   logStore: LogStore,
@@ -188,7 +191,7 @@ export function computeDashboardStats(
   const outstanding = ledgerStore.getOutstandingTotals();
   const pending = ledgerStore.getPendingOrdersInRange(fromKey, toKey);
   const statusRows = ledgerStore.countEntriesByStatus(fromKey, toKey);
-  const byDayStatus = ledgerStore.countEntriesByDayAndStatus(fromKey, toKey);
+  const newOrderRows = ledgerStore.countSeenOrdersByDayAndStatus(fromKey, toKey);
   const commissionRows = ledgerStore.sumCommissionByDay(fromKey, toKey);
   const topUsers = ledgerStore.topUsersByCommission(fromKey, toKey, TOP_USERS_LIMIT);
   const paid = ledgerStore.getPaidWithdrawalTotal(fromKey, toKey);
@@ -200,17 +203,19 @@ export function computeDashboardStats(
   const statusCount = (status: CommissionStatus) =>
     statusRows.find((r) => r.status === status)?.count ?? 0;
 
+  // Chart "Don hang moi": theo NGAY IMPORT va trang thai LUC IMPORT (khong co "paid" - do la trang
+  // thai sau nay). Ngay khong import thi cot rong, chu y chap nhan.
   const series = Object.fromEntries(
-    COMMISSION_STATUSES.map((status) => [
+    NEW_ORDER_STATUSES.map((status) => [
       status,
       spreadByDay(
         dayKeys,
-        byDayStatus.filter((r) => r.status === status),
+        newOrderRows.filter((r) => r.status === status),
         (r) => r.day,
         (r) => r.count
       ),
     ])
-  ) as Record<CommissionStatus, number[]>;
+  ) as Record<NewOrderStatus, number[]>;
 
   const failedCount = requestTotals.total - requestTotals.success;
 
@@ -223,7 +228,8 @@ export function computeDashboardStats(
       owedToUsers: outstanding.owedToUsers,
     },
     orders: {
-      newCount: statusRows.reduce((sum, r) => sum + r.count, 0),
+      // Cung nguon voi chart "Don hang moi" (don lan dau thay trong bao cao import) de 2 so luon khop.
+      newCount: newOrderRows.reduce((sum, r) => sum + r.count, 0),
       pendingCount: pending.count,
       pendingAmount: pending.userShareAmount,
       reversedCount: statusCount("reversed"),
