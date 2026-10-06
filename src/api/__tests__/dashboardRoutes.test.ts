@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../server.js";
 import { AdminSessionStore } from "../../core/adminAuth.js";
+import type { NotifyUser } from "../../core/notification.js";
 import { LedgerStore } from "../../core/ledgerStore.js";
 import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
@@ -26,9 +27,14 @@ function setup() {
   const notifyAdmin = async (message: string): Promise<void> => {
     notifyCalls.push(message);
   };
-  const notifyUserCalls: Array<{ platform: string; userId: string; message: string }> = [];
-  const notifyUser = async (platform: string, userId: string, message: string): Promise<void> => {
-    notifyUserCalls.push({ platform, userId, message });
+  const notifyUserCalls: Array<{ platform: string; userId: string; message: string; hasImage: boolean }> = [];
+  const notifyUser: NotifyUser = async (platform, userId, notification): Promise<void> => {
+    notifyUserCalls.push({
+      platform,
+      userId,
+      message: notification.text,
+      hasImage: notification.image !== undefined,
+    });
   };
 
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));

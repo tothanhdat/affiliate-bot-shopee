@@ -1413,6 +1413,10 @@ export class LedgerStore {
     return this.getSetting(SETTINGS_KEYS.ordersConfirmedTemplate, defaultValue);
   }
 
+  getOrdersConfirmedCaptionTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.ordersConfirmedCaptionTemplate, defaultValue);
+  }
+
   getWithdrawalRequestedTemplate(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.withdrawalRequestedTemplate, defaultValue);
   }

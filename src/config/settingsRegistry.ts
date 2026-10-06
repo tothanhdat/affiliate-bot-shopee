@@ -14,6 +14,7 @@ import {
   FRIEND_REQUEST_MESSAGE_DEFAULT,
   DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+  ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
   GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
@@ -123,6 +124,14 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     default: ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
     helpText:
       "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.ordersConfirmedCaptionTemplate,
+    label: "Caption đi kèm ảnh báo đơn về",
+    type: "textarea",
+    default: ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
+    helpText:
+      "Placeholder hợp lệ: {{dashboardUrl}}. Dùng khi gửi được ảnh. Nếu render ảnh lỗi thì bot gửi mẫu tin ở ô trên thay thế.",
   },
   {
     key: SETTINGS_KEYS.withdrawalRequestedTemplate,

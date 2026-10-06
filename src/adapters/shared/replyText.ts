@@ -165,6 +165,18 @@ export function formatDashboardLinkReply(template: string, dashboardUrl: string,
 /** Default cho setting "orders_confirmed_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
 
+/**
+ * Caption di kem ANH bao don ve (2026-10-05). Khac ORDERS_CONFIRMED_TEMPLATE_DEFAULT o cho anh
+ * da hien ten don + so tien + tong roi, nen caption chi con viec chi duong vao dashboard.
+ * Template cu van duoc giu nguyen lam TEXT DU PHONG khi render anh that bai.
+ */
+export const ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT =
+  `Xem chi tiết từng đơn ở dashboard của bạn nha: {{dashboardUrl}}`;
+
+export function formatOrdersConfirmedCaption(template: string, dashboardUrl: string): string {
+  return renderTemplate(template, { dashboardUrl });
+}
+
 export function formatOrdersConfirmedReply(
   template: string,
   items: ConfirmedOrderItem[],

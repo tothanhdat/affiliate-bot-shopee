@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../server.js";
 import { AdminSessionStore } from "../../core/adminAuth.js";
+import type { NotifyUser } from "../../core/notification.js";
 import { LedgerStore } from "../../core/ledgerStore.js";
 import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
@@ -30,9 +31,14 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
   const withdrawalProofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
 
   const notifyAdmin = async (): Promise<void> => {};
-  const notifyUserCalls: Array<{ platform: string; userId: string; message: string }> = [];
-  const notifyUser = async (platform: string, userId: string, message: string): Promise<void> => {
-    notifyUserCalls.push({ platform, userId, message });
+  const notifyUserCalls: Array<{ platform: string; userId: string; message: string; hasImage: boolean }> = [];
+  const notifyUser: NotifyUser = async (platform, userId, notification): Promise<void> => {
+    notifyUserCalls.push({
+      platform,
+      userId,
+      message: notification.text,
+      hasImage: notification.image !== undefined,
+    });
   };
 
   const notifyZaloGroupCalls: Array<{ groupId: string; message: string }> = [];
@@ -518,13 +524,15 @@ test("POST /admin/record-orders/single ghi dung don khi subId hop le", async () 
     assert.match(html, /WEB-ORDER-001/);
     assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000); // 80% cua 20_000
 
-    // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay cho dung user,
-    // kem ten don (fallback "Đơn <orderId>" vi test khong dien productName) + so tien nhan duoc.
+    // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: ghi 1 don le -> bao ngay cho dung user.
+    // Tu 2026-10-05 noi dung di bang ANH (ten don + so tien nam tren anh), nen tin nhan chi con
+    // caption chi duong vao dashboard - xem src/core/orderImage/.
     assert.equal(notifyUserCalls.length, 1);
     assert.equal(notifyUserCalls[0].platform, "telegram");
     assert.equal(notifyUserCalls[0].userId, "user-a");
-    assert.match(notifyUserCalls[0].message, /Đơn WEB-ORDER-001/);
-    assert.match(notifyUserCalls[0].message, /16.000đ/);
+    assert.equal(notifyUserCalls[0].hasImage, true);
+    assert.match(notifyUserCalls[0].message, /dashboard/i);
+    assert.match(notifyUserCalls[0].message, /\/d\//);
 
     // 2026-08-23: ghi 1 don le cung phai len lich su, phan loai action = "single" (form), khong bao
     // gio co statusTransitions vi day luon la INSERT moi (khong UPDATE entry co san).

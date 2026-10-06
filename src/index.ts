@@ -9,6 +9,7 @@ import { LinkResolverService } from "./core/linkResolverService.js";
 import { RateLimiter } from "./core/rateLimiter.js";
 import { createAffiliateProvider } from "./core/providers/index.js";
 import type { Platform } from "./core/types.js";
+import type { NotifyUser } from "./core/notification.js";
 import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
 import { FaqService } from "./core/faq/faqService.js";
 import { createFaqClassifier } from "./core/faq/providers/index.js";
@@ -73,7 +74,7 @@ const notifyAdmin = createAdminNotifier({
   resolveZaloSender: () =>
     zaloBot && env.adminZaloUserId !== ""
       ? async (message: string) => {
-          await zaloBot!.sendDirectMessage(env.adminZaloUserId, message);
+          await zaloBot!.sendDirectMessage(env.adminZaloUserId, { text: message });
         }
       : null,
 });
@@ -107,13 +108,24 @@ const faqService =
 // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 1: bao user khi don duoc admin ghi nhan (qua
 // /admin/record-orders hoac ledgerAdmin.ts). Chi dinh tuyen Telegram/Zalo - "http" khong co noi
 // nhan (khong phai chat platform), rot xuong nhanh else cuoi (chi log).
-const notifyUser = async (platform: Platform, userId: string, message: string): Promise<void> => {
+const notifyUser: NotifyUser = async (platform, userId, notification) => {
   if (platform === "telegram" && telegramBot) {
-    await telegramBot.telegram.sendMessage(userId, message);
+    if (notification.image) {
+      await telegramBot.telegram.sendPhoto(
+        userId,
+        { source: notification.image.data },
+        { caption: notification.text }
+      );
+    } else {
+      await telegramBot.telegram.sendMessage(userId, notification.text);
+    }
   } else if (platform === "zalo" && zaloBot) {
-    await zaloBot.sendDirectMessage(userId, message);
+    await zaloBot.sendDirectMessage(userId, notification);
   } else {
-    console.warn(`[user-notify] khong the gui thong bao (${platform}/${userId} chua co bot tuong ung):`, message);
+    console.warn(
+      `[user-notify] khong the gui thong bao (${platform}/${userId} chua co bot tuong ung):`,
+      notification.text
+    );
   }
 };
 
@@ -153,7 +165,8 @@ const app = createServer(
   adminLoginRateLimiter,
   env.dashboard.baseUrl,
   notifyUser,
-  notifyZaloGroup
+  notifyZaloGroup,
+  env.orderImage.enabled
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);

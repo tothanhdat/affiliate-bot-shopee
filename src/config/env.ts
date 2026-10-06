@@ -146,6 +146,15 @@ export const env = {
     capVnd: optionalNumberOrNull("COMMISSION_LOOKUP_CAP_VND"),
   },
 
+  /**
+   * Anh bao "don ve" (2026-10-05). Mac dinh BAT. Render loi thi da tu dong lui ve gui text roi,
+   * co nay danh cho truong hop muon tat han ma khong phai rollback (vi du anh hien sai sau khi
+   * doi template nen). Xem src/core/orderImage/.
+   */
+  orderImage: {
+    enabled: optionalBool("ORDER_IMAGE_ENABLED", true),
+  },
+
   withdrawal: {
     /** So du kha dung toi thieu (VND) de duoc gui yeu cau rut tien. */
     // Mac dinh 20.000d - ha tu 50.000d ngay 2026-08-20 theo phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 2.
