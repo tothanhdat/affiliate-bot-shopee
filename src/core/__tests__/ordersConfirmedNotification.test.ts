@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildOrdersConfirmedNotification } from "../orderImage/ordersConfirmedNotification.js";
+import { ORDER_IMAGE_WIDTH, ORDER_IMAGE_HEIGHT } from "../orderImage/orderImageRenderer.js";
 import type { ConfirmedOrderItem } from "../orderIngest.js";
 
 const items: ConfirmedOrderItem[] = [{ orderId: "A", productName: "San pham", userShareAmount: 2290 }];
@@ -16,8 +17,8 @@ test("bat anh thi tra caption kem anh JPEG", async () => {
   const n = await buildOrdersConfirmedNotification({ ...base, imageEnabled: true });
   assert.equal(n.text, "CAPTION");
   assert.ok(n.image, "phai co anh");
-  assert.equal(n.image?.width, 1408);
-  assert.equal(n.image?.height, 768);
+  assert.equal(n.image?.width, ORDER_IMAGE_WIDTH);
+  assert.equal(n.image?.height, ORDER_IMAGE_HEIGHT);
   assert.ok(n.image?.filename.endsWith(".jpg"));
 });
 

@@ -3,10 +3,23 @@ import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import jpeg from "jpeg-js";
 import type { OrderImageView } from "./orderImageLayout.js";
+import { renderOrderCountBadge } from "./orderCountBadge.js";
 
-/** Khung anh = dung mot nua template goc 2816x1536 cua chu bot. */
-export const ORDER_IMAGE_WIDTH = 1408;
-export const ORDER_IMAGE_HEIGHT = 768;
+/**
+ * Khung anh = dung kich thuoc goc cua file template chu bot gui. Render o dung kich thuoc nay
+ * de nen khong bi phong to lam nhoe.
+ *
+ * DOI TEMPLATE DO PHAN GIAI CAO HON: chi can doi 2 hang so nay cho khop file moi. Toan bo toa
+ * do/co chu ben duoi viet trong he thiet ke 1024x572 roi nhan voi K, nen tu dong giãn theo.
+ */
+export const ORDER_IMAGE_WIDTH = 1024;
+export const ORDER_IMAGE_HEIGHT = 572;
+
+/** He toa do thiet ke - moi hang so hinh hoc duoi day deu tinh theo khung nay. */
+const BASE_WIDTH = 1024;
+const K = ORDER_IMAGE_WIDTH / BASE_WIDTH;
+/** Doi 1 so trong he thiet ke sang pixel that. */
+const u = (n: number): number => Math.round(n * K);
 
 const JPEG_QUALITY = 88;
 
@@ -23,46 +36,35 @@ const readAsset = (file: string): Buffer => readFileSync(new URL(file, ASSETS));
 const dataUri = (file: string, mime: string): string =>
   `data:${mime};base64,${readAsset(file).toString("base64")}`;
 
-// Nap 1 lan luc import module: 3 font + 2 anh, tong ~500KB. Doc lai moi lan render se them
-// ~100ms/anh ma khong duoc gi.
+// Nap 1 lan luc import module. Doc lai moi lan render se them ~100ms/anh ma khong duoc gi.
 const BG = dataUri("bg.jpg", "image/jpeg");
 const BAG = dataUri("moneybag.png", "image/png");
 const FONTS = [
-  {
-    name: "Display",
-    data: readAsset("PlayfairDisplay-Bold.ttf"),
-    weight: 700 as const,
-    style: "normal" as const,
-  },
-  {
-    name: "Body",
-    data: readAsset("BeVietnamPro-Regular.ttf"),
-    weight: 400 as const,
-    style: "normal" as const,
-  },
-  {
-    name: "Body",
-    data: readAsset("BeVietnamPro-Bold.ttf"),
-    weight: 700 as const,
-    style: "normal" as const,
-  },
+  { name: "M", data: readAsset("Montserrat-Bold.ttf"), weight: 700 as const, style: "normal" as const },
+  { name: "M", data: readAsset("Montserrat-ExtraBold.ttf"), weight: 800 as const, style: "normal" as const },
 ];
 
 /**
- * Toa do NGANG do truc tiep tu 2 file template cua chu bot, khong uoc luong. Khe so don la
- * khoang trang giua chu "CO" (het o x=1009 he 2816) va chu vang "DON" (bat dau x=1202).
+ * Toa do NGANG do TRUC TIEP tu file template: khe so don la khoang trang giua chu trang "BAN CO"
+ * (het o x=371) va chu vang "DON" (bat dau o x=462), dong 2 cua tieu de nam trong dai y 96-138.
  *
- * Toa do DOC thi KHONG lay tu template: ban dau de the cao 400 theo dung anh mau, ket qua la
- * the rong ruot con o Tong cong + dong so du bi don vao 159px cuoi va chi chua 10px mep duoi.
+ * Toa do DOC cua phan noi dung thi KHONG lay tu template (template chi co tieu de + trang tri):
+ * giu dung ty le da duyet o ban truoc, co day xuong mot chut vi tieu de moi ket thuc thap hon.
  */
-const SLOT = { cx: 552, cy: 150, w: 96 };
-const CARD = { y: 206, h: 340, w: 395, xs: [90, 508, 927] };
+/**
+ * Khe so don. cx/cy va fontSize do bang cach so net chu THAT voi chu hoa cua tieu de in san:
+ * chu hoa "B"/"N"/"C" cua "BẠN CÓ" nam o y 100-133 (cao 34, chan 133), nen so phai cao 34 va
+ * chan cung o 133 thi moi doc ra nhu cung mot cau. fontSize 46 cho net cao dung 34 voi
+ * Montserrat ExtraBold; hop cao 54 de con cho cho bong do.
+ */
+const SLOT = { cx: 416, cy: 116, w: 90, h: 54, fontSize: 46 };
+const CARD = { y: 160, h: 246, w: 287, xs: [65, 369, 673] };
 const CARD_GAP = CARD.xs[1] - CARD.xs[0] - CARD.w;
-const OVERFLOW_Y = 552;
-const BAR = { x: 381, y: 586, w: 622, h: 78 };
-const BAL = { y: 678, h: 50 };
-const BAG_IN_BAR = { w: 34, h: 47 };
-const BAG_IN_BALANCE = { w: 23, h: 32 };
+const OVERFLOW_Y = 410;
+const BAR = { x: 277, y: 434, w: 470, h: 56 };
+const BAL = { y: 500, h: 36 };
+const BAG_IN_BAR = { w: 25, h: 34 };
+const BAG_IN_BALANCE = { w: 17, h: 23 };
 
 type SatoriNode = Parameters<typeof satori>[0];
 
@@ -75,26 +77,26 @@ const img = (style: Record<string, unknown>, src: string): SatoriNode =>
 function slotLeft(count: number, i: number): number {
   if (count >= CARD.xs.length) return CARD.xs[i];
   const groupW = count * CARD.w + (count - 1) * CARD_GAP;
-  return Math.round((ORDER_IMAGE_WIDTH - groupW) / 2) + i * (CARD.w + CARD_GAP);
+  return Math.round((BASE_WIDTH - groupW) / 2) + i * (CARD.w + CARD_GAP);
 }
 
 function cardNode(name: string, amountText: string, index: number, left: number): SatoriNode {
   return h(
     {
       position: "absolute",
-      left,
-      top: CARD.y,
-      width: CARD.w,
-      height: CARD.h,
+      left: u(left),
+      top: u(CARD.y),
+      width: u(CARD.w),
+      height: u(CARD.h),
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      padding: "22px 20px",
-      borderRadius: 30,
-      border: "2px solid #caecdb",
+      padding: `${u(16)}px ${u(15)}px`,
+      borderRadius: u(22),
+      border: `${Math.max(1, u(2))}px solid #caecdb`,
       backgroundImage: "linear-gradient(180deg, #fdfffe 0%, #e4f1e7 100%)",
-      boxShadow: "0 10px 26px rgba(90,120,100,0.18)",
+      boxShadow: `0 ${u(7)}px ${u(19)}px rgba(90,120,100,0.18)`,
     },
     [
       h(
@@ -103,42 +105,47 @@ function cardNode(name: string, amountText: string, index: number, left: number)
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          width: 50,
-          height: 50,
-          borderRadius: 25,
-          marginBottom: 16,
+          width: u(36),
+          height: u(36),
+          borderRadius: u(18),
+          marginBottom: u(11),
           backgroundImage: "linear-gradient(180deg,#f7d294,#e2a555)",
           color: "#ffffff",
-          fontFamily: "Display",
-          fontSize: 28,
+          fontFamily: "M",
+          fontWeight: 800,
+          fontSize: u(19),
         },
         String(index)
       ),
       // Chieu cao CO DINH -> huy hieu va so tien thang hang giua 3 the du ten dai ngan khac nhau.
-      h({ display: "flex", height: 158, alignItems: "center", justifyContent: "center", flexShrink: 0 }, [
-        // lineClamp CHI an khi display la "block". De "flex" thi satori im lang bo qua, ten dai
-        // tran ra 5 dong va day so tien ra khoi the. Co test chan.
-        h(
-          {
-            display: "block",
-            fontFamily: "Body",
-            fontSize: 25,
-            lineHeight: 1.32,
-            color: "#2f3e35",
-            textAlign: "center",
-            lineClamp: 4,
-          },
-          name
-        ),
-      ]),
+      h(
+        { display: "flex", height: u(110), alignItems: "center", justifyContent: "center", flexShrink: 0 },
+        [
+          // lineClamp CHI an khi display la "block". De "flex" thi satori im lang bo qua, ten dai
+          // tran them dong va day so tien ra khoi the. Co test chan.
+          h(
+            {
+              display: "block",
+              fontFamily: "M",
+              fontWeight: 700,
+              fontSize: u(17),
+              lineHeight: 1.32,
+              color: "#2f3e35",
+              textAlign: "center",
+              lineClamp: 4,
+            },
+            name
+          ),
+        ]
+      ),
       h(
         {
           display: "flex",
-          fontFamily: "Body",
-          fontWeight: 700,
-          fontSize: 44,
+          fontFamily: "M",
+          fontWeight: 800,
+          fontSize: u(30),
           color: "#c2762a",
-          marginTop: 10,
+          marginTop: u(7),
         },
         amountText
       ),
@@ -150,13 +157,13 @@ function balanceNode(view: OrderImageView): SatoriNode {
   const cText = "#4a3a24";
   const cNum = "#b45f0c";
   const tail = view.canWithdraw
-    ? h({ display: "flex", alignItems: "center", gap: 7, color: cText }, [
+    ? h({ display: "flex", alignItems: "center", gap: u(5), color: cText }, [
         h({ display: "flex" }, "Có thể rút tiền"),
-        img({ width: BAG_IN_BALANCE.w, height: BAG_IN_BALANCE.h }, BAG),
+        img({ width: u(BAG_IN_BALANCE.w), height: u(BAG_IN_BALANCE.h) }, BAG),
       ])
     : h({ display: "flex", alignItems: "center", color: cText }, [
         h({ display: "flex" }, "Tích luỹ thêm"),
-        h({ display: "flex", color: cNum, marginLeft: 7, marginRight: 7 }, view.missingText ?? ""),
+        h({ display: "flex", fontWeight: 800, color: cNum, marginLeft: u(5), marginRight: u(5) }, view.missingText ?? ""),
         h({ display: "flex" }, "để rút tiền"),
       ]);
 
@@ -164,9 +171,9 @@ function balanceNode(view: OrderImageView): SatoriNode {
     {
       position: "absolute",
       left: 0,
-      top: BAL.y,
+      top: u(BAL.y),
       width: ORDER_IMAGE_WIDTH,
-      height: BAL.h,
+      height: u(BAL.h),
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -178,20 +185,20 @@ function balanceNode(view: OrderImageView): SatoriNode {
         {
           display: "flex",
           alignItems: "center",
-          gap: 9,
-          height: BAL.h,
-          padding: "0 30px",
-          borderRadius: BAL.h / 2,
+          gap: u(6),
+          height: u(BAL.h),
+          padding: `0 ${u(22)}px`,
+          borderRadius: u(BAL.h / 2),
           backgroundColor: "#fdfaf2",
-          border: "2px solid #f2d9ae",
-          boxShadow: "0 5px 14px rgba(150,95,30,0.18)",
-          fontFamily: "Body",
+          border: `${Math.max(1, u(2))}px solid #f2d9ae`,
+          boxShadow: `0 ${u(4)}px ${u(10)}px rgba(150,95,30,0.18)`,
+          fontFamily: "M",
           fontWeight: 700,
-          fontSize: 27,
+          fontSize: u(19),
         },
         [
           h({ display: "flex", color: cText }, "Số dư khả dụng:"),
-          h({ display: "flex", color: cNum }, view.availableText),
+          h({ display: "flex", fontWeight: 800, color: cNum }, view.availableText),
           h({ display: "flex", color: cText, opacity: 0.7 }, "—"),
           tail,
         ]
@@ -201,25 +208,25 @@ function balanceNode(view: OrderImageView): SatoriNode {
 }
 
 function buildTree(view: OrderImageView): SatoriNode {
+  // Con so don duoc ve rieng bang SVG (gradient + vien trang mo + bong do) roi nhung vao nhu
+  // mot anh - satori khong lam duoc ca ba hieu ung nay cung luc. Xem orderCountBadge.ts.
+  const badge = renderOrderCountBadge({
+    count: view.orderCount,
+    width: u(SLOT.w),
+    height: u(SLOT.h),
+    fontSize: u(SLOT.fontSize),
+  });
+
   const children: SatoriNode[] = [
-    // Chu vang in san tren template co bong do toi moi noi duoc. Khong co textShadow thi chu
-    // sang dat tran tren nen cam se CHIM - cang sang cang chim.
-    h(
+    img(
       {
         position: "absolute",
-        left: SLOT.cx - SLOT.w / 2,
-        top: SLOT.cy - 34,
-        width: SLOT.w,
-        height: 68,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "Display",
-        fontSize: 72,
-        color: "#ffd79b",
-        textShadow: "0 3px 7px rgba(132,72,14,0.55)",
+        left: u(SLOT.cx - SLOT.w / 2),
+        top: u(SLOT.cy - SLOT.h / 2),
+        width: u(SLOT.w),
+        height: u(SLOT.h),
       },
-      String(view.orderCount)
+      `data:image/png;base64,${badge.toString("base64")}`
     ),
 
     ...view.cards.map((c, i) => cardNode(c.name, c.amountText, c.index, slotLeft(view.cards.length, i))),
@@ -227,25 +234,23 @@ function buildTree(view: OrderImageView): SatoriNode {
     h(
       {
         position: "absolute",
-        left: BAR.x,
-        top: BAR.y,
-        width: BAR.w,
-        height: BAR.h,
+        left: u(BAR.x),
+        top: u(BAR.y),
+        width: u(BAR.w),
+        height: u(BAR.h),
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: 13,
-        borderRadius: BAR.h / 2,
-        border: "2px solid #ffe4bb",
+        gap: u(9),
+        borderRadius: u(BAR.h / 2),
+        border: `${Math.max(1, u(2))}px solid #ffe4bb`,
         backgroundImage: "linear-gradient(180deg,#feddb0 0%,#e99c56 100%)",
-        boxShadow: "0 8px 20px rgba(190,120,50,0.25)",
+        boxShadow: `0 ${u(6)}px ${u(15)}px rgba(190,120,50,0.25)`,
       },
       [
-        h({ display: "flex", fontFamily: "Display", fontSize: 39, color: "#ffffff" }, "Tổng cộng:"),
-        h({ display: "flex", fontFamily: "Display", fontSize: 41, color: "#fff4d2" }, view.totalText),
-        // Tui tien nam TRONG o. Ban in san tren template da duoc xoa khi chuan bi bg.jpg - neu
-        // khong, phan duoi cua no se tho ra ngoai o.
-        img({ width: BAG_IN_BAR.w, height: BAG_IN_BAR.h, marginLeft: 2 }, BAG),
+        h({ display: "flex", fontFamily: "M", fontWeight: 800, fontSize: u(27), color: "#ffffff" }, "Tổng cộng:"),
+        h({ display: "flex", fontFamily: "M", fontWeight: 800, fontSize: u(29), color: "#fff4d2" }, view.totalText),
+        img({ width: u(BAG_IN_BAR.w), height: u(BAG_IN_BAR.h), marginLeft: u(1) }, BAG),
       ]
     ),
 
@@ -258,15 +263,15 @@ function buildTree(view: OrderImageView): SatoriNode {
         {
           position: "absolute",
           left: 0,
-          top: OVERFLOW_Y,
+          top: u(OVERFLOW_Y),
           width: ORDER_IMAGE_WIDTH,
-          height: 24,
+          height: u(18),
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "Body",
+          fontFamily: "M",
           fontWeight: 700,
-          fontSize: 21,
+          fontSize: u(15),
           color: "#9c5f18",
         },
         `+ ${view.extraCount} đơn khác`
@@ -296,7 +301,7 @@ export async function renderOrdersImage(view: OrderImageView): Promise<RenderedO
   });
   const raster = new Resvg(svg, { fitTo: { mode: "width", value: ORDER_IMAGE_WIDTH } }).render();
   // resvg CHI xuat PNG (~690KB/anh). Lay pixel RGBA tho roi ma hoa JPEG bang jpeg-js (thuan JS,
-  // ~20-30ms) - con ~200KB, khong them native dependency nao.
+  // ~20-30ms) - nhe hon nhieu lan, khong them native dependency nao.
   const encoded = jpeg.encode(
     { data: Buffer.from(raster.pixels), width: raster.width, height: raster.height },
     JPEG_QUALITY
