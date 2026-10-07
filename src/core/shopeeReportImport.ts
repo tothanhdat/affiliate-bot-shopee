@@ -4,7 +4,7 @@ import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
 import type { StatusTransition } from "./types.js";
-import { todayVnIso } from "./vietnamDate.js";
+import { formatVnDateIso, todayVnIso } from "./vietnamDate.js";
 
 /**
  * Import file bao cao GOC cua Shopee Affiliate (vd "AffiliateCommissionReport_*.csv" xuat tu
@@ -301,13 +301,20 @@ export function importShopeeReport(
       continue;
     }
 
-    // Ghi nhan "don moi" cho chart dashboard TRUOC moi nhanh trang thai ben duoi: don huy ngay tu
-    // lan dau se khong bao gio vao commission_entries nhung van phai dem 1 lan (xem
-    // LedgerStore.migrateCreateSeenOrdersTable). Chi lan DAU thang nen bao cao liet ke lai lich su
-    // o cac lan import sau khong dem lai.
-    ledgerStore.recordSeenOrder(requestEntry.merchant, orderId, targetStatus, todayVnIso());
-
     const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId);
+    const importDay = todayVnIso();
+
+    // Chart "Don hang moi" tren dashboard (xem LedgerStore.migrateCreateSeenOrdersTable): ghi "don moi"
+    // TRUOC moi nhanh trang thai ben duoi vi don huy ngay tu lan dau khong bao gio vao
+    // commission_entries nhung van phai dem. Chi lan DAU thang nen bao cao liet ke lai lich su khong
+    // dem lai. Don DA CO trong he thong (ghi qua CLI/form/import cu) thi khong phai don moi hom nay -
+    // ghi theo ngay entry duoc ghi nhan.
+    ledgerStore.recordSeenOrder(
+      requestEntry.merchant,
+      orderId,
+      existing ? (existing.status === "paid" ? "confirmed" : existing.status) : targetStatus,
+      existing ? formatVnDateIso(new Date(existing.createdAt)) : importDay
+    );
 
     // Bu ngay dat don cho entry da ghi TRUOC khi he thong biet doc cot nay (hoac truoc 2026-10-01).
     // Dat o day de ap dung cho MOI nhanh trang thai ben duoi - khong chi don duoc confirm. Chi ghi
@@ -359,6 +366,7 @@ export function importShopeeReport(
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
           });
           result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
+          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         } else {
           entry = ledgerStore.recordConversion({
             subId,
@@ -377,6 +385,8 @@ export function importShopeeReport(
             note: "Nhap tu bao cao Shopee (file CSV admin upload)",
           });
           result.newOrderIds.push(orderId);
+          // Don hoa toc: lan dau thay da "Hoan thanh" -> cung tinh vao cot "Chuyen Kha dung" hom nay.
+          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         }
         result.confirmedNew += 1;
         confirmedRows.push({
@@ -402,7 +412,12 @@ export function importShopeeReport(
     }
 
     if (targetStatus === "reversed") {
-      if (!existing) continue; // chua tung ghi nhan - khong co gi de xu ly.
+      if (!existing) {
+        // Chua tung ghi nhan - khong co tien de huy, nhung van dem vao cot "Da huy" cua chart dashboard
+        // DUNG 1 LAN (ngay dau thay); cac lan import sau van liet ke don nay se bi INSERT OR IGNORE bo qua.
+        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
+        continue;
+      }
       if (existing.status !== "pending") {
         if (existing.status === "confirmed" || existing.status === "paid") {
           result.errors.push(
@@ -418,6 +433,7 @@ export function importShopeeReport(
         );
         result.reversedCount += 1;
         result.statusTransitions.push({ orderId, from: "pending", to: "reversed" });
+        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
       } catch (err) {
         const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
         result.errors.push(`[${orderId}] ${msg}`);

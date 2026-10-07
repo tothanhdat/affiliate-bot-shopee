@@ -349,11 +349,15 @@ test("GET /admin/dashboard: moi the co chip nhom cua rieng no, nam TRONG the", a
   const cookie = await loginAndGetCookie(baseUrl);
   const html = await fetch(`${baseUrl}/admin/dashboard`, { headers: { cookie } }).then((r) => r.text());
 
-  // 12 the -> 12 chip (khong con hang tieu de rieng cho nhom: tren man hep moi chip an tron 1 hang).
-  assert.equal(html.match(/class="kpi-chip"/g)?.length, 12);
+  // 9 the -> 9 chip (khong con hang tieu de rieng cho nhom: tren man hep moi chip an tron 1 hang).
+  assert.equal(html.match(/class="kpi-chip"/g)?.length, 9);
   // Chip phai nam TRONG the: hang dau cua the gom nhan + chip.
   assert.match(html, /class="kpi-top">\s*<span class="kpi-label">/);
-  // 4 nhom, moi nhom 3 the.
+  // 3 nhom, moi nhom 3 the = moi hang cua luoi 3 cot dung 1 nhom.
+  assert.equal(html.match(/>Tiền</g)?.length, 3);
+  assert.equal(html.match(/>Đơn hàng &amp; rút tiền</g)?.length, 3);
   assert.equal(html.match(/>Hoạt động bot</g)?.length, 3);
+  // 3 the da bo (2026-10-07) khong duoc quay lai.
+  assert.doesNotMatch(html, /Đã chi trả|Tỉ lệ lỗi|Đơn huỷ</);
   cleanup();
 });

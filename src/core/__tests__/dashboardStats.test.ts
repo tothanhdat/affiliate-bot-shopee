@@ -201,38 +201,60 @@ test("computeDashboardStats: ky rong -> tra ve toan so 0, khong crash", () => {
   assert.equal(stats.money.owedToUsers, 0);
   assert.equal(stats.orders.newCount, 0);
   assert.equal(stats.activity.linkCount, 0);
-  // Khong co luot nao thi ti le loi phai la 0, KHONG phai NaN (0/0) - NaN se in ra "NaN%" cho admin.
-  assert.equal(stats.activity.errorRatePercent, 0);
+  assert.equal(stats.activity.newUsers, 0);
   assert.equal(stats.charts.ordersByDay.days.length, 7);
-  assert.deepEqual(stats.charts.ordersByDay.series.confirmed, [0, 0, 0, 0, 0, 0, 0]);
-  assert.deepEqual(stats.charts.ordersByDay.series.reversed, [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(stats.charts.ordersByDay.newOrders, [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(stats.charts.ordersByDay.confirmed, [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(stats.charts.ordersByDay.reversed, [0, 0, 0, 0, 0, 0, 0]);
   assert.equal(stats.charts.topUsers.length, 0);
 
   logStore.close();
   ledgerStore.close();
 });
 
-test("computeDashboardStats: chart don moi dem theo NGAY IMPORT + trang thai luc import, KHONG theo order_date", () => {
+test("computeDashboardStats: chart don hang = lich su import (don moi / chuyen Kha dung / da huy) theo NGAY IMPORT", () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
 
-  // order_date cua cac don khac xa ngay import - chart khong duoc nhin vao no.
+  // order_date khac xa ngay import - chart khong duoc nhin vao no.
   seedEntry(ledgerStore, { orderId: "A1", orderDate: "2026-09-01" });
-  ledgerStore.recordSeenOrder("shopee", "A1", "confirmed", "2026-09-30");
-  ledgerStore.recordSeenOrder("shopee", "A2", "pending", "2026-09-30");
-  // Don MOI ma da huy ngay lan dau: khong co trong commission_entries nhung van phai dem.
+  // 30/09: 2 don moi (A1 cho xac nhan, A2 hoa toc - lan dau da Kha dung).
+  ledgerStore.recordSeenOrder("shopee", "A1", "pending", "2026-09-30");
+  ledgerStore.recordSeenOrder("shopee", "A2", "confirmed", "2026-09-30");
+  ledgerStore.recordOrderStatusEvent("shopee", "A2", "confirmed", "2026-09-30");
+  // 01/10: A1 chuyen Kha dung; A3 la don moi huy ngay.
+  ledgerStore.recordOrderStatusEvent("shopee", "A1", "confirmed", "2026-10-01");
   ledgerStore.recordSeenOrder("shopee", "A3", "reversed", "2026-10-01");
+  ledgerStore.recordOrderStatusEvent("shopee", "A3", "reversed", "2026-10-01");
 
   const stats = computeDashboardStats(ledgerStore, logStore, "7d", new Date("2026-10-01T05:00:00Z"));
-  const { days, series } = stats.charts.ordersByDay;
+  const { days, newOrders, confirmed, reversed } = stats.charts.ordersByDay;
+  const at = (arr: number[], day: string) => arr[days.indexOf(day)];
 
-  assert.equal(series.confirmed[days.indexOf("2026-09-30")], 1);
-  assert.equal(series.pending[days.indexOf("2026-09-30")], 1);
-  assert.equal(series.reversed[days.indexOf("2026-10-01")], 1);
+  assert.equal(at(newOrders, "2026-09-30"), 2);
+  assert.equal(at(confirmed, "2026-09-30"), 1); // don hoa toc nam o CA 2 cot
+  assert.equal(at(newOrders, "2026-10-01"), 1);
+  assert.equal(at(confirmed, "2026-10-01"), 1); // A1 cho -> Kha dung
+  assert.equal(at(reversed, "2026-10-01"), 1);
   // Ngay khong import -> rong.
-  assert.equal(series.confirmed[days.indexOf("2026-09-29")], 0);
+  assert.equal(at(newOrders, "2026-09-29"), 0);
+  // The KPI "Don moi" cung nguon voi cot "Don moi".
+  assert.equal(stats.orders.newCount, 3);
 
   logStore.close();
+  ledgerStore.close();
+});
+
+test("recordOrderStatusEvent: don huy chi tinh cho NGAY DAU ghi nhan huy, import de hom sau khong tinh lai", () => {
+  const ledgerStore = new LedgerStore(":memory:");
+
+  assert.equal(ledgerStore.recordOrderStatusEvent("shopee", "H1", "reversed", "2026-10-01"), true);
+  assert.equal(ledgerStore.recordOrderStatusEvent("shopee", "H1", "reversed", "2026-10-02"), false);
+
+  assert.deepEqual(ledgerStore.countOrderStatusEventsByDay("2026-10-01", "2026-10-05"), [
+    { day: "2026-10-01", toStatus: "reversed", count: 1 },
+  ]);
+
   ledgerStore.close();
 });
 
@@ -269,7 +291,7 @@ test("computeDashboardStats: tach don pending va tien treo", () => {
   ledgerStore.close();
 });
 
-test("computeDashboardStats: ti le loi tu requests.db", () => {
+test("computeDashboardStats: luot tao link + user hoat dong tu requests.db", () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
 
@@ -283,8 +305,6 @@ test("computeDashboardStats: ti le loi tu requests.db", () => {
 
   assert.equal(stats.activity.linkCount, 4);
   assert.equal(stats.activity.successCount, 3);
-  assert.equal(stats.activity.failedCount, 1);
-  assert.equal(stats.activity.errorRatePercent, 25);
   assert.equal(stats.activity.activeUsers, 2);
 
   logStore.close();
@@ -349,6 +369,50 @@ test("computeDashboardStats: top user kem ten hien thi khi da co ho so", () => {
   // LEFT JOIN chu khong phai JOIN: user chua co ho so VAN phai nam trong danh sach.
   assert.equal(top[1].userId, "u-khong-ten");
   assert.equal(top[1].displayName, null);
+
+  logStore.close();
+  ledgerStore.close();
+});
+
+test("LedgerStore khoi dong: don cu bi dem nham la 'don moi' (ngay import > ngay ghi entry) duoc keo ve ngay ghi entry", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "ledger-"));
+  const path = join(dir, "ledger.db");
+  try {
+    const first = new LedgerStore(path);
+    const entry = seedEntry(first, { orderId: "OLD" });
+    (first as unknown as { db: { prepare(sql: string): { run(...a: unknown[]): void } } }).db
+      .prepare("UPDATE commission_entries SET created_at = ? WHERE id = ?")
+      .run("2026-09-01T03:00:00.000Z", entry.id);
+    // Ban code 2026-10-06 ghi nham ngay import hom nay cho don da co tu truoc.
+    first.recordSeenOrder("shopee", "OLD", "confirmed", "2026-10-06");
+    first.close();
+
+    const reopened = new LedgerStore(path);
+    assert.deepEqual(reopened.countSeenOrdersByDayAndStatus("2000-01-01", "2999-12-31"), [
+      { day: "2026-09-01", status: "confirmed", count: 1 },
+    ]);
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("computeDashboardStats: 'User moi' = user LAN DAU join nhom Zalo (gop moi nhom), khong phai user co don", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+
+  // User co don/gui link nhung KHONG join nhom -> khong tinh.
+  seedEntry(ledgerStore, { orderId: "N1", userId: "buyer" });
+  // 2 user join; user-a join them nhom thu 2 (claim lan 2 tra false) -> van tinh 1.
+  ledgerStore.tryClaimGroupJoinMessage("zalo", "user-a");
+  ledgerStore.tryClaimGroupJoinMessage("zalo", "user-b");
+  ledgerStore.tryClaimGroupJoinMessage("zalo", "user-a");
+
+  const stats = computeDashboardStats(ledgerStore, logStore, "today", new Date());
+  assert.equal(stats.activity.newUsers, 2);
 
   logStore.close();
   ledgerStore.close();

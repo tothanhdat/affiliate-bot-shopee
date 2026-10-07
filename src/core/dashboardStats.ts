@@ -60,28 +60,25 @@ export interface DashboardStats {
     pendingCount: number;
     /** Phan user se nhan cua cac don pending trong ky - tien CHUA chac chan. */
     pendingAmount: number;
-    reversedCount: number;
   };
   activity: {
     linkCount: number;
     successCount: number;
-    failedCount: number;
-    /** 0 khi khong co luot nao (khong phai NaN - "NaN%" tren the KPI la loi hien thi that). */
-    errorRatePercent: number;
     activeUsers: number;
+    /** User lan dau JOIN 1 nhom Zalo bot co mat (gop moi nhom), xem LedgerStore.countFirstGroupJoins. */
+    newUsers: number;
   };
   withdrawals: {
     /** TOAN THOI GIAN: so yeu cau rut dang cho admin duyet. */
     pendingCount: number;
     pendingAmount: number;
-    /** Trong ky: tien da chuyen khoan xong. */
-    paidAmount: number;
-    paidCount: number;
-    newUsers: number;
-    totalUsers: number;
   };
   charts: {
-    ordersByDay: { days: string[]; series: Record<NewOrderStatus, number[]> };
+    /**
+     * Lich su import ve thanh chart: 3 so DOC LAP moi ngay import, KHONG cong don duoc (don hoa toc
+     * nam o ca "newOrders" lan "confirmed", don moi huy ngay nam o ca "newOrders" lan "reversed").
+     */
+    ordersByDay: { days: string[]; newOrders: number[]; confirmed: number[]; reversed: number[] };
     commissionByDay: { days: string[]; commission: number[]; ownerProfit: number[] };
     statusBreakdown: Array<{ status: CommissionStatus; count: number }>;
     linksByDay: { days: string[]; success: number[]; failed: number[] };
@@ -175,9 +172,6 @@ function spreadByDay<T>(dayKeys: string[], rows: T[], keyOf: (row: T) => string,
   return dayKeys.map((day) => map.get(day) ?? 0);
 }
 
-export const NEW_ORDER_STATUSES = ["pending", "confirmed", "reversed"] as const;
-export type NewOrderStatus = (typeof NEW_ORDER_STATUSES)[number];
-
 export function computeDashboardStats(
   ledgerStore: LedgerStore,
   logStore: LogStore,
@@ -192,32 +186,34 @@ export function computeDashboardStats(
   const pending = ledgerStore.getPendingOrdersInRange(fromKey, toKey);
   const statusRows = ledgerStore.countEntriesByStatus(fromKey, toKey);
   const newOrderRows = ledgerStore.countSeenOrdersByDayAndStatus(fromKey, toKey);
+  const statusEventRows = ledgerStore.countOrderStatusEventsByDay(fromKey, toKey);
   const commissionRows = ledgerStore.sumCommissionByDay(fromKey, toKey);
   const topUsers = ledgerStore.topUsersByCommission(fromKey, toKey, TOP_USERS_LIMIT);
-  const paid = ledgerStore.getPaidWithdrawalTotal(fromKey, toKey);
 
   const requestTotals = logStore.getRequestTotals(fromKey, toKey);
   const requestRows = logStore.countRequestsByDayAndOutcome(fromKey, toKey);
-  const newUsers = logStore.countNewUsers(fromKey, toKey);
+  const newUsers = ledgerStore.countFirstGroupJoins(fromKey, toKey);
 
   const statusCount = (status: CommissionStatus) =>
     statusRows.find((r) => r.status === status)?.count ?? 0;
 
-  // Chart "Don hang moi": theo NGAY IMPORT va trang thai LUC IMPORT (khong co "paid" - do la trang
-  // thai sau nay). Ngay khong import thi cot rong, chu y chap nhan.
-  const series = Object.fromEntries(
-    NEW_ORDER_STATUSES.map((status) => [
-      status,
-      spreadByDay(
-        dayKeys,
-        newOrderRows.filter((r) => r.status === status),
-        (r) => r.day,
-        (r) => r.count
-      ),
-    ])
-  ) as Record<NewOrderStatus, number[]>;
-
-  const failedCount = requestTotals.total - requestTotals.success;
+  // Chart "Don hang moi": theo NGAY IMPORT. Ngay khong import thi cot rong, chu y chap nhan.
+  const ordersByDay = {
+    days: dayKeys,
+    newOrders: spreadByDay(dayKeys, newOrderRows, (r) => r.day, (r) => r.count),
+    confirmed: spreadByDay(
+      dayKeys,
+      statusEventRows.filter((r) => r.toStatus === "confirmed"),
+      (r) => r.day,
+      (r) => r.count
+    ),
+    reversed: spreadByDay(
+      dayKeys,
+      statusEventRows.filter((r) => r.toStatus === "reversed"),
+      (r) => r.day,
+      (r) => r.count
+    ),
+  };
 
   return {
     range: resolved,
@@ -232,25 +228,19 @@ export function computeDashboardStats(
       newCount: newOrderRows.reduce((sum, r) => sum + r.count, 0),
       pendingCount: pending.count,
       pendingAmount: pending.userShareAmount,
-      reversedCount: statusCount("reversed"),
     },
     activity: {
       linkCount: requestTotals.total,
       successCount: requestTotals.success,
-      failedCount,
-      errorRatePercent: requestTotals.total === 0 ? 0 : round1((failedCount / requestTotals.total) * 100),
       activeUsers: requestTotals.activeUsers,
+      newUsers,
     },
     withdrawals: {
       pendingCount: outstanding.pendingWithdrawalCount,
       pendingAmount: outstanding.pendingWithdrawalAmount,
-      paidAmount: paid.amount,
-      paidCount: paid.count,
-      newUsers,
-      totalUsers: outstanding.totalUsers,
     },
     charts: {
-      ordersByDay: { days: dayKeys, series },
+      ordersByDay,
       commissionByDay: {
         days: dayKeys,
         commission: spreadByDay(dayKeys, commissionRows, (r) => r.day, (r) => r.commission),
@@ -277,8 +267,4 @@ export function computeDashboardStats(
       topUsers,
     },
   };
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
 }

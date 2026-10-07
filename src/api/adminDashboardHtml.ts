@@ -2,7 +2,6 @@ import {
   DASHBOARD_RANGES,
   type DashboardRange,
   type DashboardStats,
-  type NewOrderStatus,
 } from "../core/dashboardStats.js";
 import type { CommissionStatus } from "../core/types.js";
 import { escapeHtml, formatVnd } from "./htmlHelpers.js";
@@ -52,10 +51,22 @@ const STATUS_CHART_META: Array<{ status: CommissionStatus; label: string; color:
   { status: "reversed", label: "Đã huỷ", color: "#dc2626" },
 ];
 
-/** Chart "Don hang moi": chi 3 trang thai (khong co "Da rut" - do la trang thai sau nay, khong phai luc import). */
-const NEW_ORDER_CHART_META = STATUS_CHART_META.filter((m) => m.status !== "paid") as Array<
-  (typeof STATUS_CHART_META)[number] & { status: NewOrderStatus }
->;
+/**
+ * Chart "Don hang moi" = lich su import ve thanh chart: 3 DUONG (cung kieu chart "Hoa hồng theo
+ * ngày", yeu cau user 2026-10-07). KHONG xep chong/khong cong don - 3 so khong cong duoc (don hoa toc
+ * nam o ca "Đơn mới" lan "Chuyển Khả dụng"). Cap xanh-la/do truot CVD nen "Đã huỷ" ve NET DUT lam
+ * kenh phan biet thu hai, cung voi legend chu + tooltip + bang so lieu.
+ */
+const ORDER_FLOW_CHART_META: Array<{
+  key: "newOrders" | "confirmed" | "reversed";
+  label: string;
+  color: string;
+  dashed?: boolean;
+}> = [
+  { key: "newOrders", label: "Đơn mới", color: "#2a78d6" }, // = COMMISSION_COLOR, cap xanh/cam/do da qua validator
+  { key: "confirmed", label: "Chuyển Khả dụng", color: "#16a34a" },
+  { key: "reversed", label: "Đã huỷ", color: "#dc2626", dashed: true },
+];
 
 /** Hoa hong goc vs phan chu bot giu - 2 series categorical, da qua validator (ΔE 24.7 CVD). */
 const COMMISSION_COLOR = "#2a78d6";
@@ -84,19 +95,19 @@ const TOP_USER_COLOR = "#2a78d6";
 /** Icon cua chip tieu de nhom the KPI - cung bo emoji voi sidebar (xem NAV_ITEMS trong adminHtml.ts). */
 const GROUP_ICONS: Record<string, string> = {
   Tiền: "💰",
-  "Đơn hàng": "📦",
+  "Đơn hàng & rút tiền": "📦",
   "Hoạt động bot": "🤖",
-  "Rút tiền & người dùng": "💸",
 };
 
 export function renderAdminDashboardPage(stats: DashboardStats): string {
   const chartData = {
     ordersByDay: {
       days: stats.charts.ordersByDay.days.map(toDdMm),
-      series: NEW_ORDER_CHART_META.map((meta) => ({
+      series: ORDER_FLOW_CHART_META.map((meta) => ({
         label: meta.label,
         color: meta.color,
-        data: stats.charts.ordersByDay.series[meta.status],
+        data: stats.charts.ordersByDay[meta.key],
+        dashed: meta.dashed === true,
       })),
     },
     commissionByDay: {
@@ -145,16 +156,17 @@ ${renderKpiGrid(stats)}
   <div class="card chart-card">
     <div class="chart-head">
       <h2>Đơn hàng mới mỗi ngày</h2>
-      <p class="chart-sub">Số đơn <strong>lần đầu xuất hiện</strong> trong báo cáo Shopee được import vào ngày đó, theo trạng thái lúc import (Chờ xác nhận / Khả dụng / Đã huỷ). Đơn đã từng có trong hệ thống không đếm lại. Ngày không import báo cáo thì cột để trống. Bấm vào tên trạng thái ở chú thích để ẩn/hiện.</p>
+      <p class="chart-sub">Lịch sử import báo cáo Shopee theo ngày. <strong>Đơn mới</strong>: đơn lần đầu xuất hiện trong hệ thống. <strong>Chuyển Khả dụng</strong>: đơn từ Chờ xác nhận sang Khả dụng, gồm cả đơn hoả tốc vừa xuất hiện đã Khả dụng. <strong>Đã huỷ</strong>: chỉ tính vào ngày đầu tiên ghi nhận huỷ. Một đơn hoả tốc có mặt ở cả 2 cột nên 3 cột không cộng thành tổng. Ngày không import thì để trống.</p>
     </div>
     <div class="chart-box chart-box-tall"><canvas id="chart-orders"></canvas></div>
     ${renderDayTable(
       stats.charts.ordersByDay.days,
-      NEW_ORDER_CHART_META.map((m) => m.label),
+      ORDER_FLOW_CHART_META.map((m) => m.label),
       stats.charts.ordersByDay.days.map((_, i) =>
-        NEW_ORDER_CHART_META.map((m) => stats.charts.ordersByDay.series[m.status][i])
+        ORDER_FLOW_CHART_META.map((m) => stats.charts.ordersByDay[m.key][i])
       ),
-      "Chưa có đơn nào trong kỳ này."
+      "Chưa có lần import nào trong kỳ này.",
+      { showTotal: false }
     )}
   </div>
 
@@ -258,46 +270,23 @@ function renderKpiGrid(stats: DashboardStats): string {
       hint: "Toàn thời gian · tiền đã xác nhận, user chưa rút",
       tone: money.owedToUsers > 0 ? "warning" : undefined,
     },
+    // 9 the = 3 hang x 3, MOI HANG DUNG 1 NHOM (luoi KPI la 3 cot co dinh, xem dashboardStyles). Bo
+    // "Đã chi trả", "Tỉ lệ lỗi", "Đơn huỷ" (2026-10-07, yeu cau user: qua nhieu the, roi) nen phai
+    // xep lai nhom: "Chờ duyệt rút" sang hang don hang, "User mới" sang hang hoat dong bot.
     {
-      group: "Đơn hàng",
+      group: "Đơn hàng & rút tiền",
       label: "Đơn mới",
       value: formatCount(orders.newCount),
       hint: `Đơn lần đầu thấy khi import · ${periodNote}`,
     },
     {
-      group: "Đơn hàng",
+      group: "Đơn hàng & rút tiền",
       label: "Đơn chờ xác nhận",
       value: formatCount(orders.pendingCount),
       hint: `${formatVnd(orders.pendingAmount)} tiền treo, chưa chắc chắn`,
     },
     {
-      group: "Đơn hàng",
-      label: "Đơn huỷ",
-      value: formatCount(orders.reversedCount),
-      hint: `Shopee ghi huỷ/không hợp lệ · ${periodNote}`,
-      tone: orders.reversedCount > 0 ? "danger" : undefined,
-    },
-    {
-      group: "Hoạt động bot",
-      label: "Lượt tạo link",
-      value: formatCount(activity.linkCount),
-      hint: `${formatCount(activity.successCount)} thành công · ${periodNote}`,
-    },
-    {
-      group: "Hoạt động bot",
-      label: "Tỉ lệ lỗi",
-      value: `${formatPercent(activity.errorRatePercent)}%`,
-      hint: `${formatCount(activity.failedCount)} lượt không tạo được link`,
-      tone: activity.errorRatePercent >= 20 ? "danger" : undefined,
-    },
-    {
-      group: "Hoạt động bot",
-      label: "User hoạt động",
-      value: formatCount(activity.activeUsers),
-      hint: `Có gửi link · ${periodNote}`,
-    },
-    {
-      group: "Rút tiền & người dùng",
+      group: "Đơn hàng & rút tiền",
       label: "Chờ duyệt rút",
       value: formatCount(withdrawals.pendingCount),
       hint:
@@ -318,16 +307,22 @@ function renderKpiGrid(stats: DashboardStats): string {
           : undefined,
     },
     {
-      group: "Rút tiền & người dùng",
-      label: "Đã chi trả",
-      value: formatVnd(withdrawals.paidAmount),
-      hint: `${formatCount(withdrawals.paidCount)} yêu cầu · ${periodNote}`,
+      group: "Hoạt động bot",
+      label: "Lượt tạo link",
+      value: formatCount(activity.linkCount),
+      hint: `${formatCount(activity.successCount)} thành công · ${periodNote}`,
     },
     {
-      group: "Rút tiền & người dùng",
+      group: "Hoạt động bot",
+      label: "User hoạt động",
+      value: formatCount(activity.activeUsers),
+      hint: `Có gửi link · ${periodNote}`,
+    },
+    {
+      group: "Hoạt động bot",
       label: "User mới",
-      value: formatCount(withdrawals.newUsers),
-      hint: `Tổng ${formatCount(withdrawals.totalUsers)} user đã từng có đơn`,
+      value: formatCount(activity.newUsers),
+      hint: `Lần đầu vào nhóm Zalo của bot · ${periodNote}`,
     },
   ];
 
@@ -369,7 +364,9 @@ function renderDayTable(
   days: string[],
   columns: string[],
   valuesByDay: number[][],
-  emptyMessage: string
+  emptyMessage: string,
+  // Tat cot "Tong" khi cac cot khong cong don duoc (chart "Don hang moi").
+  { showTotal = true }: { showTotal?: boolean } = {}
 ): string {
   const rows = days
     .map((day, i) => {
@@ -378,7 +375,7 @@ function renderDayTable(
       if (total === 0) return "";
       return `<tr><td>${escapeHtml(toDdMm(day))}</td>${counts
         .map((c) => `<td class="num">${c}</td>`)
-        .join("")}<td class="num"><strong>${total}</strong></td></tr>`;
+        .join("")}${showTotal ? `<td class="num"><strong>${total}</strong></td>` : ""}</tr>`;
     })
     .filter(Boolean)
     .join("");
@@ -388,10 +385,10 @@ function renderDayTable(
   <table>
     <thead><tr><th>Ngày</th>${columns
       .map((c) => `<th class="num">${escapeHtml(c)}</th>`)
-      .join("")}<th class="num">Tổng</th></tr></thead>
+      .join("")}${showTotal ? `<th class="num">Tổng</th>` : ""}</tr></thead>
     <tbody>${
       rows ||
-      `<tr><td colspan="${columns.length + 2}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`
+      `<tr><td colspan="${columns.length + (showTotal ? 2 : 1)}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`
     }</tbody>
   </table>
 </details>`;
@@ -447,10 +444,6 @@ function truncateLabel(text: string, max = 22): string {
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat("vi-VN").format(value);
-}
-
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 }).format(value);
 }
 
 function labelOfStatus(status: CommissionStatus): string {
@@ -550,42 +543,40 @@ function dashboardScript(): string {
     usePointStyle: true
   };
 
-  // --- Don moi moi ngay (chart chinh): cot xep chong theo trang thai ---------
+  // --- Don hang moi moi ngay (chart chinh): 3 duong, cung kieu chart hoa hong theo ngay -----
   var ordersEl = document.getElementById("chart-orders");
   if (ordersEl) {
     new Chart(ordersEl, {
-      type: "bar",
+      type: "line",
       data: {
         labels: data.ordersByDay.days,
         datasets: data.ordersByDay.series.map(function (s) {
           return {
             label: s.label,
             data: s.data,
+            borderColor: s.color,
             backgroundColor: s.color,
-            // KHONG co khe ho giua cac doan xep chong (yeu cau user 2026-10-01: doan tren bi tach
-            // ra trong nhu mot the noi roi chu khong phai mot phan cua cot).
-            borderWidth: 0,
-            // borderSkipped "bottom" = chi bo tron 2 goc TREN cua moi doan. Doan nam duoi bi doan
-            // ke tren phu kin phan goc da bo nen khong de lai khuyet - ket qua la chi dinh cot
-            // (doan tren cung) trong ra bo tron, than cot lien mach.
-            borderRadius: 4,
-            borderSkipped: "bottom",
-            maxBarThickness: 36
+            borderWidth: 2,
+            // Kenh phan biet KHONG dua vao mau cho cap xanh-la/do (truot CVD, xem SUCCESS_COLOR):
+            // duong "Đã huỷ" la net dut.
+            borderDash: s.dashed ? [6, 4] : [],
+            // Co cham nho (khac chart hoa hong de pointRadius 0): so don la so roi rac theo tung ngay
+            // import, va ky "Hôm nay" chi co 1 diem - khong co cham thi duong 1 diem vo hinh.
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.25
           };
         })
       },
       options: {
-        scales: axes({ stacked: true }),
+        scales: axes(),
         interaction: { mode: "index", intersect: false },
         plugins: {
           legend: legend(true),
           tooltip: Object.assign({}, tooltipStyle, {
             callbacks: {
-              label: function (ctx) { return ctx.dataset.label + ": " + ctx.parsed.y + " đơn"; },
-              footer: function (items) {
-                var total = items.reduce(function (sum, i) { return sum + i.parsed.y; }, 0);
-                return "Tổng: " + total + " đơn";
-              }
+              // KHONG co dong "Tong": don hoa toc nam o 2 duong, cong lai se ra so sai.
+              label: function (ctx) { return ctx.dataset.label + ": " + ctx.parsed.y + " đơn"; }
             }
           })
         }

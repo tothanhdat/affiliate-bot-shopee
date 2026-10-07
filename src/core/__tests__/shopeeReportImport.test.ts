@@ -835,3 +835,74 @@ test("importShopeeReport: don MOI da huy ngay lan dau van duoc dem la don moi, d
     ledgerStore.close();
   }
 });
+
+test("importShopeeReport: ghi su kien cho chart - hoa toc vao 'Chuyen Kha dung', cho -> Kha dung, huy chi 1 lan", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const sub = ["zalo", "user-a", "abc", "def"];
+    const day1 = buildCsv([
+      { orderId: "F1", orderAmount: 100_000, commissionAmount: 10_000, status: "Hoàn thành", subIdParts: sub },
+      { orderId: "P1", orderAmount: 100_000, commissionAmount: 10_000, status: "Đang chờ xử lý", subIdParts: sub },
+      { orderId: "P2", orderAmount: 100_000, commissionAmount: 10_000, status: "Đang chờ xử lý", subIdParts: sub },
+    ]);
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, day1);
+
+    const all = () => ledgerStore.countOrderStatusEventsByDay("2000-01-01", "2999-12-31");
+    const count = (s: "confirmed" | "reversed") =>
+      all().filter((r) => r.toStatus === s).reduce((n, r) => n + r.count, 0);
+    assert.equal(count("confirmed"), 1); // chi don hoa toc F1
+    assert.equal(count("reversed"), 0);
+
+    const day2 = buildCsv([
+      { orderId: "F1", orderAmount: 100_000, commissionAmount: 10_000, status: "Hoàn thành", subIdParts: sub },
+      { orderId: "P1", orderAmount: 100_000, commissionAmount: 10_000, status: "Hoàn thành", subIdParts: sub },
+      { orderId: "P2", orderAmount: 100_000, commissionAmount: 10_000, status: "Đã hủy", subIdParts: sub },
+    ]);
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, day2);
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, day2); // import de
+
+    assert.equal(count("confirmed"), 2); // F1 + P1, F1 khong bi dem lai
+    assert.equal(count("reversed"), 1); // P2 dung 1 lan
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("importShopeeReport: don DA CO tu truoc (ghi tay/CLI) lan dau xuat hien trong bao cao -> KHONG tinh la don moi hom nay", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const entry = ledgerStore.recordConversion({
+      subId: "zalo-user-a-abc-def",
+      platform: "zalo",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "OLD1",
+      orderAmount: 100_000,
+      commissionAmount: 10_000,
+      status: "confirmed",
+      ...ORDER_CONFIG,
+    });
+    // Gia lap entry ghi tu lau: sua created_at ve qua khu.
+    (ledgerStore as unknown as { db: { prepare(sql: string): { run(...a: unknown[]): void } } }).db
+      .prepare("UPDATE commission_entries SET created_at = ? WHERE id = ?")
+      .run("2026-09-01T03:00:00.000Z", entry.id);
+
+    const csv = buildCsv([
+      { orderId: "OLD1", orderAmount: 100_000, commissionAmount: 10_000, status: "Hoàn thành", subIdParts: ["zalo", "user-a", "abc", "def"] },
+    ]);
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, csv);
+
+    assert.deepEqual(ledgerStore.countSeenOrdersByDayAndStatus("2000-01-01", "2999-12-31"), [
+      { day: "2026-09-01", status: "confirmed", count: 1 },
+    ]);
+    assert.deepEqual(ledgerStore.countOrderStatusEventsByDay("2000-01-01", "2999-12-31"), []);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});

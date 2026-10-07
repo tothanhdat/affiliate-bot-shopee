@@ -309,6 +309,8 @@ export class LedgerStore {
       CREATE INDEX IF NOT EXISTS idx_import_history_created ON import_history(created_at);
     `);
     this.migrateCreateSeenOrdersTable();
+    this.fixSeenOrdersBeforeEntryCreated();
+    this.migrateCreateOrderStatusEventsTable();
     // DB tao truoc khi co yeu cau dinh kem bang chung chuyen khoan (2026-08-19) se thieu cot nay.
     this.migrateAddWithdrawalProofColumn();
     // DB tao truoc khi co form ngan hang bat buoc (2026-08-20) se thieu 3 cot nay.
@@ -358,6 +360,112 @@ export class LedgerStore {
         insert.run(entry.merchant, orderId, entry.status === "paid" ? "confirmed" : entry.status, importDay, h.created_at);
       }
     }
+  }
+
+  /**
+   * Chot an toan chay MOI lan khoi dong (idempotent): 1 don khong the "lan dau thay khi import" SAU
+   * ngay no da nam trong commission_entries. Ban dau tien cua imported_orders (2026-10-06) chi backfill
+   * tu import_history, nen don ghi qua CLI / form "Ghi 1 don le" / import truoc 2026-08-23 se bi dem
+   * nham la "don moi" o lan import ke tiep. Keo import_day ve ngay entry duoc ghi (gio VN).
+   */
+  private fixSeenOrdersBeforeEntryCreated(): void {
+    this.db.exec(`
+      UPDATE imported_orders
+      SET import_day = (
+        SELECT date(MIN(e.created_at), '+7 hours') FROM commission_entries e
+        WHERE e.merchant = imported_orders.merchant AND e.order_id = imported_orders.order_id
+      )
+      WHERE import_day > (
+        SELECT date(MIN(e.created_at), '+7 hours') FROM commission_entries e
+        WHERE e.merchant = imported_orders.merchant AND e.order_id = imported_orders.order_id
+      )
+    `);
+  }
+
+  /**
+   * order_status_events (2026-10-07): moi don CHUYEN sang "confirmed" (Kha dung) hoac "reversed" (Da
+   * huy) duoc ghi DUNG 1 LAN cho moi trang thai, vao ngay import ghi nhan no - nguon cua 2 cot "Chuyen
+   * Kha dung" / "Da huy" tren chart dashboard. Gom ca don MOI ma da o trang thai do ngay lan dau (don
+   * hoa toc -> Kha dung, don huy ngay -> Da huy). PRIMARY KEY (merchant, order_id, to_status) + INSERT
+   * OR IGNORE: bao cao Shopee liet ke lai lich su nen don da huy hom qua se lai hien "Da huy" hom nay,
+   * va KHONG duoc dem lai cho hom nay (yeu cau user).
+   *
+   * Backfill 1 lan luc tao bang: truoc tu statusTransitions cua import_history (ngay that), sau do tu
+   * imported_orders co trang thai confirmed/reversed (ngay lan dau thay) - INSERT OR IGNORE nen
+   * chuyen trang thai that duoc uu tien.
+   */
+  private migrateCreateOrderStatusEventsTable(): void {
+    const existed = this.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_status_events'")
+      .get();
+    if (existed) return;
+    this.db.exec(`
+      CREATE TABLE order_status_events (
+        merchant TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        to_status TEXT NOT NULL,
+        event_day TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (merchant, order_id, to_status)
+      );
+      CREATE INDEX idx_order_status_events_day ON order_status_events(event_day);
+    `);
+    const insert = this.db.prepare(
+      "INSERT OR IGNORE INTO order_status_events (merchant, order_id, to_status, event_day, created_at) VALUES (?, ?, ?, ?, ?)"
+    );
+    const findMerchant = this.db.prepare("SELECT merchant FROM commission_entries WHERE order_id = ?");
+    const history = this.db
+      .prepare("SELECT created_at, status_transitions FROM import_history WHERE action_type = 'csv' ORDER BY created_at ASC")
+      .all() as Array<{ created_at: string; status_transitions: string }>;
+    for (const h of history) {
+      const day = new Date(new Date(h.created_at).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+      for (const t of JSON.parse(h.status_transitions) as StatusTransition[]) {
+        if (t.to !== "confirmed" && t.to !== "reversed") continue;
+        const entry = findMerchant.get(t.orderId) as { merchant: string } | undefined;
+        if (!entry) continue;
+        insert.run(entry.merchant, t.orderId, t.to, day, h.created_at);
+      }
+    }
+    this.db.exec(`
+      INSERT OR IGNORE INTO order_status_events (merchant, order_id, to_status, event_day, created_at)
+      SELECT merchant, order_id, status, import_day, created_at FROM imported_orders
+      WHERE status IN ('confirmed', 'reversed')
+    `);
+  }
+
+  /** Ghi 1 lan don chuyen sang confirmed/reversed. Tra false neu don nay da tung duoc ghi trang thai do. */
+  recordOrderStatusEvent(
+    merchant: string,
+    orderId: string,
+    toStatus: "confirmed" | "reversed",
+    eventDay: string
+  ): boolean {
+    const result = this.db
+      .prepare(
+        "INSERT OR IGNORE INTO order_status_events (merchant, order_id, to_status, event_day, created_at) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(merchant, orderId, toStatus, eventDay, new Date().toISOString());
+    return Number(result.changes) > 0;
+  }
+
+  /** So don chuyen sang confirmed/reversed theo ngay import - 2 cot con lai cua chart "Don hang moi". */
+  countOrderStatusEventsByDay(
+    fromKey: string,
+    toKey: string
+  ): Array<{ day: string; toStatus: "confirmed" | "reversed"; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT event_day AS day, to_status, COUNT(*) AS count
+         FROM order_status_events
+         WHERE event_day BETWEEN ? AND ?
+         GROUP BY event_day, to_status`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      day: r.day as string,
+      toStatus: r.to_status as "confirmed" | "reversed",
+      count: r.count as number,
+    }));
   }
 
   /**
@@ -1696,17 +1804,20 @@ export class LedgerStore {
     };
   }
 
-  /** Tien da chuyen cho user trong ky - theo paid_at (luc bam "da chuyen khoan"), gio VN. */
-  getPaidWithdrawalTotal(fromKey: string, toKey: string): { count: number; amount: number } {
+  /**
+   * User MOI cho the KPI dashboard (2026-10-07, yeu cau user): user LAN DAU duoc them vao 1 nhom
+   * Zalo bot co mat, gop moi nhom (1 user vao 2 nhom van tinh 1). Doc tu group_join_messages vi bang
+   * do da claim DUNG 1 dong/user ngay luc join (xem zalo/bot.ts maybeSendGroupJoinWelcome) - ke ca
+   * khi DM chao that bai. Chi co du lieu tu 2026-09-07 (luc co tinh nang chao join group).
+   */
+  countFirstGroupJoins(fromKey: string, toKey: string): number {
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
-         FROM withdrawal_requests
-         WHERE status = 'paid' AND paid_at IS NOT NULL
-           AND date(paid_at, '+7 hours') BETWEEN ? AND ?`
+        `SELECT COUNT(*) AS count FROM group_join_messages
+         WHERE platform = 'zalo' AND date(sent_at, '+7 hours') BETWEEN ? AND ?`
       )
       .get(fromKey, toKey) as Record<string, number>;
-    return { count: row.count, amount: row.amount };
+    return row.count;
   }
 
   /** Bu order_date cho 1 entry da ghi truoc khi biet ngay dat don. CHI ghi khi dang NULL - bao cao
