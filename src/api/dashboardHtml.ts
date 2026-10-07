@@ -9,7 +9,9 @@ import { confirmOnSubmit, copyButton, escapeHtml, formatDateTime, formatVnd, sta
  * (merchant/status la enum, so tien la number, ngay thang duoc format server-side) nen
  * khong can them buoc escape HTML - NGOAI TRU productName, do admin tu go tay nen co the
  * chua ky tu dac biet, luon di qua escapeHtml() truoc khi render.
- * Theme toi/tim tham khao 1 template artifact user cung cap (2026-08-17).
+ * Theme toi/tim tham khao 1 template artifact user cung cap (2026-08-17); lam lai 2026-10-07 theo
+ * anh tham chieu cua user: the so du to mau theo tong + "Kha dung" phat sang, hop thong bao co icon,
+ * the don chia cot co duong ke giua, "Ban nhan" vang am lam diem nhan (2026-10-07: bo ngoi sao trang tri goc the theo yeu cau user).
  */
 
 function receivedPercent(entry: CommissionEntry): string {
@@ -58,33 +60,37 @@ function pageShell(title: string, body: string): string {
 <title>${title}</title>
 <style>
   :root {
-    --bg: oklch(0.16 0.02 280);
-    /* "Kinh" (glass) card dung chung cho .card/.stat/.order-card - nen mo + backdrop-filter blur,
-       tham khao dung file thiet ke user cung (Hoa Hong Dashboard.html), gop chung 1 cap bien thay
-       vi rieng cho tung loai the vi khac biet giua chung (0.65 vs 0.7 alpha) qua nho de phan biet. */
-    --card-bg: oklch(0.21 0.025 280 / 0.65);
-    --card-border: oklch(1 0 0 / 0.07);
-    --card-shadow: 0 6px 20px oklch(0 0 0 / 0.2);
-    --text: oklch(0.92 0.01 280);
-    --text-soft: oklch(0.8 0.01 280);
-    --text-muted: oklch(0.7 0.01 280);
-    --text-dim: oklch(0.6 0.01 280);
-    --accent: oklch(0.75 0.13 300);
+    --bg: oklch(0.13 0.02 285);
+    /* "Kinh" (glass) card dung chung cho .card/.order-card/.withdraw-form - nen mo + backdrop-filter
+       blur. Ban 2026-10-07 (feedback UI cua user) sang + day hon ban cu de the noi ro khoi nen. */
+    --card-bg: oklch(0.27 0.035 290 / 0.55);
+    --card-border: oklch(1 0 0 / 0.12);
+    --card-shadow: 0 10px 30px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.06);
+    --text: oklch(0.95 0.01 280);
+    --text-soft: oklch(0.86 0.01 280);
+    --text-muted: oklch(0.74 0.015 280);
+    --text-dim: oklch(0.66 0.015 280);
+    --divider: oklch(1 0 0 / 0.1);
+    --accent: oklch(0.76 0.16 310);
     --accent-soft: oklch(1 0 0 / 0.08);
-    --success: oklch(0.8 0.14 150);
-    --success-soft: oklch(0.4 0.11 150 / 0.3);
-    --amount-positive: oklch(0.72 0.15 150);
-    --warning: oklch(0.8 0.14 70);
-    --warning-soft: oklch(0.4 0.11 70 / 0.3);
-    --amount-warning: oklch(0.75 0.14 55);
+    --success: oklch(0.8 0.15 150);
+    --success-soft: oklch(0.45 0.12 150 / 0.28);
+    --warning: oklch(0.8 0.14 65);
+    --warning-soft: oklch(0.45 0.11 65 / 0.28);
+    --info: oklch(0.88 0.04 250);
     --danger: oklch(0.8 0.14 25);
-    --danger-soft: oklch(0.4 0.11 25 / 0.3);
+    --danger-soft: oklch(0.45 0.11 25 / 0.28);
+    /* "Ban nhan" - ket qua cuoi cung cua moi don, mau vang am de la diem nhan mat dung dau tien. */
+    --highlight: oklch(0.86 0.14 85);
+    --shopee: #ee4d2d;
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
     margin: 0;
     font-family: -apple-system, "Inter", system-ui, sans-serif;
-    background: var(--bg);
+    /* Nen gradient tim (tren) -> den sau (duoi) thay vi mau phang, cac khoi glow ben duoi phu len. */
+    background: linear-gradient(180deg, oklch(0.22 0.07 295) 0%, oklch(0.15 0.035 288) 40%, var(--bg) 100%);
     color: var(--text);
     position: relative;
     min-height: 100vh;
@@ -92,31 +98,34 @@ function pageShell(title: string, body: string): string {
        thuong, tranh loi cuon tren mobile Safari neu dung overflow:hidden ca 2 chieu tren body. */
     overflow-x: hidden;
   }
-  /* Vung sang mo phia sau noi dung, tham khao theo file thiet ke user cung (Hoa Hong Dashboard.html)
-     - 3 khoi tron blur + 1 lop luoi cham mo, deu position:absolute so voi body nen khong choan
-     layout, chi lam nen do bot don dieu thay vi mau phang. */
+  /* Vung sang mo phia sau noi dung - 3 khoi tron blur + 1 lop hat sang, deu position:absolute so
+     voi body nen khong choan layout. */
   .bg-glow { position: absolute; border-radius: 50%; pointer-events: none; }
-  /* Sang hon (tang lightness/chroma/alpha) + xoay nhanh hon (22-30s -> 6-8s, bien do di chuyen
-     lon hon) so voi ban dau - ban dau qua mo/qua cham, phai nhin ky moi thay dang chuyen dong. */
   .bg-glow-1 {
     top: -200px; left: -150px; width: 600px; height: 600px;
-    background: radial-gradient(circle, oklch(0.58 0.17 300 / 0.55), transparent 70%);
+    background: radial-gradient(circle, oklch(0.58 0.17 300 / 0.5), transparent 70%);
     filter: blur(40px); animation: glow1 6s ease-in-out infinite;
   }
   .bg-glow-2 {
     top: 20%; right: -200px; width: 650px; height: 650px;
-    background: radial-gradient(circle, oklch(0.68 0.17 70 / 0.42), transparent 70%);
+    background: radial-gradient(circle, oklch(0.68 0.17 70 / 0.32), transparent 70%);
     filter: blur(50px); animation: glow2 7s ease-in-out infinite;
   }
   .bg-glow-3 {
     bottom: -250px; left: 20%; width: 700px; height: 700px;
-    background: radial-gradient(circle, oklch(0.52 0.16 260 / 0.48), transparent 70%);
+    background: radial-gradient(circle, oklch(0.52 0.16 260 / 0.42), transparent 70%);
     filter: blur(50px); animation: glow1 8s ease-in-out infinite reverse;
   }
+  /* "Hat min" tao do sau: 3 lop cham voi kich thuoc/khoang cach/do sang khac nhau, luoi lech nhau
+     nen khong ra hoa van deu tap nhu 1 lop cham duy nhat. */
   .bg-dots {
     position: absolute; inset: 0; pointer-events: none;
-    background-image: radial-gradient(oklch(1 0 0 / 0.035) 1px, transparent 1px);
-    background-size: 26px 26px;
+    background-image:
+      radial-gradient(oklch(1 0 0 / 0.05) 1px, transparent 1.5px),
+      radial-gradient(oklch(0.9 0.08 300 / 0.35) 1px, transparent 1.6px),
+      radial-gradient(oklch(1 0 0 / 0.45) 1.2px, transparent 2px);
+    background-size: 26px 26px, 113px 97px, 241px 263px;
+    background-position: 0 0, 37px 59px, 151px 23px;
   }
   @keyframes glow1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(70px, -55px) scale(1.25); } }
   @keyframes glow2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-80px, 65px) scale(1.2); } }
@@ -125,14 +134,12 @@ function pageShell(title: string, body: string): string {
     z-index: 1;
     max-width: 780px;
     margin: 0 auto;
-    padding: 2rem 1.25rem 4rem;
+    padding: 2rem 1rem 4rem;
   }
   h1 { font-size: 1.75rem; font-weight: 700; margin: 0; color: #fff; }
   .subtitle { color: var(--text-muted); font-size: 0.9375rem; margin: 0.35rem 0 0.3rem; }
   .identity-line { color: var(--text-dim); font-size: 0.8125rem; margin: 0.5rem 0 1.75rem; }
-  /* "The kinh" (glass) dung chung cho ca 3 loai the trong trang - nen mo + blur phia sau, tham
-     khao dung file thiet ke user cung (Hoa Hong Dashboard.html). */
-  .card, .totals .stat, .order-card {
+  .card, .order-card, .withdraw-form {
     background: var(--card-bg);
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
@@ -140,93 +147,132 @@ function pageShell(title: string, body: string): string {
     box-shadow: var(--card-shadow);
   }
   .card {
-    border-radius: 16px;
+    border-radius: 18px;
     padding: 1.25rem;
     margin-bottom: 1.25rem;
   }
-  .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
-  @media (max-width: 480px) { .totals { grid-template-columns: repeat(2, 1fr); } }
-  .totals .stat { border-radius: 16px; padding: 1.25rem; }
-  .stat .label {
-    font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
-    color: var(--text-dim); margin-bottom: 0.625rem;
+  /* 4 the so du: moi the 1 tong mau rieng (nen pha mau + vien + so cung tong) de phan biet ngay ca
+     khi chua doc nhan. "Kha dung" la the DUY NHAT phat sang (vien sang + glow + so phat sang) - day
+     la con so user can thay dau tien khi mo trang. */
+  .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.875rem; margin-bottom: 1.25rem; }
+  @media (max-width: 560px) { .totals { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    --tone: oklch(1 0 0);
+    border-radius: 18px; padding: 1.125rem 1.125rem 1.25rem; min-width: 0;
+    background: linear-gradient(160deg, color-mix(in oklch, var(--tone) 16%, transparent), color-mix(in oklch, var(--tone) 5%, transparent)), oklch(0.18 0.03 285 / 0.6);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid color-mix(in oklch, var(--tone) 38%, transparent);
+    box-shadow: 0 8px 24px oklch(0 0 0 / 0.25);
   }
-  .stat .value { font-size: 1.625rem; font-weight: 700; color: var(--text); }
-  .stat.accent .value { color: var(--accent); }
-  .stat.warning .value { color: var(--warning); }
+  .stat .label {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+    color: var(--text-muted); margin-bottom: 0.625rem;
+  }
+  .stat .value { font-size: 1.625rem; font-weight: 800; color: var(--tone); overflow-wrap: anywhere; }
+  .stat.accent { --tone: var(--accent); }
+  .stat.warning { --tone: var(--warning); }
+  .stat.info { --tone: var(--info); }
+  .stat.success { --tone: var(--success); }
+  .stat.accent {
+    border: 1.5px solid color-mix(in oklch, var(--accent) 85%, white);
+    box-shadow: 0 0 0 1px oklch(0.76 0.16 310 / 0.25), 0 0 22px oklch(0.7 0.2 310 / 0.45), inset 0 0 18px oklch(0.7 0.2 310 / 0.18);
+  }
+  .stat.accent .value { color: oklch(0.82 0.15 320); text-shadow: 0 0 14px oklch(0.7 0.22 315 / 0.7); }
   .order-list { display: flex; flex-direction: column; gap: 1rem; }
-  .order-card { border-radius: 16px; padding: 1.25rem 1.375rem; }
-  .order-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
-  .order-card-product { color: var(--text-soft); font-size: 0.875rem; margin: 0 0 1rem; }
-  .cancel-reason { color: var(--danger); font-size: 0.8125rem; margin-top: 0.75rem; }
-  /* repeat(4,1fr) khop dung bo cuc "2 hang x 4 cot" cua thiet ke tham khao (7 stat + "Bang chung"
-     khi don da rut = 8 o); fallback 2 cot duoi 480px de gia tri khong bi bop met tren man hinh
-     dien thoai hep (day la nguyen nhan cac lan "roi cot"/"vo dong" bao cao truoc do). */
-  .order-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.875rem 1.25rem; }
-  @media (max-width: 480px) { .order-stats { grid-template-columns: repeat(2, 1fr); } }
-  .order-stats > div { min-width: 0; }
+  .order-card { border-radius: 20px; padding: 1.25rem 1.375rem 1.375rem; }
+  .order-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.875rem; flex-wrap: wrap; }
+  .order-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; color: var(--text-dim); font-size: 0.8125rem; margin-top: 0.375rem; }
+  .merchant { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-muted); font-weight: 600; }
+  .merchant-shopee { color: var(--shopee); }
+  .merchant svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .order-card-product { color: var(--text); font-size: 0.9375rem; font-weight: 500; line-height: 1.45; margin: 0 0 1.125rem; }
+  .cancel-reason { color: var(--danger); font-size: 0.8125rem; margin-top: 0.875rem; }
+  /* 4 cot tren man rong, 2 cot duoi 560px. Duong ke mo GIUA cac cot (khong bao quanh) de doc
+     ngang "Gia tri don | Hoa hong" nhu 1 cap doi chieu - padding-left chi cho o khong dung dau hang. */
+  .order-stats { display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 0.875rem; }
+  .order-stats > div { min-width: 0; padding: 0 1rem; }
+  .order-stats > div:nth-child(4n + 1) { padding-left: 0; }
+  .order-stats > div:not(:nth-child(4n + 1)) { border-left: 1px solid var(--divider); }
+  @media (max-width: 560px) {
+    .order-stats { grid-template-columns: repeat(2, 1fr); }
+    .order-stats > div:nth-child(n) { padding-left: 1rem; border-left: 1px solid var(--divider); }
+    .order-stats > div:nth-child(2n + 1) { padding-left: 0; border-left: none; }
+  }
   .order-stats .label {
-    font-size: 0.65625rem; letter-spacing: 0.05em; font-weight: 600; color: var(--text-dim);
+    font-size: 0.75rem; font-weight: 500; color: var(--text-muted);
     margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .order-stats .value { font-size: 0.9375rem; font-weight: 600; color: var(--text); }
-  .order-id { color: var(--accent); font-weight: 600; font-size: 0.9375rem; }
-  .order-id-label { color: var(--text-muted); font-weight: 400; font-size: 0.875rem; }
+  .order-stats .value { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .order-stats .value.amount-highlight { font-size: 1.25rem; font-weight: 800; color: var(--highlight); }
+  /* Don da huy: van hien so de doi chieu nhung gach ngang + mo - to vang "ket qua" se doc nham
+     thanh tien da nhan (cung quy tac voi /admin/orders). */
+  .order-stats .value.amount-void { font-size: 1.25rem; color: var(--text-dim); text-decoration: line-through; }
+  .order-id { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; color: var(--accent); font-weight: 700; font-size: 1rem; letter-spacing: 0.01em; }
+  .order-id-label { color: var(--text-muted); font-weight: 400; font-size: 0.9375rem; letter-spacing: 0; }
+  /* Icon copy ve bang mask (khong nhoi SVG vao markup): copyButton() doi textContent thanh "Da copy"
+     sau khi bam - neu icon la phan tu con thi se bi xoa mat theo. */
   .copy-btn {
-    background: var(--accent-soft); color: var(--text-soft); border: none; border-radius: 6px;
-    padding: 0.1875rem 0.5625rem; font-size: 0.6875rem; font-weight: 600; cursor: pointer; vertical-align: middle;
+    display: inline-flex; align-items: center; gap: 0.3125rem;
+    background: oklch(1 0 0 / 0.07); color: var(--text-soft); border: 1px solid oklch(1 0 0 / 0.16);
+    border-radius: 8px; padding: 0.25rem 0.625rem; font-size: 0.8125rem; font-weight: 500;
+    font-family: inherit; cursor: pointer; box-shadow: none; line-height: 1.3;
   }
-  .copy-btn:hover { filter: brightness(1.3); }
+  .copy-btn::before {
+    content: ""; width: 14px; height: 14px; flex-shrink: 0; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='14' height='14' x='8' y='8' rx='2'/><path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/></svg>") center / contain no-repeat;
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='14' height='14' x='8' y='8' rx='2'/><path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/></svg>") center / contain no-repeat;
+  }
+  .copy-btn:hover { background: oklch(1 0 0 / 0.12); filter: none; }
   .proof-link { color: var(--accent); font-weight: 600; text-decoration: none; }
   .proof-link:hover { text-decoration: underline; }
   .withdraw-form {
     display: flex; flex-direction: column; gap: 0.875rem; align-items: stretch;
-    background: var(--card-bg); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
-    border: 1px solid var(--card-border); box-shadow: var(--card-shadow);
-    border-radius: 16px; padding: 1.25rem; margin-bottom: 1.25rem;
+    border-radius: 18px; padding: 1.25rem; margin-bottom: 1.25rem;
   }
   .form-field { display: flex; flex-direction: column; gap: 0.375rem; }
   .form-field label {
-    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; color: var(--text-dim);
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; color: var(--text-muted);
   }
   .form-field input, .form-field select {
-    background: oklch(0.21 0.02 280 / 0.6); color: var(--text); border: 1px solid var(--card-border);
-    border-radius: 10px; padding: 0.625rem 0.75rem; font-size: 0.9375rem; font-family: inherit;
+    background: oklch(0.2 0.02 280 / 0.6); color: var(--text); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 0.625rem 0.75rem; font-size: 1rem; font-family: inherit;
   }
   .form-field input:focus, .form-field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .withdraw-form button { align-self: flex-end; }
   .muted { color: var(--text-dim); font-size: 0.8125rem; margin-top: 0.25rem; }
-  .amount-positive { color: var(--amount-positive); }
-  .amount-warning { color: var(--amount-warning); }
   .badge {
     display: inline-block;
-    padding: 0.3125rem 0.75rem;
-    border-radius: 1.25rem;
-    font-size: 0.75rem;
+    padding: 0.3125rem 0.875rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
     font-weight: 600;
     white-space: nowrap;
+    border: 1px solid transparent;
   }
-  .badge-success { background: var(--success-soft); color: var(--success); }
-  .badge-warning { background: var(--warning-soft); color: var(--warning); }
-  .badge-danger { background: var(--danger-soft); color: var(--danger); }
-  .badge-accent { background: var(--accent-soft); color: var(--accent); }
-  /* "Hop co border" cho thong bao (tich luy them / dang cho rut / loi) - cung 1 cong thuc
-     mau nen mo + vien mau theo tone, chi doi hue - dung chung 1 "phong cach" trong toan trang
-     thay vi chi ap dung rieng cho o "Tich luy them" nhu truoc. */
-  .error {
-    background: oklch(0.24 0.04 25 / 0.18); color: oklch(0.85 0.05 25); border: 1px solid oklch(0.6 0.1 25 / 0.3);
-    border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 1.25rem; font-size: 0.875rem;
+  .badge-success { background: var(--success-soft); color: var(--success); border-color: oklch(0.8 0.15 150 / 0.3); }
+  .badge-warning { background: var(--warning-soft); color: var(--warning); border-color: oklch(0.8 0.14 65 / 0.3); }
+  .badge-danger { background: var(--danger-soft); color: var(--danger); border-color: oklch(0.8 0.14 25 / 0.3); }
+  /* Hop thong bao (tich luy them / dang cho rut / loi): icon tron dac + chu, cung 1 cong thuc
+     nen mo + vien theo tone, chi doi hue. */
+  .notice {
+    --tone: var(--warning);
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    background: color-mix(in oklch, var(--tone) 10%, oklch(0.18 0.03 285 / 0.6));
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    color: color-mix(in oklch, var(--tone) 35%, white);
+    border: 1px solid color-mix(in oklch, var(--tone) 45%, transparent);
+    border-radius: 14px; padding: 0.875rem 1.125rem; margin: 0 0 1.5rem; font-size: 0.9375rem; line-height: 1.45;
   }
-  .pending-notice {
-    background: oklch(0.24 0.04 70 / 0.18); color: oklch(0.85 0.05 70); border: 1px solid oklch(0.6 0.1 70 / 0.3);
-    border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 1.75rem; font-size: 0.875rem;
-  }
-  .progress-hint {
-    background: oklch(0.24 0.04 70 / 0.18); color: oklch(0.85 0.05 70); border: 1px solid oklch(0.6 0.1 70 / 0.3);
-    border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 1.75rem; font-size: 0.875rem;
+  .notice-danger { --tone: var(--danger); }
+  .notice-icon {
+    flex-shrink: 0; width: 20px; height: 20px; margin-top: 0.0625rem; border-radius: 50%;
+    background: var(--tone); color: oklch(0.2 0.03 60);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.8125rem; font-weight: 800; line-height: 1;
   }
   .warning-note { color: var(--text-dim); font-size: 0.8125rem; margin: 0 0 1.25rem; }
-  .empty { color: var(--text-dim); font-size: 0.9375rem; padding: 1rem 0; text-align: center; }
+  .empty { color: var(--text-muted); font-size: 0.9375rem; padding: 1rem 0; text-align: center; }
   button {
     background: var(--accent);
     color: #fff;
@@ -259,6 +305,22 @@ export function renderInvalidTokenPage(): string {
     `<h1>Đường dẫn không hợp lệ hoặc đã hết hạn</h1>
 <p class="subtitle">Vui lòng nhắn lại "xemhh" cho bot để lấy link mới.</p>`
   );
+}
+
+/** Tui mua sam (icon chung, khong phai logo thuong hieu) - chi to cam cho Shopee, xem merchantTag(). */
+const BAG_ICON =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 7V6a5 5 0 0 1 10 0v1h2.2a1 1 0 0 1 1 .92l.96 12A2 2 0 0 1 19.17 22H4.83a2 2 0 0 1-1.99-2.08l.96-12A1 1 0 0 1 4.8 7H7Zm2 0h6V6a3 3 0 0 0-6 0v1Z"/></svg>';
+
+/** Ten san kem icon tui. Chi Shopee (san DANG ho tro) to cam; san da ngung (don cu) giu mau trung tinh. */
+function merchantTag(merchant: CommissionEntry["merchant"]): string {
+  const name = getMerchantConfig(merchant).displayName;
+  const cls = merchant === "shopee" ? "merchant merchant-shopee" : "merchant";
+  return `<span class="${cls}">${BAG_ICON}${escapeHtml(name)}</span>`;
+}
+
+function notice(content: string, icon = "!", tone: "warning" | "danger" = "warning"): string {
+  const cls = tone === "danger" ? "notice notice-danger" : "notice";
+  return `<div class="${cls}"><span class="notice-icon" aria-hidden="true">${icon}</span><div>${content}</div></div>`;
 }
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -302,7 +364,7 @@ export function renderDashboardPage(input: {
   <div class="order-card-top">
     <div>
       <div class="order-id"><span class="order-id-label">Mã đơn:</span> ${escapeHtml(e.orderId)} ${copyButton(e.orderId)}</div>
-      <div class="muted">${formatDateTime(e.createdAt)} · ${getMerchantConfig(e.merchant).displayName}</div>
+      <div class="order-meta"><span>${formatDateTime(e.createdAt)}</span>${merchantTag(e.merchant)}</div>
     </div>
     <span class="badge badge-${badge.tone}">${badge.label}</span>
   </div>
@@ -310,11 +372,11 @@ export function renderDashboardPage(input: {
   <div class="order-stats">
     <div><div class="label">Giá trị đơn</div><div class="value">${formatVnd(e.orderAmount)}</div></div>
     <div><div class="label">Hoa hồng</div><div class="value">${formatVnd(e.commissionAmount)}</div></div>
-    <div><div class="label">Thuế ${taxPercent}%</div><div class="value amount-warning">${formatVnd(e.taxAmount)}</div></div>
-    <div><div class="label">Phí sàn ${feePercent}%</div><div class="value amount-warning">${formatVnd(e.platformFeeAmount)}</div></div>
+    <div><div class="label">Thuế ${taxPercent}%</div><div class="value">${formatVnd(e.taxAmount)}</div></div>
+    <div><div class="label">Phí sàn ${feePercent}%</div><div class="value">${formatVnd(e.platformFeeAmount)}</div></div>
     <div><div class="label">HH sau thuế</div><div class="value">${formatVnd(e.afterTaxAmount)}</div></div>
     <div><div class="label">% nhận</div><div class="value">${receivedPercent(e)}</div></div>
-    <div><div class="label">Bạn nhận</div><div class="value amount-positive">${formatVnd(e.userShareAmount)}</div></div>
+    <div><div class="label">Bạn nhận</div><div class="value ${e.status === "reversed" ? "amount-void" : "amount-highlight"}">${formatVnd(e.userShareAmount)}</div></div>
     ${proofCell}
   </div>
   ${reasonLine}
@@ -330,7 +392,7 @@ export function renderDashboardPage(input: {
       ? `<div class="order-list">${cards}</div>`
       : `<div class="card"><p class="empty">Đơn hàng của bạn sẽ hiển thị tại đây. Hiện tại bạn chưa phát sinh đơn hàng nào.<br>Khi có đơn hoàn thành, Admin sẽ chủ động nhắn tin cho bạn để xem hoa hồng nhé.</p></div>`;
 
-  const errorBlock = input.errorMessage ? `<div class="error">${escapeHtml(input.errorMessage)}</div>` : "";
+  const errorBlock = input.errorMessage ? notice(escapeHtml(input.errorMessage), "!", "danger") : "";
 
   // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9 (2026-08-20): bat buoc nhap thong tin
   // ngan hang ngay luc gui yeu cau rut (thay vi admin tu lien he hoi sau) - admin van tu doi
@@ -350,7 +412,7 @@ export function renderDashboardPage(input: {
     .reduce((sum, e) => sum + e.userShareAmount, 0);
 
   const withdrawBlock = input.pendingWithdrawal
-    ? `<div class="pending-notice">💸 Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.</div>`
+    ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
     : input.availableBalance >= input.thresholdVnd
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(`Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`)}>
   <div class="form-field">
@@ -370,7 +432,9 @@ export function renderDashboardPage(input: {
   </div>
   <button type="submit">Yêu cầu rút ${formatVnd(input.availableBalance)}</button>
 </form>`
-      : `<p class="progress-hint">Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - pendingConfirmationTotal))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).</p>`;
+      : notice(
+          `Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - pendingConfirmationTotal))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+        );
 
   const platformLabel = PLATFORM_LABELS[input.platform];
   const identityLine = input.displayName
@@ -393,8 +457,8 @@ ${errorBlock}
 <div class="totals">
   <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div></div>
   <div class="stat warning"><div class="label">Chờ xác nhận</div><div class="value">${formatVnd(pendingConfirmationTotal)}</div></div>
-  <div class="stat"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
-  <div class="stat"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
+  <div class="stat info"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
+  <div class="stat success"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>
 ${reversalWarning}
 ${withdrawBlock}
