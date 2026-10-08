@@ -743,8 +743,8 @@ export function renderWithdrawalsPage(
         accountNumber: w.bankAccountNumber,
         accountHolder: w.bankAccountHolder,
         amount: w.amount,
-        // KHONG nhet userId vao day: chuoi nay di sang may chu cua ben thu ba cung voi so tai khoan.
-        note: "Hoan tien",
+        // KHONG truyen noi dung chuyen khoan (yeu cau user 2026-10-08): de trong cho app ngan hang tu
+        // lay noi dung mac dinh.
       });
       // <details> dong san CO CHU DICH: anh QR tai tu img.vietqr.io, de <img> hien luon thi mo trang
       // co 50 yeu cau la gui du lieu ngan hang cua 50 khach sang ben thu ba du admin khong nhin cai nao.

@@ -88,8 +88,12 @@ export interface VietQrInput {
   accountHolder: string;
   /** So tien VND. Lam tron ve so nguyen vi VietQR khong nhan phan thap phan. */
   amount: number;
-  /** Noi dung chuyen khoan. Giu NGAN va KHONG chua userId - chuoi nay di sang may chu ben thu ba. */
-  note: string;
+  /**
+   * Noi dung chuyen khoan - TUY CHON. Bo trong (mac dinh o /admin/withdrawals tu 2026-10-08, yeu cau
+   * user) thi QR KHONG mang `addInfo`, app ngan hang tu dien noi dung mac dinh cua no. Neu truyen thi
+   * giu NGAN va KHONG chua userId - chuoi nay di sang may chu ben thu ba.
+   */
+  note?: string;
 }
 
 /**
@@ -113,7 +117,8 @@ export function vietQrImageUrl(input: VietQrInput): string | null {
   const amount = Math.round(input.amount);
   const params = new URLSearchParams();
   if (Number.isFinite(amount) && amount > 0) params.set("amount", String(amount));
-  if (input.note.trim() !== "") params.set("addInfo", input.note.trim());
+  const note = input.note?.trim() ?? "";
+  if (note !== "") params.set("addInfo", note);
   if (input.accountHolder.trim() !== "") params.set("accountName", input.accountHolder.trim());
 
   // Mau "compact2" = QR kem ten ngan hang + so tien in san, de admin doi chieu bang mat truoc khi quet.

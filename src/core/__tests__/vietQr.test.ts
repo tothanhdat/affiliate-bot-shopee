@@ -46,6 +46,20 @@ test("vietQrImageUrl: sinh dung link cho ngan hang co ho tro", () => {
   assert.match(url, /accountName=NGUYEN\+VAN\+A/);
 });
 
+// Yeu cau user 2026-10-08: noi dung chuyen khoan de TRONG de app ngan hang tu lay noi dung mac dinh -
+// QR khong duoc mang addInfo (ke ca addInfo rong).
+test("vietQrImageUrl: khong truyen note -> KHONG co addInfo trong link", () => {
+  const url = vietQrImageUrl({
+    bankName: "Vietcombank",
+    accountNumber: "0123456789",
+    accountHolder: "NGUYEN VAN A",
+    amount: 59_535,
+  });
+  assert.ok(url);
+  assert.doesNotMatch(url, /addInfo/);
+  assert.match(url, /amount=59535/);
+});
+
 test("vietQrImageUrl: tra null cho ngan hang VietQR khong ho tro chuyen khoan", () => {
   for (const bankName of ["HSBC Việt Nam", "Standard Chartered Việt Nam", "DongA Bank"]) {
     assert.equal(

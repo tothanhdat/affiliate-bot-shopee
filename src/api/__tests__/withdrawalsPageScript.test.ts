@@ -145,6 +145,7 @@ test("yeu cau co tru no: hien Rut / Tru no / Phai chuyen, QR theo so phai chuyen
   assert.match(text, /Trừ nợ −40\.000đ/);
   assert.match(text, /Phải chuyển 60\.000đ/);
   assert.match(html, /amount=60000/, "QR phai theo so PHAI CHUYEN, khong phai so user rut");
+  assert.doesNotMatch(html, /addInfo/, "noi dung chuyen khoan de trong cho ngan hang tu dien mac dinh");
   assert.match(html, /ĐÃ CHUYỂN KHOẢN 60\.000đ/, "hop xac nhan cung noi so phai chuyen");
 });
 
