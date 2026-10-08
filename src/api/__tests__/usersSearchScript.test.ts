@@ -250,3 +250,37 @@ test("/admin/users: cot Kha dung hien so DA TRU no", () => {
   const html = renderUsersPage([userRow({ availableBalance: 6_000, debtRemaining: 4_000 })], 80, "2026-10-08");
   assert.match(html, /6\.000/);
 });
+
+// Menu "⋯" (2026-10-08, yeu cau truc tiep cua user): chi "Xem don" nam ngoai, "Cau hinh %" va moi
+// khoan "Xoa no" nam TRONG panel cua menu.
+test("/admin/users: Cau hinh % va Xoa no nam trong menu '⋯', Xem don nam ngoai", () => {
+  const html = renderUsersPage(
+    [userRow({ debtRemaining: 70_000 })],
+    80,
+    "2026-10-08",
+    undefined,
+    new Map([
+      [
+        "zalo:u-001",
+        [
+          { id: "debt-1", orderId: "X1", amount: 40_000 },
+          { id: "debt-2", orderId: "X2", amount: 30_000 },
+        ],
+      ],
+    ])
+  );
+  const panel = html.match(/<div class="row-menu-panel"[^>]*>([\s\S]*?)<\/details>/)?.[1] ?? "";
+  assert.match(panel, /Cấu hình % hoa hồng/);
+  assert.match(panel, /debts\/debt-1\/write-off/);
+  assert.match(panel, /debts\/debt-2\/write-off/);
+  assert.match(panel, /Đơn X1 · 40\.000đ/, "moi khoan no ghi ro don nao, bao nhieu");
+  assert.doesNotMatch(panel, /Xem đơn/);
+  assert.match(html, /<summary class="row-menu-trigger"/);
+  assert.match(html, /Xem đơn<\/a>/);
+});
+
+test("/admin/users: user khong no -> menu chi co Cau hinh, khong co Xoa no", () => {
+  const html = renderUsersPage([userRow()], 80, "2026-10-08");
+  assert.match(html, /Cấu hình % hoa hồng/);
+  assert.doesNotMatch(html, /Xoá nợ/);
+});

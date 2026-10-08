@@ -116,6 +116,7 @@ export const ICON_PATHS: Record<string, string> = {
   "external-link":
     '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   "x-circle": '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  "more-horizontal": '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   "message-circle":
     '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>',
 };
@@ -1037,32 +1038,88 @@ ${pageScript}`;
 }
 
 /**
- * Nut "Xoa no" cho tung khoan no cua 1 user. User bo di la chuyen co that va no treo vinh vien lam
- * meo moi con so tong, nen admin phai xoa duoc - nhung dong no van duoc GIU LAI trong DB de doi soat.
+ * Menu "⋯" cua tung hang /admin/users (2026-10-08, yeu cau truc tiep cua user): gom "Cau hinh %" va
+ * "Xoa no" vao 1 nut, chi "Xem don" con nam ngoai. Moi khoan no la 1 muc RIENG (kem ma don + so tien)
+ * vi 1 user co the no tu nhieu don - gop thanh 1 nut "Xoa no" thi admin khong biet minh dang xoa gi.
  *
- * <form> dat NGAY TRONG <td> (khong phai ngoai <table> nhu nut Huy yeu cau rut): o day ca nut lan
- * form nam tron trong MOT o, khong phai noi 2 <td> voi nhau.
+ * Panel la `position: fixed` + toa do do script dat luc mo (rowMenuScript), KHONG phai absolute: bang
+ * nam trong .table-scroll (overflow-x: auto) nen panel absolute bi CAT o hang cuoi - cung bay da gap
+ * voi QR o /admin/withdrawals. Panel an (visibility) cho toi khi script dat xong toa do, tranh nhay
+ * 1 khung hinh o vi tri sai.
+ *
+ * Moi <form> xoa no nam TRONG panel (cung 1 <td>) nen khong can noi qua thuoc tinh `form`.
  */
-function debtActions(
+function rowActionsMenu(
   platform: Platform,
   userId: string,
   debts: Array<{ id: string; orderId: string; amount: number }>
 ): string {
-  if (debts.length === 0) return "";
-  return debts
+  const debtItems = debts
     .map(
       (d) => `<form method="POST" action="/admin/users/${encodeURIComponent(platform)}/${encodeURIComponent(
         userId
-      )}/debts/${encodeURIComponent(d.id)}/write-off" class="inline" ${confirmOnSubmit(
+      )}/debts/${encodeURIComponent(d.id)}/write-off" ${confirmOnSubmit(
         `Xoá khoản nợ ${formatVnd(d.amount)} (đơn ${d.orderId}) của user này? Số tiền sẽ không còn bị trừ ở lần rút tiếp theo của họ nữa.`
       )}>
-      <button type="submit" class="button-danger-sm" title="Đơn ${escapeHtml(d.orderId)} - ${formatVnd(
-        d.amount
-      )}">${icon("x-circle", "h-3 w-3")} Xoá nợ</button>
-    </form>`
+        <button type="submit" class="row-menu-item row-menu-item-danger" role="menuitem">${icon(
+          "x-circle",
+          "h-3.5 w-3.5"
+        )}<span>Xoá nợ<span class="row-menu-sub">Đơn ${escapeHtml(d.orderId)} · ${formatVnd(d.amount)}</span></span></button>
+      </form>`
     )
     .join("\n");
+  return `<details class="row-menu" data-row-menu>
+      <summary class="row-menu-trigger" aria-label="Thao tác khác" title="Thao tác khác">${icon(
+        "more-horizontal",
+        "h-4 w-4"
+      )}</summary>
+      <div class="row-menu-panel" role="menu">
+        <a class="row-menu-item" role="menuitem" href="${commissionConfigHref(platform, userId)}">${icon(
+          "percent",
+          "h-3.5 w-3.5"
+        )}<span>Cấu hình % hoa hồng</span></a>
+        ${debtItems ? `<div class="row-menu-sep"></div>${debtItems}` : ""}
+      </div>
+    </details>`;
 }
+
+/**
+ * Dat toa do panel menu "⋯" luc mo (xem rowActionsMenu). Mo 1 menu thi dong cac menu khac; bam ra
+ * ngoai / Esc / cuon / doi kich thuoc cua so thi dong - panel la fixed nen de mo luc cuon se troi
+ * lech khoi nut. Thieu cho duoi man hinh thi lat len tren nut.
+ */
+const rowMenuScript = `<script>
+(function () {
+  var menus = Array.prototype.slice.call(document.querySelectorAll("[data-row-menu]"));
+  if (menus.length === 0) return;
+  function place(d) {
+    var trigger = d.querySelector("summary");
+    var panel = d.querySelector(".row-menu-panel");
+    var r = trigger.getBoundingClientRect();
+    var w = panel.offsetWidth, h = panel.offsetHeight;
+    var left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+    var top = r.bottom + 4;
+    if (top + h > window.innerHeight - 8 && r.top - h - 4 > 8) top = r.top - h - 4;
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    d.setAttribute("data-placed", "");
+  }
+  function closeAll(except) {
+    menus.forEach(function (d) { if (d !== except && d.open) d.open = false; });
+  }
+  menus.forEach(function (d) {
+    d.addEventListener("toggle", function () {
+      if (d.open) { closeAll(d); place(d); } else { d.removeAttribute("data-placed"); }
+    });
+  });
+  document.addEventListener("click", function (e) {
+    menus.forEach(function (d) { if (d.open && !d.contains(e.target)) d.open = false; });
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(null); });
+  window.addEventListener("resize", function () { closeAll(null); });
+  window.addEventListener("scroll", function () { closeAll(null); }, true);
+})();
+</script>`;
 
 export function renderUsersPage(
   list: Array<{
@@ -1072,7 +1129,7 @@ export function renderUsersPage(
     availableBalance: number;
     pendingBalance: number;
     paidTotal: number;
-    /** No hoan tra con phai tru (2026-10-08) - DA duoc tru khoi availableBalance o tren. */
+    /** No hoan tra con phai tru (2026-10-08) - KHONG tru vao availableBalance, chi tru luc duyet rut. */
     debtRemaining: number;
     /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08). */
     heldBalance: number;
@@ -1088,7 +1145,7 @@ export function renderUsersPage(
 ,
   /**
    * No hoan tra chua tra het cua tung user (2026-10-08), khoa theo `${platform}:${userId}`. Chi
-   * dung de ve nut "Xoa no" - so tien da nam trong truong debtRemaining cua tung dong.
+   * dung de ve cac muc "Xoa no" trong menu "⋯" - so tien da nam trong truong debtRemaining cua tung dong.
    */
   userDebts: Map<string, Array<{ id: string; orderId: string; amount: number }>> = new Map()): string {
   const rows = list
@@ -1121,14 +1178,10 @@ export function renderUsersPage(
   ${moneyCell(u.debtRemaining, "font-semibold text-rose-600")}
   <td class="px-4 py-3.5 text-right">
     <div class="flex items-center justify-end gap-1.5">
-      <a class="inline-flex items-center gap-1 rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 no-underline transition hover:bg-slate-200" href="${commissionConfigHref(
-        u.platform,
-        u.userId
-      )}">${icon("percent", "h-3 w-3")} Cấu hình</a>
       <a class="inline-flex items-center gap-1 rounded bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600 no-underline transition hover:bg-indigo-100" href="/admin/orders?platform=${encodeURIComponent(
         u.platform
       )}&userId=${encodeURIComponent(u.userId)}">${icon("package", "h-3 w-3")} Xem đơn</a>
-      ${debtActions(u.platform, u.userId, userDebts.get(nameKey(u.platform, u.userId)) ?? [])}
+      ${rowActionsMenu(u.platform, u.userId, userDebts.get(nameKey(u.platform, u.userId)) ?? [])}
     </div>
   </td>
 </tr>`;
@@ -1281,7 +1334,7 @@ export function renderUsersPage(
   </div>
 </div>`;
 
-  const body = list.length > 0 ? `${kpiRow}\n${filterBar}\n${table}\n${searchScript}` : `${kpiRow}\n${emptyCard}`;
+  const body = list.length > 0 ? `${kpiRow}\n${filterBar}\n${table}\n${searchScript}\n${rowMenuScript}` : `${kpiRow}\n${emptyCard}`;
 
   return adminShell("users", "Người dùng", body, pendingWithdrawals);
 }
