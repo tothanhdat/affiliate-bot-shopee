@@ -40,3 +40,16 @@ export function todayVnIso(now: Date = new Date()): string {
 export function yesterdayVnDdMm(now: Date = new Date()): string {
   return formatVnDateDdMm(new Date(now.getTime() - ONE_DAY_MS));
 }
+
+/**
+ * Cong `days` ngay vao 1 ngay lich "YYYY-MM-DD" (gio VN), tra ve cung dinh dang.
+ *
+ * Dung Date.UTC co chu dich: input DA la ngay lich VN roi, khong can doi mui gio lan nua - neu dung
+ * `new Date("2026-10-01")` roi setDate() thi ket qua phu thuoc mui gio cua MAY CHAY (Railway chay
+ * UTC, may dev chay +07), tuc cung 1 input ra 2 ket qua khac nhau.
+ */
+export function addDaysToVnIso(iso: string, days: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const base = Date.UTC(year, month - 1, day);
+  return new Date(base + days * ONE_DAY_MS).toISOString().slice(0, 10);
+}

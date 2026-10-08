@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../vietnamDate.js";
+import { addDaysToVnIso, formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../vietnamDate.js";
 
 test("formatVnDateDdMm: dinh dang dd/mm theo gio VN, co padding 0", () => {
   // 2026-09-05T03:00:00Z = 10:00 ngay 05/09 gio VN
@@ -48,4 +48,28 @@ test("todayVnIso: doi nam", () => {
 
 test("todayVnIso: ngay 1 chu so co padding 0", () => {
   assert.equal(todayVnIso(new Date("2026-03-05T06:00:00.000Z")), "2026-03-05");
+});
+
+test("addDaysToVnIso: cong ngay trong cung thang", () => {
+  assert.equal(addDaysToVnIso("2026-10-01", 7), "2026-10-08");
+});
+
+test("addDaysToVnIso: vat qua thang", () => {
+  assert.equal(addDaysToVnIso("2026-09-28", 7), "2026-10-05");
+});
+
+test("addDaysToVnIso: vat qua nam", () => {
+  assert.equal(addDaysToVnIso("2026-12-28", 7), "2027-01-04");
+});
+
+test("addDaysToVnIso: thang 2 nam nhuan", () => {
+  assert.equal(addDaysToVnIso("2028-02-26", 7), "2028-03-04");
+});
+
+test("addDaysToVnIso: thang 2 nam KHONG nhuan", () => {
+  assert.equal(addDaysToVnIso("2026-02-26", 7), "2026-03-05");
+});
+
+test("addDaysToVnIso: days = 0 tra lai chinh ngay do", () => {
+  assert.equal(addDaysToVnIso("2026-10-08", 0), "2026-10-08");
 });
