@@ -628,7 +628,23 @@ export function createServer(
 
   app.get("/admin/users", requireAdminAuth, (req: Request, res: Response) => {
     const generalSharePercent = ledgerStore.getUserSharePercent(orderConfig.userSharePercent);
-    res.type("html").send(renderUsersPage(ledgerStore.listUsers(), generalSharePercent, todayVnIso(), navPendingWithdrawals()));
+    const users = ledgerStore.listUsers();
+    // Chi lay chi tiet no cho user THAT SU dang no - khong quet het danh sach.
+    const userDebts = new Map<string, Array<{ id: string; orderId: string; amount: number }>>();
+    for (const u of users) {
+      if (u.debtRemaining <= 0) continue;
+      userDebts.set(
+        `${u.platform}:${u.userId}`,
+        ledgerStore
+          .listOutstandingDebts(u.platform, u.userId)
+          .map((d) => ({ id: d.id, orderId: d.orderId, amount: d.remaining }))
+      );
+    }
+    res
+      .type("html")
+      .send(
+        renderUsersPage(users, generalSharePercent, todayVnIso(), navPendingWithdrawals(), userDebts)
+      );
   });
 
   // --- % hoa hong RIENG tung user (2026-10-01) ---------------------------------------------------
@@ -779,7 +795,13 @@ export function createServer(
         ledgerStore.getDisplayNamesMap(),
         { page, totalPages, totalEntries: totals.totalEntries },
         totals,
-        navPendingWithdrawals()
+        navPendingWithdrawals(),
+        // Chi tra no cho dung cac don DANG hien tren trang nay (50 don/trang), khong quet ca bang.
+        new Set(
+          entries
+            .filter((e) => ledgerStore.getDebtByOrder(e.merchant, e.orderId) !== null)
+            .map((e) => e.orderId)
+        )
       )
     );
   });

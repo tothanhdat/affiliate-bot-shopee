@@ -78,6 +78,8 @@ function extractSearchScript(): string {
       availableBalance: 0,
       pendingBalance: 0,
       paidTotal: 0,
+      debtRemaining: 0,
+      heldBalance: 0,
       ordersCount: 1,
       commissionOverride: null,
     },
@@ -195,4 +197,56 @@ test("sap xep /admin/users: khong dung toi trang thai an/hien cua o tim kiem", (
   sortSelect.type("orders");
   assert.deepEqual(order.map((r) => r.dataset.search), ["nguyễn an u-002", "trần bảo u-001"]);
   assert.deepEqual(rows.map((r) => r.hidden), [false, true], "sap xep khong duoc lam hien lai dong da bi loc");
+});
+
+// ---------------------------------------------------------------------------
+// Cot "No hoan tra" + nut "Xoa no" (2026-10-08)
+// ---------------------------------------------------------------------------
+
+function userRow(over: Partial<Parameters<typeof renderUsersPage>[0][0]> = {}) {
+  return {
+    platform: "zalo" as const,
+    userId: "u-001",
+    displayName: "Trần Bảo",
+    availableBalance: 6_000,
+    pendingBalance: 0,
+    paidTotal: 0,
+    debtRemaining: 0,
+    heldBalance: 0,
+    ordersCount: 1,
+    commissionOverride: null,
+    ...over,
+  };
+}
+
+test("/admin/users: co cot 'No hoan tra'", () => {
+  const html = renderUsersPage([userRow()], 80, "2026-10-08");
+  assert.match(html, /Nợ hoàn trả/);
+});
+
+// Rang buoc da co cua moneyCell(): so 0 LUON lam mo - bang nhieu cot tien ma to dam ca loat thi mat
+// phai doc tung so moi biet cho nao co tien that.
+test("/admin/users: user khong no -> khong co nut Xoa no", () => {
+  const html = renderUsersPage([userRow()], 80, "2026-10-08");
+  assert.doesNotMatch(html, /Xoá nợ/);
+});
+
+test("/admin/users: user co no -> hien so tien + nut Xoa no tro dung route", () => {
+  const html = renderUsersPage(
+    [userRow({ debtRemaining: 4_000 })],
+    80,
+    "2026-10-08",
+    undefined,
+    new Map([["zalo:u-001", [{ id: "debt-1", orderId: "X1", amount: 4_000 }]]])
+  );
+  assert.match(html, /4\.000/);
+  assert.match(html, /Xoá nợ/);
+  assert.match(html, /action="\/admin\/users\/zalo\/u-001\/debts\/debt-1\/write-off"/);
+  assert.match(html, /onsubmit="return confirm\(/, "hanh dong tien BAT BUOC co buoc xac nhan");
+});
+
+// SQL sap theo so GROSS; availableBalance tra ve la so da tru no. Thu tu hien thi phai theo so DA TRU.
+test("/admin/users: cot Kha dung hien so DA TRU no", () => {
+  const html = renderUsersPage([userRow({ availableBalance: 6_000, debtRemaining: 4_000 })], 80, "2026-10-08");
+  assert.match(html, /6\.000/);
 });

@@ -1065,6 +1065,34 @@ ${pageScript}`;
   return adminShell("withdrawals", "Yêu cầu rút tiền", body, pending.length);
 }
 
+/**
+ * Nut "Xoa no" cho tung khoan no cua 1 user. User bo di la chuyen co that va no treo vinh vien lam
+ * meo moi con so tong, nen admin phai xoa duoc - nhung dong no van duoc GIU LAI trong DB de doi soat.
+ *
+ * <form> dat NGAY TRONG <td> (khong phai ngoai <table> nhu nut Huy yeu cau rut): o day ca nut lan
+ * form nam tron trong MOT o, khong phai noi 2 <td> voi nhau.
+ */
+function debtActions(
+  platform: Platform,
+  userId: string,
+  debts: Array<{ id: string; orderId: string; amount: number }>
+): string {
+  if (debts.length === 0) return "";
+  return debts
+    .map(
+      (d) => `<form method="POST" action="/admin/users/${encodeURIComponent(platform)}/${encodeURIComponent(
+        userId
+      )}/debts/${encodeURIComponent(d.id)}/write-off" class="inline" ${confirmOnSubmit(
+        `Xoá khoản nợ ${formatVnd(d.amount)} (đơn ${d.orderId}) của user này? Số tiền sẽ không còn bị trừ vào số dư của họ nữa.`
+      )}>
+      <button type="submit" class="button-danger-sm" title="Đơn ${escapeHtml(d.orderId)} - ${formatVnd(
+        d.amount
+      )}">${icon("x-circle", "h-3 w-3")} Xoá nợ</button>
+    </form>`
+    )
+    .join("\n");
+}
+
 export function renderUsersPage(
   list: Array<{
     platform: Platform;
@@ -1073,6 +1101,10 @@ export function renderUsersPage(
     availableBalance: number;
     pendingBalance: number;
     paidTotal: number;
+    /** No hoan tra con phai tru (2026-10-08) - DA duoc tru khoi availableBalance o tren. */
+    debtRemaining: number;
+    /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08). */
+    heldBalance: number;
     ordersCount: number;
     commissionOverride: UserCommissionOverride | null;
   }>,
@@ -1082,7 +1114,12 @@ export function renderUsersPage(
   todayVn: string,
   /** So yeu cau rut dang cho - chi de hien badge tren muc nav, xem adminShell(). */
   pendingWithdrawals?: number
-): string {
+,
+  /**
+   * No hoan tra chua tra het cua tung user (2026-10-08), khoa theo `${platform}:${userId}`. Chi
+   * dung de ve nut "Xoa no" - so tien da nam trong truong debtRemaining cua tung dong.
+   */
+  userDebts: Map<string, Array<{ id: string; orderId: string; amount: number }>> = new Map()): string {
   const rows = list
     .map((u, index) => {
       const name =
@@ -1110,6 +1147,7 @@ export function renderUsersPage(
   ${moneyCell(u.availableBalance, "font-semibold text-emerald-600")}
   ${moneyCell(u.pendingBalance, "font-semibold text-amber-600")}
   ${moneyCell(u.paidTotal, "font-medium text-slate-700")}
+  ${moneyCell(u.debtRemaining, "font-semibold text-rose-600")}
   <td class="px-4 py-3.5 text-right">
     <div class="flex items-center justify-end gap-1.5">
       <a class="inline-flex items-center gap-1 rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 no-underline transition hover:bg-slate-200" href="${commissionConfigHref(
@@ -1119,6 +1157,7 @@ export function renderUsersPage(
       <a class="inline-flex items-center gap-1 rounded bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600 no-underline transition hover:bg-indigo-100" href="/admin/orders?platform=${encodeURIComponent(
         u.platform
       )}&userId=${encodeURIComponent(u.userId)}">${icon("package", "h-3 w-3")} Xem đơn</a>
+      ${debtActions(u.platform, u.userId, userDebts.get(nameKey(u.platform, u.userId)) ?? [])}
     </div>
   </td>
 </tr>`;
@@ -1247,6 +1286,7 @@ export function renderUsersPage(
           <th class="${thClass} !text-right">Khả dụng</th>
           <th class="${thClass} !text-right">Đang chờ rút</th>
           <th class="${thClass} !text-right">Đã nhận</th>
+          <th class="${thClass} !text-right" title="Tiền đã trả cho user rồi nhưng đơn bị trả hàng - đang trừ dần vào các đơn sau">Nợ hoàn trả</th>
           <th class="${thClass} !text-right">Hành động</th>
         </tr>
       </thead>
@@ -1697,7 +1737,13 @@ export function renderOrdersPage(
   pagination: OrdersPagination,
   totals: OrdersFilterTotals,
   /** So yeu cau rut dang cho - chi de hien badge tren muc nav, xem adminShell(). */
-  pendingWithdrawals?: number
+  pendingWithdrawals?: number,
+  /**
+   * Ma don DA tra tien cho user roi nhung bi tra hang (2026-10-08) - entry giu nguyen status 'paid'
+   * (tien ra khoi tay that, user co sao ke) nen phai co dau hieu rieng, neu khong hang do nhin y het
+   * mot don binh thuong.
+   */
+  debtOrderIds: Set<string> = new Set()
 ): string {
   const rows = entries
     .map((e) => {
@@ -1730,6 +1776,21 @@ export function renderOrdersPage(
         ? "text-slate-400 line-through"
         : "font-semibold text-emerald-600";
       const ownerMoneyClass = voided ? "text-slate-400 line-through" : "font-medium text-slate-700";
+
+      // Dat DUOI pill trang thai thay vi them 1 cot rieng: bang nay da 9 cot va padding px-4 la muc
+      // VUA DU de cot "Thao tac" khong bi day ra ngoai man ~1700px (xem CLAUDE.md). Ve nghia thi ngay
+      // mo khoa cung la chi tiet cua trang thai ("Kha dung, nhung tu ngay X"), nen o day la dung cho.
+      const heldHint =
+        e.availableFrom !== null && e.status === "confirmed"
+          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Đơn to bị giam để kịp phát hiện khách trả hàng">🔒 mở khoá ${escapeHtml(
+              e.availableFrom
+            )}</div>`
+          : "";
+      const returnedHint = debtOrderIds.has(e.orderId)
+        ? `<div class="mt-1 text-[10px] font-semibold text-rose-600" title="Đơn này bị trả hàng sau khi đã trả tiền cho user - đang trừ dần vào các đơn sau">⚠ đã trả hàng</div>`
+        : "";
+      const statusDetail = `${heldHint}${returnedHint}`;
+
       return `<tr class="transition hover:bg-slate-50/80">
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-1.5 font-semibold text-slate-800">
@@ -1752,7 +1813,9 @@ export function renderOrdersPage(
   <td class="px-4 py-3.5 text-right font-medium text-slate-600 tabular-nums">${lockedShare}</td>
   <td class="px-4 py-3.5 text-right tabular-nums ${userMoneyClass}">${formatVnd(e.userShareAmount)}</td>
   <td class="px-4 py-3.5 text-right tabular-nums ${ownerMoneyClass}">${formatVnd(e.afterTaxAmount - e.userShareAmount)}</td>
-  <td class="px-4 py-3.5 text-center">${statusPill(badge)}</td>
+  <td class="px-4 py-3.5 text-center">
+    ${statusPill(badge)}${statusDetail}
+  </td>
   <td class="px-4 py-3.5 text-right">${reverseLink}</td>
 </tr>`;
     })

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { renderOrdersPage, type OrdersFilters } from "../adminHtml.js";
-import type { CommissionStatus } from "../../core/types.js";
+import type { CommissionEntry, CommissionStatus } from "../../core/types.js";
 
 const PAGINATION = { page: 1, totalPages: 1, totalEntries: 0 };
 const TOTALS = { totalEntries: 0, pendingEntries: 0, userShareTotal: 0, ownerShareTotal: 0 };
@@ -143,4 +143,87 @@ test("dropdown trang thai (JS): bam ra ngoai thi dong, bam ben trong thi khong d
 
   clickOn({ name: "elsewhere" });
   assert.equal(dropdown.open, false, "bam ra ngoai phai dong dropdown");
+});
+
+// ---------------------------------------------------------------------------
+// Dau hieu "dang bi giam" / "da tra hang" duoi pill trang thai (2026-10-08)
+//
+// CO Y khong them cot thu 10: bang da 9 cot va padding px-4 la muc VUA DU de cot "Thao tac" khong bi
+// day ra ngoai man ~1700px (xem CLAUDE.md). Ngay mo khoa cung la chi tiet cua trang thai.
+// ---------------------------------------------------------------------------
+
+function orderEntry(over: Partial<CommissionEntry> = {}): CommissionEntry {
+  return {
+    id: "e1",
+    createdAt: "2026-10-07T01:00:00.000Z",
+    orderDate: "2026-10-07",
+    completedAt: null,
+    availableFrom: null,
+    platform: "zalo",
+    userId: "u1",
+    merchant: "shopee",
+    subId: "k-u1-a-b",
+    orderId: "ORD1",
+    productName: "San pham",
+    orderAmount: 100_000,
+    commissionAmount: 10_000,
+    taxAmount: 0,
+    platformFeeAmount: 0,
+    afterTaxAmount: 10_000,
+    userShareAmount: 8_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    status: "confirmed",
+    withdrawalId: null,
+    note: null,
+    proofImagePath: null,
+    ...over,
+  } as CommissionEntry;
+}
+
+const EMPTY_TOTALS = {
+  totalEntries: 1,
+  pendingEntries: 0,
+  userShareTotal: 8_000,
+  ownerShareTotal: 2_000,
+} as Parameters<typeof renderOrdersPage>[4];
+
+function renderOne(e: CommissionEntry, debtOrderIds = new Set<string>()): string {
+  return renderOrdersPage(
+    [e],
+    {},
+    new Map(),
+    { page: 1, totalPages: 1, totalEntries: 1 },
+    EMPTY_TOTALS,
+    0,
+    debtOrderIds
+  );
+}
+
+test("/admin/orders: don binh thuong -> khong co dau hieu giam / tra hang", () => {
+  const html = renderOne(orderEntry());
+  assert.doesNotMatch(html, /mở khoá/);
+  assert.doesNotMatch(html, /đã trả hàng/);
+});
+
+test("/admin/orders: don dang bi giam -> hien ngay mo khoa duoi pill trang thai", () => {
+  const html = renderOne(orderEntry({ availableFrom: "2026-10-15" }));
+  assert.match(html, /mở khoá 2026-10-15/);
+});
+
+test("/admin/orders: don da tra tien roi bi tra hang -> badge canh bao", () => {
+  const html = renderOne(orderEntry({ status: "paid" }), new Set(["ORD1"]));
+  assert.match(html, /đã trả hàng/);
+});
+
+// Entry 'paid' bi tra hang GIU NGUYEN status 'paid' (tien ra khoi tay that, user co sao ke), nen
+// khong co badge thi hang do nhin y het mot don binh thuong.
+test("/admin/orders: don bi tra hang VAN hien trang thai 'Da rut', khong doi thanh 'Da huy'", () => {
+  const html = renderOne(orderEntry({ status: "paid" }), new Set(["ORD1"]));
+  // Chi soi phan BANG (sau <tbody>) - "Đã huỷ" con xuat hien o dropdown loc trang thai phia tren.
+  const tbody = html.slice(html.indexOf("<tbody"));
+  assert.match(tbody, /Đã rút/);
+  assert.doesNotMatch(tbody, /Đã huỷ/, "entry paid bi tra hang GIU NGUYEN status paid - tien ra khoi tay that");
+  assert.match(tbody, /đã trả hàng/, "nhung phai co dau hieu rieng, khong thi nhin y het don binh thuong");
 });
