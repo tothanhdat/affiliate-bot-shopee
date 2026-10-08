@@ -1633,11 +1633,41 @@ export class LedgerStore {
     return row.total;
   }
 
-  /** Admin xoa no. GIU dong lai (chi dien written_off_at) de con doi soat duoc. */
+  /**
+   * Admin xoa no. GIU dong lai (chi dien written_off_at) de con doi soat duoc.
+   *
+   * Neu user dang co 1 yeu cau rut CHO DUYET da tinh san khoan no nay (debt_applied), phai tinh lai
+   * yeu cau do trong CUNG transaction: debt_applied chot luc user gui, ma settleWithdrawal() chi tru
+   * vao no CON HIEU LUC - khong sua thi no da xoa khong bi tru nua NHUNG user van nhan thieu dung so
+   * do (bug that tim ra khi tu review 2026-10-08: no 40k, rut 100k, admin xoa no -> van chi chuyen
+   * 60k). debt_applied moi = min(cu, tong no con lai) nen so phai chuyen CHI tang, khong bao gio giam.
+   */
   writeOffDebt(id: string): void {
-    this.db
-      .prepare(`UPDATE payout_debts SET written_off_at = ? WHERE id = ? AND written_off_at IS NULL`)
-      .run(new Date().toISOString(), id);
+    const row = this.db.prepare(`SELECT platform, user_id FROM payout_debts WHERE id = ?`).get(id) as
+      | { platform: Platform; user_id: string }
+      | undefined;
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(`UPDATE payout_debts SET written_off_at = ? WHERE id = ? AND written_off_at IS NULL`)
+        .run(new Date().toISOString(), id);
+      if (row) {
+        const pending = this.getPendingWithdrawal(row.platform, row.user_id);
+        if (pending && pending.debtApplied > 0) {
+          const newApplied = Math.min(pending.debtApplied, this.getOutstandingDebtTotal(row.platform, row.user_id));
+          const delta = pending.debtApplied - newApplied;
+          if (delta > 0) {
+            this.db
+              .prepare(`UPDATE withdrawal_requests SET amount = amount + ?, debt_applied = ? WHERE id = ?`)
+              .run(delta, newApplied, pending.id);
+          }
+        }
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   /**

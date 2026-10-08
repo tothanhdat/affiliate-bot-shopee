@@ -202,6 +202,39 @@ test("no da bi admin XOA khong bi tru vao lan rut", () => {
   assert.equal(w.debtApplied, 0);
 });
 
+// Bug that tim ra khi tu review (2026-10-08): xoa no trong luc yeu cau rut dang cho duyet ma khong
+// tinh lai yeu cau -> user van nhan thieu dung so no da duoc xoa.
+test("xoa no khi yeu cau rut DANG CHO: so phai chuyen tang lai, user khong mat tien", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const debt = s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.amount, 60_000);
+
+  s.writeOffDebt(debt!.id);
+  const pending = s.getPendingWithdrawal("zalo", "user-a")!;
+  assert.equal(pending.amount, 100_000, "khong con no -> chuyen du 100k");
+  assert.equal(pending.debtApplied, 0);
+  assert.equal(s.markWithdrawalPaid(w.id, null).amount, 100_000);
+  assert.equal(s.getUserSummary("zalo", "user-a").paidTotal, 100_000);
+});
+
+test("xoa MOT trong 2 khoan no khi yeu cau dang cho: chi bot dung khoan da xoa", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "debt-a", amount: 30_000 });
+  const b = s.recordPayoutDebt({ ...DEBT, orderId: "debt-b", amount: 20_000 });
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.amount, 50_000);
+
+  s.writeOffDebt(b!.id);
+  const pending = s.getPendingWithdrawal("zalo", "user-a")!;
+  assert.equal(pending.debtApplied, 30_000);
+  assert.equal(pending.amount, 70_000);
+  s.markWithdrawalPaid(w.id, null);
+  assert.ok(s.getDebtByOrder("shopee", "debt-a")?.settledAt);
+});
+
 // ---------------------------------------------------------------------------
 // Huy yeu cau rut (Task 7)
 // ---------------------------------------------------------------------------
