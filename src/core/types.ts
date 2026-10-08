@@ -178,6 +178,14 @@ export interface WithdrawalRequest {
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
+  /**
+   * So tien no hoan tra DA TRU khoi yeu cau nay (2026-10-08): amount = gross - debtApplied. Ghi luc
+   * tao yeu cau nhung chi THUC SU tru vao payout_debts o markWithdrawalPaid() - nho vay
+   * cancelWithdrawal() khong phai hoan no lai tung dong.
+   */
+  debtApplied: number;
+  /** Moc admin huy yeu cau (2026-10-08). Yeu cau da huy KHONG tinh vao bat ky tong tien nao. */
+  cancelledAt: string | null;
 }
 
 /**

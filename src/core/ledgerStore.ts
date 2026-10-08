@@ -244,7 +244,9 @@ export class LedgerStore {
         proof_image_path TEXT,
         bank_name TEXT NOT NULL DEFAULT '',
         bank_account_number TEXT NOT NULL DEFAULT '',
-        bank_account_holder TEXT NOT NULL DEFAULT ''
+        bank_account_holder TEXT NOT NULL DEFAULT '',
+        debt_applied INTEGER NOT NULL DEFAULT 0,
+        cancelled_at TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_user ON withdrawal_requests(platform, user_id);
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_status ON withdrawal_requests(status);
@@ -355,6 +357,8 @@ export class LedgerStore {
     this.migrateAddWithdrawalProofColumn();
     // DB tao truoc khi co form ngan hang bat buoc (2026-08-20) se thieu 3 cot nay.
     this.migrateAddBankInfoColumns();
+    // DB tao truoc 2026-10-08 (truoc khi co no hoan tra + huy yeu cau rut) se thieu 2 cot nay.
+    this.migrateAddWithdrawalDebtColumns();
   }
 
   /**
@@ -616,6 +620,23 @@ export class LedgerStore {
    * phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 9) se thieu 3 cot nay. Dung DEFAULT '' cho du
    * lieu cu (cac yeu cau rut da ghi truoc do khong co thong tin ngan hang that).
    */
+  /**
+   * 2 cot cua tinh nang no hoan tra + huy yeu cau rut (2026-10-08). debt_applied co DEFAULT 0 vi
+   * yeu cau cu khong he tru no nao; cancelled_at nullable vi yeu cau cu khong bao gio bi huy.
+   */
+  private migrateAddWithdrawalDebtColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(withdrawal_requests)").all() as Array<{
+      name: string;
+    }>;
+    const hasColumn = (name: string) => columns.some((col) => col.name === name);
+    if (!hasColumn("debt_applied")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN debt_applied INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!hasColumn("cancelled_at")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN cancelled_at TEXT");
+    }
+  }
+
   private migrateAddBankInfoColumns(): void {
     const columns = this.db.prepare("PRAGMA table_info(withdrawal_requests)").all() as Array<{
       name: string;
@@ -940,7 +961,8 @@ export class LedgerStore {
   }
 
   /**
-   * Tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut tien nao, VA da qua ngay mo khoa.
+   * Tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut tien nao, VA da qua ngay mo khoa -
+   * nhung CHUA tru no hoan tra. Dung cho UI giai thich con so da bi tru, va de tinh debt_applied.
    *
    * available_from NULL nghia la kha dung ngay (don duoi nguong giam, hoac entry ghi truoc
    * 2026-10-08 nen khong giam hoi to) - xem payoutHold.ts.
@@ -948,7 +970,7 @@ export class LedgerStore {
    * Dung todayVnIso() chu KHONG date('now') cua SQLite: cai do la UTC, se mo khoa lech 7 tieng
    * (Railway chay UTC, 00:30 ngay 09/10 gio VN van la 17:30 ngay 08/10 UTC).
    */
-  getAvailableBalance(platform: Platform, userId: string): number {
+  getGrossAvailableBalance(platform: Platform, userId: string): number {
     const row = this.db
       .prepare(
         `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
@@ -959,7 +981,19 @@ export class LedgerStore {
     return row.total;
   }
 
-  /** Tien da duoc Shopee duyet nhung con bi giam - doi xung voi getAvailableBalance(). */
+  /**
+   * Tien user rut duoc THAT SU = don da mo khoa TRU no hoan tra, floor o 0.
+   *
+   * Floor la bat buoc: so am se chay vao moi the KPI, moi bieu do, va vao ca cau "Tich luy them X
+   * nua de du dieu kien rut tien" tren dashboard. No khong bao gio ep user chuyen tien ra - no ngoi
+   * do cho den khi co hoa hong moi.
+   */
+  getAvailableBalance(platform: Platform, userId: string): number {
+    const gross = this.getGrossAvailableBalance(platform, userId);
+    return Math.max(0, gross - this.getOutstandingDebtTotal(platform, userId));
+  }
+
+  /** Tien da duoc Shopee duyet nhung con bi giam - doi xung voi getGrossAvailableBalance(). */
   getHeldBalance(platform: Platform, userId: string): number {
     const row = this.db
       .prepare(
@@ -1591,7 +1625,12 @@ export class LedgerStore {
       throw new WithdrawalAlreadyPendingError();
     }
 
-    const balance = this.getAvailableBalance(platform, userId);
+    // Tach gross/net de ghi lai debt_applied: no CHUA bi tru o day (xem markWithdrawalPaid) nen phai
+    // luu so da tru vao chinh yeu cau, neu khong thi den luc tra tien khong con biet tru bao nhieu.
+    const gross = this.getGrossAvailableBalance(platform, userId);
+    const debt = this.getOutstandingDebtTotal(platform, userId);
+    const balance = Math.max(0, gross - debt);
+    const debtApplied = Math.min(gross, debt);
     if (balance < thresholdVnd) {
       throw new InsufficientBalanceError(balance, thresholdVnd);
     }
@@ -1604,10 +1643,10 @@ export class LedgerStore {
       this.db
         .prepare(
           `INSERT INTO withdrawal_requests
-            (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder)
-           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?)`
+            (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder, debt_applied, cancelled_at)
+           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?, ?, NULL)`
         )
-        .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder);
+        .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder, debtApplied);
 
       // Phai lap LAI dieu kien available_from giong getAvailableBalance(): thieu no thi don dang bi
       // giam van bi gan withdrawal_id (tuc bi khoa vao mot yeu cau rut khong he tinh tien cua no),
@@ -1638,6 +1677,8 @@ export class LedgerStore {
       bankName,
       bankAccountNumber,
       bankAccountHolder,
+      debtApplied,
+      cancelledAt: null,
     };
   }
 
@@ -1675,6 +1716,7 @@ export class LedgerStore {
       throw new Error(`Khong tim thay yeu cau rut tien voi id "${withdrawalId}"`);
     }
 
+    const existing = rowToWithdrawalRequest(row);
     const paidAt = new Date().toISOString();
     this.db.exec("BEGIN");
     try {
@@ -1684,14 +1726,39 @@ export class LedgerStore {
       this.db
         .prepare(`UPDATE commission_entries SET status = 'paid' WHERE withdrawal_id = ?`)
         .run(withdrawalId);
+
+      // Tru no o DAY chu khong o requestWithdrawal: nho vay cancelWithdrawal() chi viec tha entry ra,
+      // khong phai hoan no lai dung tung dong (cho de sai nhat tren ca duong tien). Khong co cua so
+      // dem trung: trong luc yeu cau con 'requested', moi entry da mo khoa deu da bi gom nen
+      // getGrossAvailableBalance = 0.
+      let left = existing.debtApplied;
+      if (left > 0) {
+        const debts = this.db
+          .prepare(
+            `SELECT id, remaining FROM payout_debts
+             WHERE platform = ? AND user_id = ? AND settled_at IS NULL AND written_off_at IS NULL
+             ORDER BY created_at ASC, rowid ASC`
+          )
+          .all(existing.platform, existing.userId) as Array<{ id: string; remaining: number }>;
+        const updateDebt = this.db.prepare(
+          `UPDATE payout_debts SET remaining = ?, settled_at = ? WHERE id = ?`
+        );
+        for (const debt of debts) {
+          if (left <= 0) break;
+          const take = Math.min(left, debt.remaining);
+          const remaining = debt.remaining - take;
+          updateDebt.run(remaining, remaining === 0 ? paidAt : null, debt.id);
+          left -= take;
+        }
+      }
+
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");
       throw err;
     }
 
-    const updated = rowToWithdrawalRequest(row);
-    return { ...updated, status: "paid", paidAt, proofImagePath: storedProof };
+    return { ...existing, status: "paid", paidAt, proofImagePath: storedProof };
   }
 
   /**
@@ -2179,6 +2246,8 @@ function rowToWithdrawalRequest(row: unknown): WithdrawalRequest {
     bankName: (r.bank_name as string | null) ?? "",
     bankAccountNumber: (r.bank_account_number as string | null) ?? "",
     bankAccountHolder: (r.bank_account_holder as string | null) ?? "",
+    debtApplied: (r.debt_applied as number | null) ?? 0,
+    cancelledAt: (r.cancelled_at as string | null) ?? null,
   };
 }
 
