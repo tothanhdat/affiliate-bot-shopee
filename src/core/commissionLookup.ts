@@ -38,6 +38,11 @@ export interface ProductCommission {
   price: number;
   /** true = hoa hong da cham tran, nen commissionAmount NHO HON ratePercent x price. */
   isCapped: boolean;
+  /**
+   * Ten san pham do nguon tra ve trong CUNG loi goi nay - khong ton them request nao. Dung cho
+   * cot "Ten san pham" cua /admin/links; `null` khi nguon khong tra ve field do.
+   */
+  productName: string | null;
 }
 
 export interface CommissionLookup {
@@ -75,6 +80,7 @@ export interface AddlivetagCommissionLookupConfig {
 /** So lieu tho doc tu 1 lan goi API, truoc khi quyet dinh co chap nhan hay khong. */
 interface RawProductInfo {
   commissionAmount: number;
+  productName: string | null;
   ratePercent: number;
   price: number;
   isCapped: boolean;
@@ -87,6 +93,13 @@ const MIN_RETRY_BUDGET_MS = 400;
 
 function readFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** Chuoi rong coi nhu khong co ten - de trang admin hien "—" thay vi mot o trong vo nghia. */
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 export class AddlivetagCommissionLookup implements CommissionLookup {
@@ -156,6 +169,7 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
       ratePercent: info.ratePercent,
       price: info.price,
       isCapped: info.isCapped,
+      productName: info.productName,
     };
   }
 
@@ -209,6 +223,7 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
 
     return {
       commissionAmount,
+      productName: readNonEmptyString(info.productName),
       ratePercent: readFiniteNumber(info.totalRatePercent) ?? 0,
       price: readFiniteNumber(info.price) ?? 0,
       isCapped: info.isCapped === true,

@@ -1,4 +1,4 @@
-import type { AffiliateProvider, PromotionItem } from "./affiliateProvider.js";
+import type { AffiliateProvider, CommissionEstimate, PromotionItem } from "./affiliateProvider.js";
 import { AppError, RateLimitedError } from "./errors.js";
 import { LogStore } from "./logStore.js";
 import { parseProductLink } from "./linkValidator.js";
@@ -6,6 +6,20 @@ import type { MerchantId } from "./merchants.js";
 import { RateLimiter } from "./rateLimiter.js";
 import { generateSubId } from "./subId.js";
 import type { ResolveLinkRequest, ResolveLinkResult } from "./types.js";
+
+/**
+ * So hoa hong GOC ghi vao log. BA trang thai loai tru nhau, dung gop lai:
+ * - co uoc tinh    -> so tien that
+ * - noCommission   -> 0 (da XAC MINH tu nguon la san pham chua bat hoa hong)
+ * - con lai        -> null (khong tra duoc: tat tinh nang, link khong co item_id, nguon loi)
+ */
+function toLoggedCommission(
+  estimate: CommissionEstimate | null | undefined,
+  noCommission: boolean | undefined
+): number | null {
+  if (estimate) return estimate.estimatedAmount;
+  return noCommission === true ? 0 : null;
+}
 
 function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
@@ -33,7 +47,7 @@ export class LinkResolverService {
     try {
       const parsed = await parseProductLink(request.url);
       const subId = generateSubId(request.platform, request.userId);
-      const { affiliateUrl, commissionEstimate, noCommission } = await this.provider.createAffiliateLink({
+      const { affiliateUrl, commissionEstimate, noCommission, productName } = await this.provider.createAffiliateLink({
         merchant: parsed.merchant,
         productUrl: parsed.canonicalUrl,
         subId,
@@ -50,6 +64,9 @@ export class LinkResolverService {
         outcome: "success",
         errorCode: null,
         affiliateUrl,
+        productName: productName ?? null,
+        commissionEstimate: toLoggedCommission(commissionEstimate, noCommission),
+        sourceContext: request.sourceContext ?? null,
       });
 
       return {
@@ -75,6 +92,8 @@ export class LinkResolverService {
         outcome: "error",
         errorCode: appError.code,
         affiliateUrl: null,
+        // Loi xay ra truoc khi biet merchant/san pham, nhung noi gui thi adapter LUON biet.
+        sourceContext: request.sourceContext ?? null,
       });
       throw appError;
     }

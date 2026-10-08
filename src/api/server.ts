@@ -19,11 +19,12 @@ import {
 import { renderAdminDashboardPage } from "./adminDashboardHtml.js";
 import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js";
 import { renderHandbookPage } from "./handbookHtml.js";
+import { LINKS_PAGE_SIZE, renderLinksPage } from "./adminLinksHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
 import { AppError } from "../core/errors.js";
 import type { LedgerStore } from "../core/ledgerStore.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
-import type { LogStore } from "../core/logStore.js";
+import type { CreatedLinkFilters, LogStore } from "../core/logStore.js";
 import { MERCHANTS, type MerchantId } from "../core/merchants.js";
 import {
   recordSingleOrder,
@@ -32,7 +33,7 @@ import {
 } from "../core/orderIngest.js";
 import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
-import type { CommissionStatus, Platform } from "../core/types.js";
+import type { CommissionStatus, Platform, RequestOutcome } from "../core/types.js";
 import type { NotifyUser } from "../core/notification.js";
 import { buildOrdersConfirmedNotification } from "../core/orderImage/ordersConfirmedNotification.js";
 import {
@@ -71,6 +72,18 @@ function parseStatusFilter(raw: unknown): CommissionStatus[] {
 }
 
 /** So trang tu query: chi nhan so nguyen duong, moi gia tri khac (rac, 0, am, so le) ve trang 1. */
+/**
+ * Doc 1 tham so ngay "YYYY-MM-DD" tu query string. Tra `undefined` cho moi gia tri khong dung dinh
+ * dang HOAC khong phai ngay co that ("2026-13-99") - day la chuoi admin go tay duoc, bo qua mot bo
+ * loc sai van tot hon la loc ra bang rong roi de ho tuong he thong mat du lieu.
+ */
+function parseIsoDateParam(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  // Date() tu "cuon" ngay khong co that (31/02 -> 03/03) nen phai doi chieu lai chinh chuoi goc.
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? undefined : value;
+}
+
 function parsePageParam(raw: unknown): number {
   if (typeof raw !== "string") return 1;
   const page = Number(raw);
@@ -238,6 +251,8 @@ export function createServer(
         platform: resolvedPlatform,
         userId: resolvedUserId,
         rateLimitKey: `http-ip:${req.ip ?? "unknown"}`,
+        // Endpoint HTTP khong co khai niem group/DM - xem LinkSourceContext.
+        sourceContext: "api",
       });
       res.status(200).json({ success: true, data: result });
     } catch (err) {
@@ -654,6 +669,50 @@ export function createServer(
         filters,
         ledgerStore.getDisplayNamesMap(),
         { page, totalPages, totalEntries: totals.totalEntries },
+        totals,
+        navPendingWithdrawals()
+      )
+    );
+  });
+
+  /**
+   * Danh sach MOI luot tao link (2026-10-08). Ten hien thi cua user nam o DB KHAC (user_profiles
+   * ben ledgerStore) nen phai gop trong JS - khong JOIN duoc qua 2 ket noi SQLite.
+   */
+  app.get("/admin/links", requireAdminAuth, (req: Request, res: Response) => {
+    const filters: CreatedLinkFilters = {
+      platform:
+        typeof req.query.platform === "string" && VALID_PLATFORMS.includes(req.query.platform as Platform)
+          ? (req.query.platform as Platform)
+          : undefined,
+      outcome:
+        req.query.outcome === "success" || req.query.outcome === "error"
+          ? (req.query.outcome as RequestOutcome)
+          : undefined,
+      userId: typeof req.query.userId === "string" && req.query.userId !== "" ? req.query.userId : undefined,
+      // Chuoi rong bi bo qua de "?q=" khong bi tinh la mot dieu kien loc (trang se bao "dang loc"
+      // trong o danh sach rong).
+      search: typeof req.query.q === "string" && req.query.q.trim() !== "" ? req.query.q.trim() : undefined,
+      fromDate: parseIsoDateParam(req.query.from),
+      toDate: parseIsoDateParam(req.query.to),
+    };
+
+    // Tong so + 4 the KPI lay trong MOT truy van dung CHUNG bo loc voi bang. Phai co TRUOC khi lay
+    // trang vi so trang quyet dinh viec kep "page" ve khoang hop le (admin dang o trang 5 roi doi
+    // bo loc con 1 trang -> ?page=5 phai ve trang 1, khong duoc tra bang rong).
+    const totals = logStore.getCreatedLinksTotals(filters);
+    const totalPages = Math.max(1, Math.ceil(totals.total / LINKS_PAGE_SIZE));
+    const page = Math.min(parsePageParam(req.query.page), totalPages);
+    const entries = logStore.listCreatedLinks(filters, {
+      limit: LINKS_PAGE_SIZE,
+      offset: (page - 1) * LINKS_PAGE_SIZE,
+    });
+    res.type("html").send(
+      renderLinksPage(
+        entries,
+        filters,
+        ledgerStore.getDisplayNamesMap(),
+        { page, totalPages, totalEntries: totals.total },
         totals,
         navPendingWithdrawals()
       )

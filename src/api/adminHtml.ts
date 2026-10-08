@@ -40,6 +40,7 @@ const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: keyof t
   { key: "withdrawals", href: "/admin/withdrawals", label: "Yêu cầu rút tiền", icon: "wallet" },
   { key: "users", href: "/admin/users", label: "Người dùng", icon: "users" },
   { key: "orders", href: "/admin/orders", label: "Đơn hàng", icon: "shopping-cart" },
+  { key: "links", href: "/admin/links", label: "Link đã tạo", icon: "link" },
   { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng", icon: "file-plus" },
   { key: "settings", href: "/admin/settings", label: "Cấu hình", icon: "settings" },
 ];
@@ -52,7 +53,7 @@ const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: keyof t
  * trang mat sach icon, con inline thi khong bao gio. Duong SVG lay theo hinh cua Lucide (giay phep
  * ISC). Them icon moi thi them 1 dong vao ICON_PATHS, dung tai them runtime icon.
  */
-const ICON_PATHS: Record<string, string> = {
+export const ICON_PATHS: Record<string, string> = {
   "layout-dashboard":
     '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   wallet:
@@ -109,6 +110,13 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
   bot:
     '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  link:
+    '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  "external-link":
+    '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  "x-circle": '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  "message-circle":
+    '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>',
 };
 
 /**
@@ -120,7 +128,7 @@ const ICON_PATHS: Record<string, string> = {
  * inline van nam tren duong co chu va de lai khoang trong cua net xuoi ben duoi, lam icon lech so
  * voi chu canh no.
  */
-function icon(name: keyof typeof ICON_PATHS, extraClass = ""): string {
+export function icon(name: keyof typeof ICON_PATHS, extraClass = ""): string {
   const cls = extraClass ? `icon-svg ${extraClass}` : "icon-svg";
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
 }
@@ -628,11 +636,11 @@ ${headAssets()}
 }
 
 /** Key dung chung de tra ten trong displayNames map, phai khop voi LedgerStore.getDisplayNamesMap(). */
-function nameKey(platform: string, userId: string): string {
+export function nameKey(platform: string, userId: string): string {
   return `${platform}:${userId}`;
 }
 
-function nameCell(name: string | null | undefined): string {
+export function nameCell(name: string | null | undefined): string {
   return name ? escapeHtml(name) : `<span class="muted">—</span>`;
 }
 
@@ -1305,7 +1313,7 @@ function ordersPageHref(filters: OrdersFilters, page: number): string {
 }
 
 /** Day so trang hien tren thanh phan trang: luon co trang dau/cuoi + 1 trang ke hien tai, con lai la "…". */
-function paginationItems(page: number, totalPages: number): Array<number | "gap"> {
+export function paginationItems(page: number, totalPages: number): Array<number | "gap"> {
   const wanted = new Set<number>([1, totalPages, page - 1, page, page + 1]);
   const pages = [...wanted].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
   const items: Array<number | "gap"> = [];
@@ -1347,9 +1355,9 @@ const STATUS_LABELS: Record<CommissionStatus, string> = {
   paid: "Đã rút",
   reversed: "Đã huỷ",
 };
-const PLATFORM_OPTIONS: Platform[] = ["telegram", "zalo", "http"];
+export const PLATFORM_OPTIONS: Platform[] = ["telegram", "zalo", "http"];
 
-function selectOptions<T extends string>(
+export function selectOptions<T extends string>(
   options: readonly T[],
   labelFor: (v: T) => string,
   selected: T | undefined
@@ -1389,7 +1397,7 @@ const AVATAR_TONES = [
  * khong phai dau "?": dau hoi doc ra nhu mot trang thai loi, trong khi day chi la "bot chua tung
  * thay ten". Cot ben canh da ghi ro "Chưa đặt tên" nen khong co gi mo ho.
  */
-function userAvatar(displayName: string | null, userId: string): string {
+export function userAvatar(displayName: string | null, userId: string): string {
   const base =
     "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ring-1";
   if (!displayName || displayName.trim() === "") {
@@ -1409,7 +1417,7 @@ function userAvatar(displayName: string | null, userId: string): string {
 }
 
 /** Ten kenh viet hoa dung cach de hien cho nguoi doc - gia tri trong DB van la "zalo"/"telegram"/"http". */
-const PLATFORM_LABELS: Record<Platform, string> = {
+export const PLATFORM_LABELS: Record<Platform, string> = {
   zalo: "Zalo",
   telegram: "Telegram",
   http: "HTTP",
@@ -1422,7 +1430,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
  * Zalo xanh duong va Telegram xanh da troi la mau thuong hieu that cua hai ben; HTTP trung tinh vi
  * no khong phai thuong hieu nao, chi la duong goi API truc tiep.
  */
-function platformChip(platform: Platform): string {
+export function platformChip(platform: Platform): string {
   const tone: Record<Platform, string> = {
     zalo: "border-blue-100 bg-blue-50 text-blue-600",
     telegram: "border-sky-100 bg-sky-50 text-sky-600",
@@ -1437,7 +1445,7 @@ function platformChip(platform: Platform): string {
  * `note` de rong thi khong render dong thu ba - trang /admin/users khong co gi can chu thich them,
  * con /admin/orders thi BAT BUOC co ("khong tinh đơn đã huỷ").
  */
-function kpiCard(input: {
+export function kpiCard(input: {
   label: string;
   value: string;
   note?: string;
@@ -1479,7 +1487,7 @@ function kpiCard(input: {
  * `columns` la so cot o man rong: 4 cho trang nhieu chi so, 2 cho trang it. Hai the keo het be ngang
  * man hinh trong rat trong rong nen ban 2 cot bi gioi han be ngang lai.
  */
-function kpiGrid(cards: string[], columns: 2 | 4 = 4): string {
+export function kpiGrid(cards: string[], columns: 2 | 4 = 4): string {
   const wide = columns === 4 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 md:max-w-3xl";
   return `<div class="mb-5 grid grid-cols-1 gap-4 ${wide}">\n${cards.join("\n")}\n</div>`;
 }
@@ -1503,12 +1511,12 @@ function moneyCell(amount: number, toneClass: string): string {
  * bo goc (W9); `appearance-none` + SELECT_CHEVRON_CLASS cho <select> de no cao bang <input> va
  * trong giong nhau tren moi he dieu hanh - select goc cua Safari macOS cao hon va bo goc khac.
  */
-const FIELD_CLASS =
+export const FIELD_CLASS =
   "w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 " +
   "transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20";
 
 /** Nhan phia tren 1 o nhap (kieu "LABEL IN HOA NHO" cua form 2 cot) - dung cung FIELD_CLASS. */
-const FIELD_LABEL_CLASS = "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+export const FIELD_LABEL_CLASS = "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500";
 
 // Mui nhon ve bang background-image (data URI) thay vi 1 the <svg> dat tuyet doi: <select> khong
 // nhan phan tu con nao ngoai <option> nen khong co cach nao nhet icon vao trong no.
@@ -1519,7 +1527,7 @@ const FIELD_LABEL_CLASS = "mb-1.5 block text-[11px] font-semibold uppercase trac
 // `bg-[url('data:image/svg+xml...` bi coi la khong hop le va KHONG SINH RA CSS NAO - mui ten tren
 // 4 <select> (orders, users, record-orders) am tham bien mat, khong co loi build nao bao. Chuyen
 // het sang 1 class CSS viet tay la cach duy nhat an toan voi moi gia tri co dau cach ben trong.
-const SELECT_CHEVRON_CLASS = "field-select";
+export const SELECT_CHEVRON_CLASS = "field-select";
 
 
 /**
@@ -1536,7 +1544,7 @@ const SELECT_CHEVRON_CLASS = "field-select";
  * trang thai la bo tron hoan toan + co dau tron (xem statusPill). Dung lam chip bo tron, cung dung
  * them dau tron vao chip.
  */
-function merchantChipClass(merchant: MerchantId): string {
+export function merchantChipClass(merchant: MerchantId): string {
   const byMerchant: Partial<Record<MerchantId, string>> = {
     shopee: "border-orange-100 bg-orange-50 text-orange-600",
   };
@@ -1556,7 +1564,7 @@ function merchantChipClass(merchant: MerchantId): string {
  * chinh voi mu mau do-luc (cap "Khả dụng" #16a34a / "Đã huỷ" #dc2626 truot kiem tra, xem ghi chu
  * chart trong CLAUDE.md), dau tron chi la trang tri them nen bo di khong mat thong tin gi.
  */
-function statusPill(badge: { label: string; tone: BadgeTone }): string {
+export function statusPill(badge: { label: string; tone: BadgeTone }): string {
   const tone = {
     success: { bg: "--success-soft", fg: "--success" },
     warning: { bg: "--warning-soft", fg: "--warning" },

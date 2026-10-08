@@ -164,6 +164,7 @@ function setup() {
     api,
     sent,
     ledgerStore,
+    logStore,
     handleMessage,
     attachFaq,
     bot,
@@ -904,6 +905,49 @@ test("Zalo group: tin nhan noi dung RONG -> khong tra huong dan su dung", async 
     await handleMessage(makeMessage(ThreadType.Group, ""));
 
     assert.equal(sent.length, 0, "tin rong khong phai 'khong biet dung bot', dung tra USAGE_TEXT");
+  } finally {
+    cleanup();
+  }
+});
+
+// Cot "Noi gui" cua /admin/links (2026-10-08). Adapter la cho DUY NHAT biet link den tu group hay
+// DM - core khong suy nguoc duoc tu `platform` (ca hai deu la "zalo").
+test("Zalo GROUP: luot tao link ghi sourceContext = 'group'", async () => {
+  const { logStore, handleMessage, cleanup } = setup();
+  try {
+    await handleMessage(makeMessage(ThreadType.Group, PRODUCT_URL));
+
+    const [row] = logStore.listCreatedLinks();
+    assert.equal(row.outcome, "success");
+    assert.equal(row.sourceContext, "group");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: luot tao link ghi sourceContext = 'dm'", async () => {
+  const { logStore, ledgerStore, handleMessage, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+
+    await handleMessage(makeMessage(ThreadType.User, PRODUCT_URL));
+
+    assert.equal(logStore.listCreatedLinks()[0].sourceContext, "dm");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo: link LOI trong group van ghi sourceContext = 'group'", async () => {
+  // Luot loi la luot admin can soi nhat (user gui gi ma bot tu choi?) - thieu noi gui thi khong
+  // biet phai di xem lai group nao.
+  const { logStore, handleMessage, cleanup } = setup();
+  try {
+    await handleMessage(makeMessage(ThreadType.Group, "https://sv.shopee.vn/share-video/abc"));
+
+    const [row] = logStore.listCreatedLinks();
+    assert.equal(row.outcome, "error");
+    assert.equal(row.sourceContext, "group");
   } finally {
     cleanup();
   }

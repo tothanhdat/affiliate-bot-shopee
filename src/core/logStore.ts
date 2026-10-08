@@ -3,7 +3,95 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { MerchantId } from "./merchants.js";
-import type { Platform, RequestLogEntry, RequestOutcome } from "./types.js";
+import type { LinkSourceContext, Platform, RequestLogEntry, RequestOutcome } from "./types.js";
+
+/**
+ * 3 field cuoi la OPTIONAL luc ghi (khac voi RequestLogEntry doc ra - o do chung luon la
+ * `T | null`): phan lon cho goi record() khong co thong tin nay, va bat moi cho truyen `null`
+ * tuong minh chi them nhieu chu chu khong them an toan nao.
+ */
+export type RecordRequestInput = Omit<
+  RequestLogEntry,
+  "id" | "timestamp" | "productName" | "commissionEstimate" | "sourceContext"
+> &
+  Partial<Pick<RequestLogEntry, "timestamp" | "productName" | "commissionEstimate" | "sourceContext">>;
+
+export interface CreatedLinkFilters {
+  /** Khop MOT PHAN user_id / product_name / original_url. */
+  search?: string;
+  platform?: Platform;
+  /** undefined = lay ca luot thanh cong lan luot loi. */
+  outcome?: RequestOutcome;
+  /** Khop CHINH XAC - dung khi bam tu /admin/users sang, khong duoc keo theo user co id chua chuoi tuong tu. */
+  userId?: string;
+  /**
+   * Khoang ngay, dang "YYYY-MM-DD" theo GIO VN, CA HAI dau deu tinh vao. Bo trong 1 dau = khong
+   * gioi han dau do.
+   */
+  fromDate?: string;
+  toDate?: string;
+}
+
+export interface CreatedLinksTotals {
+  total: number;
+  success: number;
+  errors: number;
+  distinctUsers: number;
+  /** Tong hoa hong GOC uoc tinh cua cac luot THANH CONG trong pham vi bo loc. */
+  commissionEstimateTotal: number;
+}
+
+/** `%`/`_` nguoi dung go phai escape, neu khong thi go "1_2" se khop ca "132". */
+function likePattern(raw: string): string {
+  return `%${raw.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/**
+ * Cat ngay theo GIO VN. `timestamp` luu ISO UTC, ma Railway chay UTC: 01:30 ngay 02/10 gio VN la
+ * 18:30 ngay 01/10 UTC, nen loc thang tren chuoi UTC se day luot do sang nham ngay hom truoc suot
+ * 7 tieng moi ngay. Giong DAY_EXPR cua ledgerStore de 2 trang doi chieu duoc voi nhau.
+ */
+const VN_DAY_EXPR = "date(timestamp, '+7 hours')";
+
+function buildCreatedLinksWhere(filters?: CreatedLinkFilters): {
+  where: string;
+  params: (string | number)[];
+} {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (filters?.platform) {
+    conditions.push("platform = ?");
+    params.push(filters.platform);
+  }
+  if (filters?.outcome) {
+    conditions.push("outcome = ?");
+    params.push(filters.outcome);
+  }
+  if (filters?.userId) {
+    conditions.push("user_id = ?");
+    params.push(filters.userId);
+  }
+  // So sanh truc tiep tren chuoi "YYYY-MM-DD" - dinh dang nay sap xep tu dien trung sap xep thoi gian.
+  if (filters?.fromDate) {
+    conditions.push(`${VN_DAY_EXPR} >= ?`);
+    params.push(filters.fromDate);
+  }
+  if (filters?.toDate) {
+    conditions.push(`${VN_DAY_EXPR} <= ?`);
+    params.push(filters.toDate);
+  }
+  const search = filters?.search?.trim();
+  if (search) {
+    conditions.push(
+      `(user_id LIKE ? ESCAPE '\\' OR product_name LIKE ? ESCAPE '\\' OR original_url LIKE ? ESCAPE '\\')`
+    );
+    const pattern = likePattern(search);
+    params.push(pattern, pattern, pattern);
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
 
 const SHORT_LINK_CODE_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const SHORT_LINK_CODE_LENGTH = 7;
@@ -44,6 +132,7 @@ export class LogStore {
     // Phai chay TRUOC khi tao index tren cot merchant - DB tao truoc khi co field nay se
     // chua thieu cot, va CREATE INDEX se loi "no such column" neu chay truoc migration.
     this.migrateAddMerchantColumn();
+    this.migrateAddLinkDetailColumns();
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_merchant ON requests(merchant);`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_sub_id ON requests(sub_id);`);
 
@@ -98,7 +187,30 @@ export class LogStore {
     }
   }
 
-  record(entry: Omit<RequestLogEntry, "id" | "timestamp"> & { timestamp?: string }): RequestLogEntry {
+  /**
+   * 3 cot cho trang /admin/links (2026-10-08). Nullable, khong DEFAULT, KHONG backfill:
+   * - product_name/commission_estimate: tra lai hom nay se ra hoa hong HOM NAY, khong phai so da
+   *   bao cho user luc tao link -> ghi vao la pha huy chinh thu dung de doi soat (cung ly do
+   *   order_date cua ledgerStore khong backfill duoc).
+   * - source_context: platform khong suy ra duoc group/DM.
+   * Row cu de null va trang admin hien "—".
+   */
+  private migrateAddLinkDetailColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>;
+    const existing = new Set(columns.map((col) => col.name));
+    const toAdd: Array<[string, string]> = [
+      ["product_name", "TEXT"],
+      ["commission_estimate", "INTEGER"],
+      ["source_context", "TEXT"],
+    ];
+    for (const [name, type] of toAdd) {
+      if (!existing.has(name)) {
+        this.db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`);
+      }
+    }
+  }
+
+  record(entry: RecordRequestInput): RequestLogEntry {
     const full: RequestLogEntry = {
       id: randomUUID(),
       timestamp: entry.timestamp ?? new Date().toISOString(),
@@ -110,13 +222,19 @@ export class LogStore {
       outcome: entry.outcome,
       errorCode: entry.errorCode,
       affiliateUrl: entry.affiliateUrl,
+      productName: entry.productName ?? null,
+      // ?? chu KHONG dung || : commissionEstimate = 0 la gia tri THAT ("chua bat hoa hong"),
+      // || se bien no thanh null va trang admin se noi sai ve san pham do.
+      commissionEstimate: entry.commissionEstimate ?? null,
+      sourceContext: entry.sourceContext ?? null,
     };
 
     this.db
       .prepare(
         `INSERT INTO requests
-          (id, timestamp, platform, merchant, user_id, original_url, sub_id, outcome, error_code, affiliate_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          (id, timestamp, platform, merchant, user_id, original_url, sub_id, outcome, error_code,
+           affiliate_url, product_name, commission_estimate, source_context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         full.id,
@@ -128,10 +246,71 @@ export class LogStore {
         full.subId,
         full.outcome,
         full.errorCode,
-        full.affiliateUrl
+        full.affiliateUrl,
+        full.productName,
+        full.commissionEstimate,
+        full.sourceContext
       );
 
     return full;
+  }
+
+  // ===========================================================================
+  // Trang /admin/links (2026-10-08) - liet ke MOI luot tao link, ke ca luot loi.
+  // 3 ham duoi dung CHUNG buildCreatedLinksWhere(): lech bo loc la so trang khong khop so dong
+  // va the KPI noi mot so trong khi bang liet ke so khac (bay da gap o listCommissionEntries).
+  // ===========================================================================
+
+  listCreatedLinks(
+    filters?: CreatedLinkFilters,
+    paging?: { limit: number; offset: number }
+  ): RequestLogEntry[] {
+    const { where, params } = buildCreatedLinksWhere(filters);
+    // Tiebreak rowid DESC: timestamp chi phan giai toi mili-giay, ma 1 tin nhan nhieu link se ghi
+    // nhieu row trong cung mili-giay - thieu no thi trang 1 va trang 2 co the trung/sot dong.
+    let sql = `SELECT * FROM requests ${where} ORDER BY timestamp DESC, rowid DESC`;
+    const args = [...params];
+    if (paging) {
+      sql += " LIMIT ? OFFSET ?";
+      args.push(paging.limit, paging.offset);
+    }
+    return this.db
+      .prepare(sql)
+      .all(...args)
+      .map(rowToEntry);
+  }
+
+  countCreatedLinks(filters?: CreatedLinkFilters): number {
+    const { where, params } = buildCreatedLinksWhere(filters);
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS total FROM requests ${where}`)
+      .get(...params) as { total: number };
+    return row.total;
+  }
+
+  /** So lieu cho 4 the KPI dau trang /admin/links - tinh tren DUNG bo loc dang ap dung. */
+  getCreatedLinksTotals(filters?: CreatedLinkFilters): CreatedLinksTotals {
+    const { where, params } = buildCreatedLinksWhere(filters);
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+           COALESCE(SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END), 0) AS success,
+           COALESCE(SUM(CASE WHEN outcome = 'error' THEN 1 ELSE 0 END), 0) AS errors,
+           COUNT(DISTINCT platform || ':' || user_id) AS distinct_users,
+           -- Chi cong luot THANH CONG: luot loi khong tao ra link nao nen khoan hoa hong do khong
+           -- bao gio ton tai, cong vao se bao cao vuot thuc te.
+           COALESCE(SUM(CASE WHEN outcome = 'success' THEN commission_estimate ELSE 0 END), 0)
+             AS commission_estimate_total
+         FROM requests ${where}`
+      )
+      .get(...params) as Record<string, number>;
+    return {
+      total: row.total,
+      success: row.success,
+      errors: row.errors,
+      distinctUsers: row.distinct_users,
+      commissionEstimateTotal: row.commission_estimate_total,
+    };
   }
 
   /** Lay log theo khoang ngay (ISO date, vi du "2026-07-31"), loc theo platform/merchant neu co. */
@@ -231,5 +410,9 @@ function rowToEntry(row: unknown): RequestLogEntry {
     outcome: r.outcome as RequestOutcome,
     errorCode: (r.error_code as string | null) ?? null,
     affiliateUrl: (r.affiliate_url as string | null) ?? null,
+    productName: (r.product_name as string | null) ?? null,
+    // ?? chu khong || : 0 la gia tri THAT ("san pham chua bat hoa hong"), xem commissionLookup.ts.
+    commissionEstimate: (r.commission_estimate as number | null) ?? null,
+    sourceContext: (r.source_context as LinkSourceContext | null) ?? null,
   };
 }

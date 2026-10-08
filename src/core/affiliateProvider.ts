@@ -42,6 +42,12 @@ export interface CreateAffiliateLinkOutput {
    * Accesstrade, da bi bo khoi scope 2026-09-29). Giu lai vi day la field cua interface chung.
    */
   commissionEstimate?: CommissionEstimate | null;
+  /**
+   * Ten san pham, neu nguon affiliate tinh co biet (Shopee: di kem ket qua tra hoa hong, khong
+   * ton request rieng). Chi dung de GHI LOG cho /admin/links - KHONG duoc dua vao tin nhan tra
+   * link: ten do la ten ben thu ba tra ve, khong phai thong tin bot tu xac minh.
+   */
+  productName?: string | null;
 }
 
 export interface PromotionItem {

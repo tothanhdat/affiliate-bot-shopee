@@ -109,6 +109,7 @@ test("doc dung so tien hoa hong va gia tu response that", async () => {
     ratePercent: 2.5,
     price: 490000,
     isCapped: false,
+    productName: "Túi đựng máy ảnh -Túi đeo vai đựng máy ảnh khi đi du lịch dung tích 3L Ulanzi F02",
   });
 });
 
@@ -315,4 +316,29 @@ test("goi lai that bai -> khong throw, tra null theo ket qua goc", async () => {
   };
   assert.equal(await makeLookup(fetchImpl).lookup("57810614027"), null);
   assert.equal(urls.length, 2);
+});
+
+test("doc ten san pham tu cung response - khong ton them request nao", async () => {
+  // Nguon da tra san productInfo.productName trong CUNG loi goi dung de tra hoa hong. Trang
+  // /admin/links lay ten san pham tu day, nen bo qua field nay la mat han cot do (khong co nguon
+  // thu hai nao biet ten san pham).
+  const { fetchImpl, calls } = fakeFetch(ULANZI_RESPONSE);
+  const result = await makeLookup(fetchImpl).lookup("43881017922");
+
+  assert.equal(
+    result?.productName,
+    "Túi đựng máy ảnh -Túi đeo vai đựng máy ảnh khi đi du lịch dung tích 3L Ulanzi F02"
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("response thieu productName -> ten ve null, hoa hong van doc binh thuong", async () => {
+  const { fetchImpl } = fakeFetch({
+    status: "success",
+    productInfo: { itemId: 1, price: 1000, commission: 50, totalRatePercent: 5, isCapped: false },
+  });
+  const result = await makeLookup(fetchImpl).lookup("1");
+
+  assert.equal(result?.productName, null);
+  assert.equal(result?.commissionAmount, 50);
 });

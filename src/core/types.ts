@@ -24,6 +24,11 @@ export interface ResolveLinkRequest {
    * cay (do platform cap, khong gia mao qua noi dung tin nhan).
    */
   rateLimitKey?: string;
+  /**
+   * Noi user gui link (group/DM/api) - adapter la cho DUY NHAT biet thong tin nay, core khong suy
+   * ra duoc tu platform. Chi dung de ghi log cho /admin/links, khong anh huong logic tao link.
+   */
+  sourceContext?: LinkSourceContext;
 }
 
 export interface ResolveLinkResult {
@@ -42,6 +47,13 @@ export interface ResolveLinkResult {
 
 export type RequestOutcome = "success" | "error";
 
+/**
+ * Noi user gui link toi bot (2026-10-08, cho cot "Noi gui" tren /admin/links).
+ * group/dm: Zalo va Telegram deu phan biet duoc ngay tai cho goi resolve().
+ * api: request vao qua POST /api/v1/resolve - khong co khai niem group/DM.
+ */
+export type LinkSourceContext = "group" | "dm" | "api";
+
 export interface RequestLogEntry {
   id: string;
   timestamp: string;
@@ -54,6 +66,20 @@ export interface RequestLogEntry {
   outcome: RequestOutcome;
   errorCode: string | null;
   affiliateUrl: string | null;
+  /**
+   * Ten san pham doc tu nguon tra hoa hong (xem commissionLookup.ts) - nguon DUY NHAT biet ten,
+   * nen null khi COMMISSION_LOOKUP_ENABLED=false, khi link khong tach duoc item_id, hoac khi
+   * luot do la luot loi. KHONG backfill cho row ghi truoc 2026-10-08.
+   */
+  productName: string | null;
+  /**
+   * Hoa hong GOC uoc tinh (VND, truoc thue/phi san/chia % cho user) tai THOI DIEM tao link.
+   * `0` la gia tri THAT ("san pham chua bat hoa hong", da xac minh tu nguon) va khac han `null`
+   * la "khong tra duoc" - dung gop hai cai nay lai, xem commissionLookup.ts.
+   */
+  commissionEstimate: number | null;
+  /** null cho row ghi truoc 2026-10-08 (khong suy nguoc duoc tu platform). */
+  sourceContext: LinkSourceContext | null;
 }
 
 /**

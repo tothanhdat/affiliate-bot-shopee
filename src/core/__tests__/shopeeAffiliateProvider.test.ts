@@ -233,3 +233,69 @@ test("lookup that bai -> noCommission PHAI la false (khong duoc noi san pham chu
   assert.equal(result.noCommission, false);
   assert.equal(result.commissionEstimate, null);
 });
+
+test("tra ve ten san pham tu lookup de ghi vao log (cot /admin/links)", async () => {
+  const { createShortLink } = fakeShortLinker();
+  const { lookup } = fakeLookup({ ...UOC_TINH, productName: "Áo thun nam cổ tròn" });
+  const provider = new ShopeeAffiliateProvider({
+    affiliateId: AFFILIATE_ID,
+    createShortLink,
+    shortLinkBaseUrl: SHORT_LINK_BASE_URL,
+    commissionLookup: lookup,
+  });
+
+  const result = await provider.createAffiliateLink({
+    merchant: "shopee",
+    productUrl: "https://shopee.vn/Ao-thun-nam-i.123.456",
+    subId: "k-user-abc-def",
+    shopId: "123",
+    itemId: "456",
+  });
+
+  assert.equal(result.productName, "Áo thun nam cổ tròn");
+});
+
+test("san pham chua bat hoa hong (commission 0) van tra ve ten san pham", async () => {
+  // Hai thong tin nay doc lap nhau: hoa hong 0 la cau tra loi that, con ten san pham van biet.
+  // Gop lai se lam cot "Ten san pham" trong rong dung o nhung dong admin can soi nhat.
+  const { createShortLink } = fakeShortLinker();
+  const { lookup } = fakeLookup({ ...UOC_TINH, commissionAmount: 0, productName: "Gối massage" });
+  const provider = new ShopeeAffiliateProvider({
+    affiliateId: AFFILIATE_ID,
+    createShortLink,
+    shortLinkBaseUrl: SHORT_LINK_BASE_URL,
+    commissionLookup: lookup,
+  });
+
+  const result = await provider.createAffiliateLink({
+    merchant: "shopee",
+    productUrl: "https://shopee.vn/Goi-i.123.456",
+    subId: "k-user-abc-def",
+    shopId: "123",
+    itemId: "456",
+  });
+
+  assert.equal(result.noCommission, true);
+  assert.equal(result.productName, "Gối massage");
+});
+
+test("lookup that bai (null) -> productName null, khong phai chuoi rong", async () => {
+  const { createShortLink } = fakeShortLinker();
+  const { lookup } = fakeLookup(null);
+  const provider = new ShopeeAffiliateProvider({
+    affiliateId: AFFILIATE_ID,
+    createShortLink,
+    shortLinkBaseUrl: SHORT_LINK_BASE_URL,
+    commissionLookup: lookup,
+  });
+
+  const result = await provider.createAffiliateLink({
+    merchant: "shopee",
+    productUrl: "https://shopee.vn/x-i.123.456",
+    subId: "k-user-abc-def",
+    shopId: "123",
+    itemId: "456",
+  });
+
+  assert.equal(result.productName, null);
+});

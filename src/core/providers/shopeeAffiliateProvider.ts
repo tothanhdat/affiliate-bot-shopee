@@ -88,6 +88,8 @@ export class ShopeeAffiliateProvider implements AffiliateProvider {
       affiliateUrl,
       commissionEstimate: found && found.commissionAmount > 0 ? this.toEstimate(found) : null,
       noCommission: found?.commissionAmount === 0,
+      // Doc lap voi so hoa hong: san pham chua bat hoa hong van biet ten.
+      productName: found?.productName ?? null,
     };
   }
 

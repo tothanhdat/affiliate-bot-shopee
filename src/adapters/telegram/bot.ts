@@ -5,6 +5,7 @@ import type { LedgerStore } from "../../core/ledgerStore.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
+import type { LinkSourceContext } from "../../core/types.js";
 import {
   USAGE_TEXT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
@@ -61,6 +62,9 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
       return;
     }
 
+    // Noi gui, chi de ghi log cho /admin/links. Telegram goi DM la chat "private".
+    const sourceContext: LinkSourceContext = ctx.chat.type === "private" ? "dm" : "group";
+
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
@@ -74,7 +78,7 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
 
     for (const rawUrl of linksToProcess) {
       try {
-        const result = await resolver.resolve({ url: rawUrl, platform: "telegram", userId });
+        const result = await resolver.resolve({ url: rawUrl, platform: "telegram", userId, sourceContext });
         successMerchants.add(result.merchant);
         const successTemplate = ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         const replyEstimate = toCommissionReplyEstimate(result.commissionEstimate, {

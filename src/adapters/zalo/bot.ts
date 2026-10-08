@@ -18,6 +18,7 @@ import type { CommissionEstimate } from "../../core/affiliateProvider.js";
 import { extractProductUrls } from "../../core/linkValidator.js";
 import type { LinkResolverService } from "../../core/linkResolverService.js";
 import type { MerchantId } from "../../core/merchants.js";
+import type { LinkSourceContext } from "../../core/types.js";
 import type { FaqService } from "../../core/faq/faqService.js";
 import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
 import { SentMessageTracker } from "./sentMessageTracker.js";
@@ -395,7 +396,7 @@ export class ZaloGroupBot {
       }
 
       await this.maybeSendWelcomeMessage(api, userId);
-      await this.processProductLinks(userId, dmLinks, (body) =>
+      await this.processProductLinks(userId, dmLinks, "dm", (body) =>
         this.sendTrackedDirect(api, message.threadId, { text: body })
       );
       return;
@@ -421,7 +422,7 @@ export class ZaloGroupBot {
     // group - best-effort, khong duoc lam gian doan viec xu ly link nghiep vu chinh du DM that bai
     // (vd user chan tin nhan tu nguoi la).
     await this.maybeSendWelcomeMessage(api, userId);
-    await this.processProductLinks(userId, links, (body) => this.sendGroupReply(api, message, body));
+    await this.processProductLinks(userId, links, "group", (body) => this.sendGroupReply(api, message, body));
   }
 
   /**
@@ -447,6 +448,11 @@ export class ZaloGroupBot {
   private async processProductLinks(
     userId: string,
     links: string[],
+    /**
+     * Noi gui, chi dung de ghi log cho /admin/links. Day la cho DUY NHAT con phan biet duoc
+     * group/DM: xuong den core thi ca hai deu la platform "zalo".
+     */
+    sourceContext: LinkSourceContext,
     sendReply: (body: string) => Promise<void>
   ): Promise<void> {
     const linksToProcess = links.slice(0, this.options.maxLinksPerMessage);
@@ -455,7 +461,7 @@ export class ZaloGroupBot {
 
     for (const rawUrl of linksToProcess) {
       try {
-        const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId });
+        const result = await this.resolver.resolve({ url: rawUrl, platform: "zalo", userId, sourceContext });
         successMerchants.add(result.merchant);
         const successTemplate = this.options.ledgerStore.getSuccessReplyTemplate(SUCCESS_REPLY_TEMPLATE_DEFAULT);
         await sendReply(
