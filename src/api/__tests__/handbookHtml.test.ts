@@ -15,6 +15,8 @@ const DEFAULTS = {
   taxPercent: 10,
   platformFeePercent: 1,
   withdrawalThresholdVnd: 20_000,
+  payoutHoldThresholdVnd: 100_000,
+  payoutHoldDays: 7,
 };
 
 function render(overrides: Partial<typeof DEFAULTS> = {}): string {
@@ -47,7 +49,9 @@ test("handbook: % chu bot giu la phan bu cua % user", () => {
 });
 
 test("handbook: nguong rut tien lay tu tham so va format kieu VN", () => {
-  const html = render({ withdrawalThresholdVnd: 50_000 });
+  const html = render({ withdrawalThresholdVnd: 50_000,
+  payoutHoldThresholdVnd: 100_000,
+  payoutHoldDays: 7, });
 
   assert.ok(html.includes("50.000đ"), "phai hien nguong rut 50.000đ");
   assert.ok(!html.includes("20.000đ"), "khong duoc con dau vet cua nguong 20.000đ hardcode");
@@ -62,7 +66,9 @@ test("handbook: % thue va % phi san lay tu tham so", () => {
 
 test("handbook: vi du tinh tien khop dung computeCommissionBreakdown voi cung bo %", () => {
   const percents = { taxPercent: 5, platformFeePercent: 2, userSharePercent: 70 };
-  const html = render({ ...percents, withdrawalThresholdVnd: 20_000 });
+  const html = render({ ...percents, withdrawalThresholdVnd: 20_000,
+  payoutHoldThresholdVnd: 100_000,
+  payoutHoldDays: 7, });
   const expected = computeCommissionBreakdown({
     commissionAmount: HANDBOOK_EXAMPLE_COMMISSION_VND,
     ...percents,
@@ -163,4 +169,40 @@ test("handbook: khong con muc 'Tin nhan bot tra loi'", () => {
   // Go theo yeu cau user 2026-09-28 (cung dot voi muc Lazada).
   assert.ok(!html.includes("Tin nhắn bot trả lời"), "muc nay da duoc go khoi So tay");
   assert.ok(!html.includes("hoa hồng ước tính"), "noi dung cua muc do cung phai di theo");
+});
+
+// ---------------------------------------------------------------------------
+// Muc giam don to + tra hang (2026-10-08)
+//
+// Khong noi ra thi luat nay la BAY voi user: tien khong vao "Kha dung" ma khong co loi giai thich
+// nao, va so du bi tru ma ho khong biet vi sao.
+// ---------------------------------------------------------------------------
+
+test("handbook: muc giam don to doc LIVE tu setting, khong hardcode", () => {
+  const a = render({ payoutHoldThresholdVnd: 100_000, payoutHoldDays: 7 });
+  assert.match(a, /100\.000/);
+  assert.match(a, /7 ngày/);
+
+  const b = render({ payoutHoldThresholdVnd: 250_000, payoutHoldDays: 3 });
+  assert.match(b, /250\.000/);
+  assert.match(b, /3 ngày/);
+  assert.doesNotMatch(b, /100\.000/, "khong con vet cua so cu");
+});
+
+test("handbook: nguong giam = 0 -> AN ca muc (tinh nang dang tat)", () => {
+  const html = render({ payoutHoldThresholdVnd: 0 });
+  assert.doesNotMatch(html, /Đơn giá trị lớn được giữ thêm/);
+  assert.doesNotMatch(html, /mở khoá/);
+});
+
+test("handbook: giai thich ro viec tra hang thi tien bi tru the nao", () => {
+  const html = render();
+  assert.match(html, /trả hàng/);
+  assert.match(html, /trừ dần/);
+  assert.match(html, /không phải chuyển tiền lại/, "thieu cau nay thi user tuong phai tra tien ra");
+});
+
+test("handbook: noi ro moc 15 ngay cua Shopee de user kiem chung duoc", () => {
+  const html = render();
+  assert.match(html, /15 ngày/);
 });

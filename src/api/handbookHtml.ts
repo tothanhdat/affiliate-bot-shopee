@@ -23,6 +23,12 @@ export interface HandbookPageData {
   taxPercent: number;
   platformFeePercent: number;
   withdrawalThresholdVnd: number;
+  /**
+   * Nguong giam don to (2026-10-08, xem payoutHold.ts). 0 = tinh nang dang TAT -> an ca muc, noi ra
+   * mot luat khong ap dung la gay lo vo ich.
+   */
+  payoutHoldThresholdVnd: number;
+  payoutHoldDays: number;
 }
 
 interface HandbookItem {
@@ -109,6 +115,29 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         <div class="calc-amount">${formatVnd(example.userShareAmount)}</div>
       </div>
     </div>`;
+
+  // Muc nay CHI hien khi tinh nang giam dang bat. Moi so doc LIVE tu settings (co test chan viec
+  // hardcode lai: render voi so khac roi assert khong con vet cua so cu).
+  const holdItems: HandbookItem[] =
+    data.payoutHoldThresholdVnd > 0
+      ? [
+          {
+            id: "giam-don-to",
+            title: "Đơn giá trị lớn được giữ thêm vài ngày",
+            body: `
+            <ul>
+              <li>Đơn có tiền hoàn của bạn từ <strong>${formatVnd(
+                data.payoutHoldThresholdVnd
+              )}</strong> trở lên sẽ được giữ thêm <strong>${
+                data.payoutHoldDays
+              } ngày</strong> kể từ ngày bạn nhận hàng, rồi mới chuyển sang "Khả dụng".</li>
+              <li>Lí do: Shopee cho phép trả hàng trong 15 ngày kể từ khi giao thành công. Nếu đơn bị trả lại sau khi tiền đã chuyển đi thì khoản đó phải thu lại — giữ thêm vài ngày giúp phát hiện sớm và không ai phải nợ ai.</li>
+              <li>Đơn nhỏ hơn mức trên vẫn chuyển sang "Khả dụng" ngay như bình thường.</li>
+              <li>Dashboard hiện dòng "Đang giữ" kèm ngày mở khoá của từng đơn.</li>
+            </ul>`,
+          },
+        ]
+      : [];
 
   return [
     {
@@ -241,6 +270,17 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
               <li>Cần điền đủ 3 thông tin: ngân hàng/ví điện tử, số tài khoản/số điện thoại, tên chủ tài khoản.</li>
               <li>Admin sẽ tự nhắn tin riêng xác nhận lại thông tin với bạn trước khi chuyển khoản thật.</li>
               <li>Trong lúc đang có 1 yêu cầu rút chờ xử lý, bạn không thể gửi thêm yêu cầu rút khác.</li>
+            </ul>`,
+        },
+        ...holdItems,
+        {
+          id: "tra-hang",
+          title: "Nếu bạn trả hàng sau khi đã nhận tiền",
+          body: `
+            <ul>
+              <li>Khi bạn trả hàng, Shopee thu lại hoa hồng của đơn đó — kể cả khi tiền đã được chuyển cho bạn rồi.</li>
+              <li>Khoản đó sẽ được <strong>trừ dần vào các đơn tiếp theo</strong> của bạn. Bạn <strong>không phải chuyển tiền lại</strong> cho bot.</li>
+              <li>Dashboard hiện rõ dòng "Đã trừ hoàn trả" để bạn biết số dư đang bị trừ bao nhiêu và vì đơn nào.</li>
             </ul>`,
         },
         {

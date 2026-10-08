@@ -17,6 +17,8 @@ const PAGE_DATA = {
   taxPercent: 10,
   platformFeePercent: 1,
   withdrawalThresholdVnd: 20_000,
+  payoutHoldThresholdVnd: 100_000,
+  payoutHoldDays: 7,
 };
 
 interface FakeEl {

@@ -16,6 +16,8 @@ const html = renderHandbookPage({
   taxPercent: 10,
   platformFeePercent: 1,
   withdrawalThresholdVnd: 20_000,
+  payoutHoldThresholdVnd: 100_000,
+  payoutHoldDays: 7,
 });
 
 /** CSS da bo comment - de comment dung truoc 1 selector khong lam hong viec do tim selector do. */

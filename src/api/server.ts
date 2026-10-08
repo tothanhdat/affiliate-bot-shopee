@@ -312,6 +312,8 @@ export function createServer(
         taxPercent: orderConfig.taxPercent,
         platformFeePercent: orderConfig.platformFeePercent,
         withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+        payoutHoldThresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
+        payoutHoldDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
       })
     );
   });
