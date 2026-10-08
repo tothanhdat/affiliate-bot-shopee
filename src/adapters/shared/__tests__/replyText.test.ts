@@ -346,3 +346,66 @@ test("formatOrdersConfirmedCaption: cung mot slot 2 trang thai", () => {
   );
   assert.match(withHeld, /mở khoá từ 15\/10/);
 });
+
+// ---------------------------------------------------------------------------
+// debtLine - no hoan tra CO THE den tu mot lan import KHAC (2026-10-08)
+// ---------------------------------------------------------------------------
+
+test("formatOrdersConfirmedReply: khong co no -> {{debtLine}} thanh chuoi rong", () => {
+  const text = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    "https://bot.example.com/d/tok"
+  );
+  assert.doesNotMatch(text, /\{\{debtLine\}\}/, "placeholder phai duoc render, khong lot nguyen van");
+  assert.doesNotMatch(text, /nợ hoàn trả/);
+});
+
+// Day la CA CHINH user yeu cau: user dang no 120k TU MOT LAN IMPORT KHAC (khong lien quan don trong
+// lo nay), lo nay chi co 2 don MOI ve - nhung tin nhan PHAI giai thich vi sao Kha dung thap hon Tong
+// cong cua lo, ngay trong lan import nay chu khong doi user tu mo dashboard moi biet.
+test("formatOrdersConfirmedReply: co no TU TRUOC (khong lien quan don trong lo) -> giai thich ngay", () => {
+  const text = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [
+      { orderId: "NEW1", productName: "San pham 1", userShareAmount: 20_000 },
+      { orderId: "NEW2", productName: "San pham 2", userShareAmount: 30_000 },
+    ],
+    "https://bot.example.com/d/tok",
+    null,
+    120_000
+  );
+  assert.match(text, /Đã trừ 120\.000đ nợ hoàn trả/);
+  assert.match(text, /Tổng cộng: 50\.000đ/, "tong van la tien cua LO nay, khong tru no");
+});
+
+test("formatOrdersConfirmedReply: co CA giam lan no cung luc -> ca hai cau deu xuat hien", () => {
+  const text = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [{ orderId: "BIG", productName: "May anh", userShareAmount: 150_000 }],
+    "https://bot.example.com/d/tok",
+    { amountVnd: 150_000, unlockDayText: "15/10" },
+    40_000
+  );
+  assert.match(text, /Trong đó 150\.000đ mở khoá từ 15\/10/);
+  assert.match(text, /Đã trừ 40\.000đ nợ hoàn trả/);
+});
+
+test("formatOrdersConfirmedCaption: debtLine cung mot slot 2 trang thai", () => {
+  const plain = formatOrdersConfirmedCaption(ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT, "https://x/d/t");
+  assert.doesNotMatch(plain, /nợ hoàn trả/);
+  const withDebt = formatOrdersConfirmedCaption(
+    `{{dashboardUrl}}{{debtLine}}`,
+    "https://x/d/t",
+    null,
+    40_000
+  );
+  assert.match(withDebt, /Đã trừ 40\.000đ nợ hoàn trả/);
+});
+
+// Mac dinh caption KHONG chua {{debtLine}} (giong {{heldLine}}): anh da tu ve dieu nay roi, caption
+// chi can chi duong vao dashboard - tranh lap lai 2 lan cung mot thong tin.
+test("formatOrdersConfirmedCaption: default template KHONG lap lai debtLine du co no", () => {
+  const caption = formatOrdersConfirmedCaption(ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT, "https://x/d/t", null, 40_000);
+  assert.doesNotMatch(caption, /nợ hoàn trả/);
+});

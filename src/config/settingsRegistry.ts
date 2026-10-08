@@ -125,7 +125,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
     helpText:
-      "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{dashboardUrl}}.",
+      "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{heldLine}} (câu giải thích phần tiền đang bị giam, rỗng nếu không có đơn nào bị giam), {{debtLine}} (câu giải thích phần đang bị trừ vì nợ hoàn trả, rỗng nếu không có nợ), {{dashboardUrl}}.",
   },
   {
     key: SETTINGS_KEYS.ordersConfirmedCaptionTemplate,
@@ -133,7 +133,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
     helpText:
-      "Placeholder hợp lệ: {{dashboardUrl}}. Dùng khi gửi được ảnh. Nếu render ảnh lỗi thì bot gửi mẫu tin ở ô trên thay thế.",
+      "Placeholder hợp lệ: {{dashboardUrl}}, {{heldLine}}, {{debtLine}} (2 câu sau mặc định KHÔNG có trong caption vì ảnh đã tự vẽ hai điều này - chỉ thêm vào nếu bạn muốn nhắc lại bằng chữ). Dùng khi gửi được ảnh. Nếu render ảnh lỗi thì bot gửi mẫu tin ở ô trên thay thế.",
   },
   {
     key: SETTINGS_KEYS.withdrawalRequestedTemplate,

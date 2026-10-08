@@ -18,6 +18,11 @@ export interface OrdersConfirmedNotificationParams {
   heldVnd?: number;
   /** Ngay mo khoa SOM NHAT trong lo, dang "dd/mm". */
   heldUnlockDayText?: string | null;
+  /**
+   * Tong no hoan tra CON LAI cua user TAI THOI DIEM gui (2026-10-08) - DOC LAP voi lo don nay, co the
+   * den tu mot lan import KHAC. Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan.
+   */
+  debtVnd?: number;
   /** Tin van ban day du - dung khi khong gui duoc anh. */
   fallbackText: string;
   /** Caption ngan di kem anh. */
@@ -44,6 +49,7 @@ export async function buildOrdersConfirmedNotification(
     withdrawalThresholdVnd: params.withdrawalThresholdVnd,
     heldVnd: params.heldVnd,
     heldUnlockDayText: params.heldUnlockDayText,
+    debtVnd: params.debtVnd,
   });
 
   let rendered: RenderedOrderImage | null = null;

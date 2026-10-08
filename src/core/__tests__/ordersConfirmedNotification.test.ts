@@ -68,3 +68,25 @@ test("buildOrdersConfirmedNotification truyen heldVnd/heldUnlockDayText xuong vi
   });
   assert.equal(seen!.heldLine, "Trong đó 150.000đ mở khoá từ 15/10");
 });
+
+test("buildOrdersConfirmedNotification truyen debtVnd xuong view, doc lap voi heldVnd", async () => {
+  let seen: { heldLine: string | null; debtLine: string | null } | null = null;
+  await buildOrdersConfirmedNotification({
+    items: [
+      { orderId: "NEW1", productName: "San pham 1", userShareAmount: 20_000 },
+      { orderId: "NEW2", productName: "San pham 2", userShareAmount: 30_000 },
+    ],
+    availableVnd: 0,
+    withdrawalThresholdVnd: 20_000,
+    debtVnd: 120_000,
+    fallbackText: "text",
+    captionText: "caption",
+    imageEnabled: true,
+    renderImpl: async (view) => {
+      seen = { heldLine: view.heldLine, debtLine: view.debtLine };
+      return { data: Buffer.from("x"), width: 10, height: 10 };
+    },
+  });
+  assert.equal(seen!.heldLine, null, "no khong lien quan gi toi giam, heldVnd khong duoc truyen");
+  assert.equal(seen!.debtLine, "Đã trừ 120.000đ nợ hoàn trả");
+});

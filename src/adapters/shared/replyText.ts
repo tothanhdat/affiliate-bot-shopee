@@ -163,7 +163,7 @@ export function formatDashboardLinkReply(template: string, dashboardUrl: string,
  * nhan) fallback ve "Đơn <orderId>" de khong hien "null" tho trong tin nhan.
  */
 /** Default cho setting "orders_confirmed_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
-export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}{{heldLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
+export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}{{heldLine}}{{debtLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
 
 /**
  * Caption di kem ANH bao don ve (2026-10-05). Khac ORDERS_CONFIRMED_TEMPLATE_DEFAULT o cho anh
@@ -184,19 +184,31 @@ function heldLineText(held: { amountVnd: number; unlockDayText: string } | null)
   return held ? `\n(Trong đó ${formatVnd(held.amountVnd)} mở khoá từ ${held.unlockDayText})` : "";
 }
 
+/**
+ * Giai thich khoan NO HOAN TRA dang tru vao Kha dung (2026-10-08) - DOC LAP voi heldLineText():
+ * no co the den tu mot lan import HOAN TOAN KHAC (don bi tra hang tu truoc), khong lien quan gi toi
+ * cac don dang duoc bao trong tin nhan nay. Thieu dong nay thi user thay "Tong cong" cua lo khac
+ * "So du kha dung" ma khong biet vi sao - dung bay da sua cho heldLine, chi khac nguyen nhan.
+ */
+function debtLineText(debtVnd: number): string {
+  return debtVnd > 0 ? `\n(Đã trừ ${formatVnd(debtVnd)} nợ hoàn trả)` : "";
+}
+
 export function formatOrdersConfirmedCaption(
   template: string,
   dashboardUrl: string,
-  held: { amountVnd: number; unlockDayText: string } | null = null
+  held: { amountVnd: number; unlockDayText: string } | null = null,
+  debtVnd = 0
 ): string {
-  return renderTemplate(template, { dashboardUrl, heldLine: heldLineText(held) });
+  return renderTemplate(template, { dashboardUrl, heldLine: heldLineText(held), debtLine: debtLineText(debtVnd) });
 }
 
 export function formatOrdersConfirmedReply(
   template: string,
   items: ConfirmedOrderItem[],
   dashboardUrl: string,
-  held: { amountVnd: number; unlockDayText: string } | null = null
+  held: { amountVnd: number; unlockDayText: string } | null = null,
+  debtVnd = 0
 ): string {
   const total = items.reduce((sum, item) => sum + item.userShareAmount, 0);
   const label = (item: ConfirmedOrderItem) => (item.productName ? item.productName : `Đơn ${item.orderId}`);
@@ -208,7 +220,12 @@ export function formatOrdersConfirmedReply(
         `${items.map((item) => `${label(item)}: ${formatVnd(item.userShareAmount)}`).join(" / ")}\n` +
         `Tổng cộng: ${formatVnd(total)} 💰`;
 
-  return renderTemplate(template, { summaryLine, dashboardUrl, heldLine: heldLineText(held) });
+  return renderTemplate(template, {
+    summaryLine,
+    dashboardUrl,
+    heldLine: heldLineText(held),
+    debtLine: debtLineText(debtVnd),
+  });
 }
 
 /**

@@ -167,9 +167,15 @@ function cardNode(name: string, amountText: string, index: number, left: number)
 }
 
 /**
- * Dong giai thich phan tien trong lo dang bi giam. Co NEN RIENG chu khong de chu tran tren nen cam -
- * da gap that voi pill so du: chu mau sang tren nen cam sang gan nhu khong doc duoc. Nen nay la de
- * DOC DUOC, khong phai trang tri.
+ * Dong giai thich phan tien KHONG co trong "So du kha dung" du da nam trong "Tong cong" cua lo - gop
+ * CA heldLine (don trong LO NAY dang bi giam) lan debtLine (no hoan tra CO THE den tu mot lan import
+ * KHAC, khong lien quan gi toi lo nay) thanh MOT dong, noi bang dau cham giua khi ca hai cung xuat hien.
+ *
+ * Phai gop chung mot dong (khong ve 2 dong rieng): khung anh thiet ke 1024x572, HELD.y=540 + h=26 da
+ * gan sat day (con 6px), khong du cho xep them mot dong 26px nua ben duoi ma khong bi cat.
+ *
+ * Co NEN RIENG chu khong de chu tran tren nen cam - da gap that voi pill so du: chu mau sang tren
+ * nen cam sang gan nhu khong doc duoc. Nen nay la de DOC DUOC, khong phai trang tri.
  */
 function heldNode(heldLine: string): SatoriNode {
   return h(
@@ -308,8 +314,10 @@ function buildTree(view: OrderImageView): SatoriNode {
     balanceNode(view),
   ];
 
-  // Lo khong co don bi giam -> khong ve gi, anh y nhu ban cu.
-  if (view.heldLine) children.push(heldNode(view.heldLine));
+  // Khong co ca 2 ly do -> khong ve gi, anh y nhu ban cu. Co 1 trong 2 -> hien dung no. Co ca hai
+  // -> gop thanh 1 dong (xem ly do trong doc comment cua heldNode).
+  const noteLine = [view.heldLine, view.debtLine].filter((line): line is string => line !== null).join(" · ");
+  if (noteLine) children.push(heldNode(noteLine));
 
   if (view.extraCount > 0) {
     children.push(

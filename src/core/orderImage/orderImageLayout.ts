@@ -19,6 +19,12 @@ export interface OrderImageInput {
   heldVnd?: number;
   /** Ngay mo khoa SOM NHAT trong lo, dang "dd/mm". null khi khong co don bi giam. */
   heldUnlockDayText?: string | null;
+  /**
+   * Tong no hoan tra CON LAI cua user TAI THOI DIEM gui thong bao (2026-10-08, xem payoutHold.ts/
+   * payout_debts). DOC LAP voi lo don nay - khoan no co the den tu mot lan import KHAC hoan toan,
+   * khong lien quan gi toi cac don dang duoc bao trong lo. 0/undefined = khong co no.
+   */
+  debtVnd?: number;
 }
 
 export interface OrderImageCard {
@@ -45,6 +51,13 @@ export interface OrderImageView {
    * bay thu-tu-doc-so-du da ghi trong CLAUDE.md, chi khac nguyen nhan.
    */
   heldLine: string | null;
+  /**
+   * Dong "Da tru X no hoan tra" - null khi user khong co no. CUNG LY DO voi heldLine (Tong cong cua
+   * lo khac So du kha dung) nhung khac NGUYEN NHAN va DOC LAP ve du lieu: no co the sinh ra tu mot
+   * lan import HOAN TOAN KHAC, khong lien quan gi toi cac don trong lo nay - nen dieu kien hien dong
+   * nay CHI phu thuoc debtVnd, khong phu thuoc gi vao heldVnd/items.
+   */
+  debtLine: string | null;
 }
 
 /**
@@ -82,5 +95,6 @@ export function buildOrderImageView(input: OrderImageInput): OrderImageView {
       (input.heldVnd ?? 0) > 0 && input.heldUnlockDayText
         ? `Trong đó ${formatVnd(input.heldVnd ?? 0)} mở khoá từ ${input.heldUnlockDayText}`
         : null,
+    debtLine: (input.debtVnd ?? 0) > 0 ? `Đã trừ ${formatVnd(input.debtVnd ?? 0)} nợ hoàn trả` : null,
   };
 }

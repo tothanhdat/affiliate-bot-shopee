@@ -135,3 +135,62 @@ test("thieu ngay mo khoa -> khong bia dong giam", () => {
   });
   assert.equal(view.heldLine, null);
 });
+
+// ---------------------------------------------------------------------------
+// debtLine - giai thich khoan NO HOAN TRA dang tru vao Kha dung (2026-10-08)
+//
+// Khac heldLine (chi lien quan toi LO don vua ve), no co the TON TAI TU TRUOC
+// (don bi tra hang o mot lan import khac, khong lien quan gi toi don trong lo
+// nay) - nen day la mot khai niem DOC LAP, khong gop chung dieu kien voi heldLine.
+// ---------------------------------------------------------------------------
+
+test("khong co no -> debtLine null", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    availableVnd: 10_000,
+    withdrawalThresholdVnd: 20_000,
+  });
+  assert.equal(view.debtLine, null);
+});
+
+test("debtVnd = 0 -> van la null", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    availableVnd: 10_000,
+    withdrawalThresholdVnd: 20_000,
+    debtVnd: 0,
+  });
+  assert.equal(view.debtLine, null);
+});
+
+// Day la truong hop CHINH user yeu cau: no co tu TRUOC (khong phai don trong lo
+// nay bi huy), lo nay chi la 2 don MOI ve - nhung Kha dung da bi tru no ngay lap
+// tuc, nen anh/tin nhan PHAI giai thich tai sao Kha dung < Tong cong cua lo.
+test("co no tu TRUOC (khong lien quan lo nay) -> debtLine noi ro so tien", () => {
+  const view = buildOrderImageView({
+    items: [
+      { orderId: "NEW1", productName: "San pham 1", userShareAmount: 20_000 },
+      { orderId: "NEW2", productName: "San pham 2", userShareAmount: 30_000 },
+    ],
+    // gross 50k - no 120k (tu truoc, khong lien quan NEW1/NEW2) -> floor 0
+    availableVnd: 0,
+    withdrawalThresholdVnd: 20_000,
+    debtVnd: 120_000,
+  });
+  assert.equal(view.debtLine, "Đã trừ 120.000đ nợ hoàn trả");
+  assert.equal(view.totalText, "50.000đ", "tong van la tien cua LO nay");
+  assert.equal(view.availableText, "0đ", "kha dung da tru het vi no lon hon gross");
+});
+
+test("co CA held lan debt cung luc -> ca hai deu khac null, doc lap nhau", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "BIG", productName: "May anh", userShareAmount: 150_000 }],
+    availableVnd: 0,
+    withdrawalThresholdVnd: 20_000,
+    heldVnd: 150_000,
+    heldUnlockDayText: "15/10",
+    debtVnd: 40_000,
+  });
+  assert.equal(view.heldLine, "Trong đó 150.000đ mở khoá từ 15/10");
+  assert.equal(view.debtLine, "Đã trừ 40.000đ nợ hoàn trả");
+});

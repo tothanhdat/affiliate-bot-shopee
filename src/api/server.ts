@@ -957,14 +957,18 @@ export function createServer(
         ];
         // So du doc SAU khi don da ghi vao ledger - doc truoc thi anh bao thieu dung don vua ghi.
         const held = heldInBatch(entry.platform, entry.userId, new Set([entry.orderId]));
+        // No DOC LAP voi lo don nay - co the den tu mot lan import KHAC (don bi tra hang tu truoc).
+        // Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan voi nhau.
+        const debtVnd = ledgerStore.getOutstandingDebtTotal(entry.platform, entry.userId);
         buildOrdersConfirmedNotification({
           items: confirmedItems,
           availableVnd: ledgerStore.getAvailableBalance(entry.platform, entry.userId),
           withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
           heldVnd: held?.amountVnd ?? 0,
           heldUnlockDayText: held?.unlockDayText ?? null,
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl, held),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held),
+          debtVnd,
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl, held, debtVnd),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
           imageEnabled: orderImageEnabled,
         })
           .then((notification) => notifyUser(entry.platform, entry.userId, notification))
@@ -1062,14 +1066,18 @@ export function createServer(
           summary.userId,
           new Set(summary.items.map((i) => i.orderId))
         );
+        // No DOC LAP voi lo don nay - co the den tu mot ma don KHAC trong CUNG lan import nay, hoac tu
+        // mot lan import TRUOC do. Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan.
+        const debtVnd = ledgerStore.getOutstandingDebtTotal(summary.platform, summary.userId);
         buildOrdersConfirmedNotification({
           items: summary.items,
           availableVnd: ledgerStore.getAvailableBalance(summary.platform, summary.userId),
           withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
           heldVnd: held?.amountVnd ?? 0,
           heldUnlockDayText: held?.unlockDayText ?? null,
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl, held),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held),
+          debtVnd,
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl, held, debtVnd),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
           imageEnabled: orderImageEnabled,
         })
           .then((notification) => notifyUser(summary.platform, summary.userId, notification))

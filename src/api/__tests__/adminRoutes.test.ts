@@ -26,7 +26,12 @@ const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 8
 
 // Mac dinh rong rai de cac test dang nhap nhieu lan (nhieu it() lien tiep) khong vo tinh dinh
 // rate limit login - test rieng ve rate limit tu tao 1 RateLimiter gioi han thap cua rieng no.
-function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
+function setup(
+  adminLoginRateLimiter = new RateLimiter(1000, 60_000),
+  // false de ep di qua nhanh TEXT DU PHONG (formatOrdersConfirmedReply) thay vi render anh that -
+  // dung khi test can assert TRUC TIEP tren noi dung chu, khong chi "co anh hay khong".
+  orderImageEnabled = true
+) {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   const rateLimiter = new RateLimiter(1000, 60_000);
@@ -62,7 +67,8 @@ function setup(adminLoginRateLimiter = new RateLimiter(1000, 60_000)) {
     adminLoginRateLimiter,
     "http://localhost:3002",
     notifyUser,
-    notifyZaloGroup
+    notifyZaloGroup,
+    orderImageEnabled
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -1583,6 +1589,65 @@ test("POST write-off voi platform khong hop le -> 404", async () => {
     });
     assert.equal(res.status, 404);
     assert.equal(ledgerStore.getDebtByOrder("shopee", "OLD-ORDER")?.writtenOffAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Tin nhan "don ve" phai giai thich NO DA CO TU TRUOC (2026-10-08, yeu cau truc
+// tiep cua user) - KHONG doi user tu mo dashboard moi biet vi sao Kha dung thap
+// hon Tong cong cua lo vua ve.
+// ---------------------------------------------------------------------------
+
+test("import don moi khi user DANG CO NO tu truoc -> tin nhan giai thich ngay, Kha dung da tru dung", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup(undefined, false);
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+
+    // No 120.000d da ton tai TU TRUOC - khong lien quan gi den don sap ghi ben duoi (mo phong mot
+    // lan import KHAC, truoc do, da bao mot don cua user nay bi tra hang sau khi da tra tien).
+    ledgerStore.recordPayoutDebt({
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "OLD-RETURNED-ORDER",
+      amount: 120_000,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "subId=telegram-user-a-abc123-def&orderId=NEW-ORDER-001&orderAmount=500000&commissionAmount=50000",
+    });
+    assert.equal(res.status, 200);
+
+    // gross = 80% cua 50_000 = 40_000; no = 120_000 -> Kha dung = max(0, 40_000-120_000) = 0.
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+
+    assert.equal(notifyUserCalls.length, 1);
+    assert.match(
+      notifyUserCalls[0].message,
+      /Đã trừ 120\.000đ nợ hoàn trả/,
+      `tin nhan phai giai thich NGAY trong lan import nay, nhan duoc: ${notifyUserCalls[0].message}`
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("import don moi khi user KHONG co no -> tin nhan KHONG co cau thua ve no", async () => {
+  const { logStore, baseUrl, notifyUserCalls, cleanup } = setup(undefined, false);
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "subId=telegram-user-a-abc123-def&orderId=NEW-ORDER-002&orderAmount=500000&commissionAmount=50000",
+    });
+    assert.doesNotMatch(notifyUserCalls[0].message, /nợ hoàn trả/);
   } finally {
     cleanup();
   }
