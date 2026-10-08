@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LedgerStore } from "../ledgerStore.js";
 import { InsufficientBalanceError, WithdrawalNotCancellableError } from "../errors.js";
+import { addDaysToVnIso, todayVnIso } from "../vietnamDate.js";
 
 function store() {
   return new LedgerStore(":memory:");
@@ -292,4 +293,113 @@ test("yeu cau da huy KHONG tinh vao getOutstandingTotals", () => {
   const totals = s.getOutstandingTotals();
   assert.equal(totals.pendingWithdrawalCount, 0);
   assert.equal(totals.pendingWithdrawalAmount, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Tien cua withdrawal doc tu withdrawal_requests, khong cong theo entry (Task 8)
+// ---------------------------------------------------------------------------
+
+test("pendingBalance doc tu withdrawal_requests.amount (net), khong cong entry (gross)", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
+  s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  const summary = s.getUserSummary("zalo", "user-a");
+  assert.equal(summary.pendingBalance, 60_000, "so THAT se duoc chuyen, khong phai 100k");
+});
+
+test("paidTotal doc tu withdrawal_requests.amount (net) - khop so vao tai khoan user", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.markWithdrawalPaid(w.id, null);
+
+  const summary = s.getUserSummary("zalo", "user-a");
+  assert.equal(summary.paidTotal, 60_000, "so THAT da vao tai khoan user");
+});
+
+test("getUserSummary tra them heldBalance/heldEntries/debtRemaining/grossAvailableBalance", () => {
+  const s = store();
+  recordConfirmed(s, "small", 10_000);
+  s.recordConversion({
+    subId: "k-user-a-abc-def",
+    platform: "zalo",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId: "big",
+    orderAmount: 3_000_000,
+    commissionAmount: 300_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 100,
+    maxCommissionRatioPercent: 50,
+    completedAt: todayVnIso(),
+    holdConfig: { thresholdVnd: 100_000, holdDays: 7 },
+  });
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 4_000 });
+
+  const summary = s.getUserSummary("zalo", "user-a");
+  assert.equal(summary.heldBalance, 300_000);
+  assert.equal(summary.heldEntries.length, 1);
+  assert.equal(summary.heldEntries[0].availableFrom, addDaysToVnIso(todayVnIso(), 7));
+  assert.equal(summary.debtRemaining, 4_000);
+  assert.equal(summary.grossAvailableBalance, 10_000);
+  assert.equal(summary.availableBalance, 6_000);
+});
+
+test("listUsers tra debtRemaining/heldBalance va loai don bi giam khoi availableBalance", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 10_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 4_000 });
+  const row = s.listUsers().find((u) => u.userId === "user-a");
+  assert.equal(row?.debtRemaining, 4_000);
+  assert.equal(row?.heldBalance, 0);
+  assert.equal(row?.availableBalance, 6_000, "da tru no");
+});
+
+test("listUsers: pendingBalance/paidTotal cung doc tu withdrawal_requests (khop getUserSummary)", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  let row = s.listUsers().find((u) => u.userId === "user-a");
+  assert.equal(row?.pendingBalance, 60_000);
+
+  s.markWithdrawalPaid(w.id, null);
+  row = s.listUsers().find((u) => u.userId === "user-a");
+  assert.equal(row?.paidTotal, 60_000);
+  assert.equal(row?.pendingBalance, 0);
+});
+
+// ORDER BY cua SQL chi biet so GROSS; availableBalance tra ve la so da tru no, ma /admin/users hien
+// "kha dung giam dan" - khong sap lai o JS thi user co no dung sai vi tri.
+test("listUsers sap theo availableBalance DA TRU NO, khong theo so gross", () => {
+  const s = store();
+  // user-a: gross 100k, no 90k -> net 10k
+  recordConfirmed(s, "order-a", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "debt-a", amount: 90_000 });
+  // user-b: gross 50k, khong no -> net 50k
+  s.recordConversion({
+    subId: "k-user-b-abc-def",
+    platform: "zalo",
+    userId: "user-b",
+    merchant: "shopee",
+    orderId: "order-b",
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 100,
+    maxCommissionRatioPercent: 50,
+    holdConfig: HOLD_OFF,
+  });
+
+  assert.deepEqual(
+    s.listUsers().map((u) => u.userId),
+    ["user-b", "user-a"],
+    "user-b (50k net) phai dung TREN user-a (10k net) du gross cua a lon hon"
+  );
 });

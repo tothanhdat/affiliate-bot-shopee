@@ -97,7 +97,16 @@ export interface RecordConversionInput {
 
 export interface UserLedgerSummary {
   entries: CommissionEntry[];
+  /** So rut duoc THAT SU = don da mo khoa - no hoan tra, floor 0. */
   availableBalance: number;
+  /** Truoc khi tru no - de UI giai thich duoc con so da bi tru (2026-10-08). */
+  grossAvailableBalance: number;
+  /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
+  heldBalance: number;
+  /** Tung don dang bi giam, de hien ngay mo khoa cua CHINH no. */
+  heldEntries: CommissionEntry[];
+  /** No hoan tra con phai tru. */
+  debtRemaining: number;
   pendingBalance: number;
   paidTotal: number;
 }
@@ -1041,16 +1050,20 @@ export class LedgerStore {
       .all(platform, userId);
     const entries = rows.map(rowToCommissionEntry);
 
+    // Doc tu withdrawal_requests.amount chu KHONG cong user_share_amount cua entry: tu 2026-10-08
+    // amount la so NET (da tru no hoan tra) nen nho hon tong entry gan vao no. Cong theo entry se noi
+    // "dang cho chi tra 100k" trong khi yeu cau that la 60k, va "da nhan 100k" trong khi ngan hang chi
+    // di 60k - tuc lech voi chinh sao ke user dang cam.
     const pendingRow = this.db
       .prepare(
-        `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
-         WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NOT NULL`
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawal_requests
+         WHERE platform = ? AND user_id = ? AND status = 'requested'`
       )
       .get(platform, userId) as { total: number };
 
     const paidRow = this.db
       .prepare(
-        `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawal_requests
          WHERE platform = ? AND user_id = ? AND status = 'paid'`
       )
       .get(platform, userId) as { total: number };
@@ -1058,6 +1071,10 @@ export class LedgerStore {
     return {
       entries,
       availableBalance: this.getAvailableBalance(platform, userId),
+      grossAvailableBalance: this.getGrossAvailableBalance(platform, userId),
+      heldBalance: this.getHeldBalance(platform, userId),
+      heldEntries: this.getHeldEntries(platform, userId),
+      debtRemaining: this.getOutstandingDebtTotal(platform, userId),
       pendingBalance: pendingRow.total,
       paidTotal: paidRow.total,
     };
@@ -1253,7 +1270,14 @@ export class LedgerStore {
     platform: Platform;
     userId: string;
     displayName: string | null;
+    /** DA tru no hoan tra, floor 0 - khop con so user thay tren dashboard. */
     availableBalance: number;
+    /** Truoc khi tru no, de admin doi chieu. */
+    grossAvailableBalance: number;
+    /** Tien dang bi giam (chua qua ngay mo khoa). */
+    heldBalance: number;
+    /** No hoan tra con phai tru. */
+    debtRemaining: number;
     pendingBalance: number;
     paidTotal: number;
     ordersCount: number;
@@ -1263,9 +1287,19 @@ export class LedgerStore {
     const rows = this.db
       .prepare(
         `SELECT ce.platform AS platform, ce.user_id AS user_id, up.display_name AS display_name,
-            COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL THEN ce.user_share_amount ELSE 0 END), 0) AS available,
-            COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NOT NULL THEN ce.user_share_amount ELSE 0 END), 0) AS pending,
-            COALESCE(SUM(CASE WHEN ce.status = 'paid' THEN ce.user_share_amount ELSE 0 END), 0) AS paid,
+            COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
+              AND (ce.available_from IS NULL OR ce.available_from <= ?) THEN ce.user_share_amount ELSE 0 END), 0) AS gross_available,
+            COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
+              AND ce.available_from IS NOT NULL AND ce.available_from > ? THEN ce.user_share_amount ELSE 0 END), 0) AS held,
+            COALESCE((SELECT SUM(pd.remaining) FROM payout_debts pd
+              WHERE pd.platform = ce.platform AND pd.user_id = ce.user_id
+                AND pd.settled_at IS NULL AND pd.written_off_at IS NULL), 0) AS debt_remaining,
+            -- pending/paid doc tu withdrawal_requests (so NET) cho khop getUserSummary - cong theo
+            -- entry se ra so gross, lech voi chinh so tien se duoc chuyen.
+            COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
+              WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'requested'), 0) AS pending,
+            COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
+              WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'paid'), 0) AS paid,
             COUNT(*) AS orders_count,
             uco.user_share_percent AS override_percent,
             uco.start_date AS override_start_date,
@@ -1274,14 +1308,15 @@ export class LedgerStore {
          FROM commission_entries ce
          LEFT JOIN user_profiles up ON up.platform = ce.platform AND up.user_id = ce.user_id
          LEFT JOIN user_commission_overrides uco ON uco.platform = ce.platform AND uco.user_id = ce.user_id
-         GROUP BY ce.platform, ce.user_id
-         ORDER BY available DESC`
+         GROUP BY ce.platform, ce.user_id`
       )
-      .all() as Array<{
+      .all(todayVnIso(), todayVnIso()) as Array<{
       platform: Platform;
       user_id: string;
       display_name: string | null;
-      available: number;
+      gross_available: number;
+      held: number;
+      debt_remaining: number;
       pending: number;
       paid: number;
       orders_count: number;
@@ -1295,7 +1330,12 @@ export class LedgerStore {
       platform: r.platform,
       userId: r.user_id,
       displayName: r.display_name,
-      availableBalance: r.available,
+      // Floor 0 tinh o JS chu khong trong SQL de quy tac nay chi ton tai o MOT cho (giong
+      // getAvailableBalance) - lap lai trong SQL la cho de lech khi sua 1 ben.
+      availableBalance: Math.max(0, r.gross_available - r.debt_remaining),
+      grossAvailableBalance: r.gross_available,
+      heldBalance: r.held,
+      debtRemaining: r.debt_remaining,
       pendingBalance: r.pending,
       paidTotal: r.paid,
       ordersCount: r.orders_count,
@@ -1311,7 +1351,14 @@ export class LedgerStore {
               endDate: r.override_end_date,
               updatedAt: r.override_updated_at ?? "",
             },
-    }));
+    }))
+      // Sap o JS chu khong ORDER BY trong SQL: SQL chi biet so GROSS, con availableBalance la so DA
+      // TRU NO. /admin/users mac dinh hien "kha dung giam dan" nen sap theo gross se dat user co no
+      // sai vi tri so voi con so hien ngay canh do. Tiebreak theo userId de thu tu on dinh giua cac
+      // lan goi (nhieu user that co cung so du 0d).
+      .sort(
+        (a, b) => b.availableBalance - a.availableBalance || a.userId.localeCompare(b.userId)
+      );
   }
 
   /**
