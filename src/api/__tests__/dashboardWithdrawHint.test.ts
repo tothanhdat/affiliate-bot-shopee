@@ -143,18 +143,18 @@ test("dashboard: du kha dung -> van hien form rut tien nhu cu", () => {
 
 test("dashboard: khong co don bi giam / khong no -> KHONG hien 2 dong moi", () => {
   const html = render({ availableBalance: 50_000, entries: [entry({ status: "confirmed" })] });
-  assert.doesNotMatch(html, /Đang giữ/, 'hien "0d" cho user chua bao gio bi giam la tao lo lang vo ich');
+  assert.doesNotMatch(html, /Đang tạm giữ/, 'hien "0d" cho user chua bao gio bi giam la tao lo lang vo ich');
   assert.doesNotMatch(html, /Đã trừ hoàn trả/);
 });
 
-test("dashboard: co don bi giam -> hien 'Dang giu' + ngay mo khoa cua don do", () => {
+test("dashboard: co don bi giam -> hien 'Dang tam giu' + ngay mo khoa cua don do", () => {
   const html = render({
     availableBalance: 0,
     entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
     heldBalance: 150_000,
     heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
   });
-  assert.match(html, /Đang giữ/);
+  assert.match(html, /Đang tạm giữ/);
   assert.match(html, /150\.000/);
   assert.match(html, /mở khoá 15\/10/);
 });

@@ -1749,7 +1749,7 @@ export function renderOrdersPage(
   const todayVn = todayVnIso();
   const rows = entries
     .map((e) => {
-      const badge = statusBadge(e);
+      const badge = statusBadge(e, todayVn);
       // `block truncate` thay cho .cell-truncate cu: can <td class="max-w-xs"> de co moc cat. Giu
       // title de hover ra ten day du - ten san pham Shopee thuong dai hon ca chieu rong man hinh.
       const product = e.productName
@@ -1794,7 +1794,7 @@ export function renderOrdersPage(
         e.status === "confirmed" &&
         e.withdrawalId === null &&
         e.availableFrom > todayVn
-          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Đơn to được giữ thêm vài ngày để kịp phát hiện khách trả hàng">🔒 mở khoá ${escapeHtml(
+          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Đơn to được giữ thêm vài ngày để kịp phát hiện khách trả hàng">mở khoá ${escapeHtml(
               formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
             )}</div>`
           : "";

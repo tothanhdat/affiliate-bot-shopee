@@ -521,7 +521,7 @@ export function renderDashboardPage(input: {
   // luat khong ap dung cho ho.
   const heldRow =
     input.heldBalance > 0
-      ? `<div class="stat info"><div class="label">Đang giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldUnlockHint(input.heldEntries)}</div></div>`
+      ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldUnlockHint(input.heldEntries)}</div></div>`
       : "";
   const debtRow =
     input.debtRemaining > 0

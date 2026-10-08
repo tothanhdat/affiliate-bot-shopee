@@ -1,4 +1,5 @@
 import type { CommissionEntry } from "../core/types.js";
+import { todayVnIso } from "../core/vietnamDate.js";
 
 /** Helper dung chung cho moi trang HTML viet tay trong src/api (dashboard user va admin). */
 
@@ -114,10 +115,29 @@ export function copyIconButton(value: string, ariaLabel: string): string {
 
 export type BadgeTone = "success" | "warning" | "danger";
 
-/** Nhan + mau badge cho 1 commission entry - dung chung boi dashboard user va admin. */
-export function statusBadge(entry: CommissionEntry): { label: string; tone: BadgeTone } {
+/**
+ * Nhan + mau badge cho 1 commission entry - dung chung boi dashboard user va admin.
+ *
+ * "Đang tạm giữ" (2026-10-08) la TRANG THAI HIEN THI, khong phai trang thai trong DB: entry van la
+ * `confirmed`, chi khac o cho `available_from` con o tuong lai. Phai tach ra khoi "Khả dụng" vi 2
+ * chu do nghia la RUT DUOC NGAY - de chung nhan voi don chua rut duoc la noi sai voi user ngay tren
+ * dong cua don do.
+ *
+ * `todayVn` nhan tu caller de test chot duoc thoi diem; mac dinh la hom nay gio VN.
+ */
+export function statusBadge(
+  entry: CommissionEntry,
+  todayVn: string = todayVnIso()
+): { label: string; tone: BadgeTone } {
   if (entry.status === "confirmed" && entry.withdrawalId) {
     return { label: "Đang chờ rút", tone: "warning" };
+  }
+  if (
+    entry.status === "confirmed" &&
+    entry.availableFrom !== null &&
+    entry.availableFrom > todayVn
+  ) {
+    return { label: "Đang tạm giữ", tone: "warning" };
   }
   switch (entry.status) {
     case "pending":

@@ -246,3 +246,14 @@ test("/admin/orders: don bi tra hang VAN hien trang thai 'Da rut', khong doi tha
   assert.doesNotMatch(tbody, /Đã huỷ/, "entry paid bi tra hang GIU NGUYEN status paid - tien ra khoi tay that");
   assert.match(tbody, /đã trả hàng/, "nhung phai co dau hieu rieng, khong thi nhin y het don binh thuong");
 });
+
+test("/admin/orders: don dang bi giam deo nhan 'Đang tạm giữ', KHONG phai 'Khả dụng'", () => {
+  const tbody = (h: string) => h.slice(h.indexOf("<tbody"));
+  const held = tbody(renderOne(orderEntry({ availableFrom: addDaysToVnIso(todayVnIso(), 7) })));
+  assert.match(held, /Đang tạm giữ/);
+  assert.doesNotMatch(held, /Khả dụng/, "2 chu 'Khả dụng' nghia la RUT DUOC NGAY - don nay chua");
+
+  const free = tbody(renderOne(orderEntry()));
+  assert.match(free, /Khả dụng/);
+  assert.doesNotMatch(free, /Đang tạm giữ/);
+});
