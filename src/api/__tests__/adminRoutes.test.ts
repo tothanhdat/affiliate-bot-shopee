@@ -1652,3 +1652,54 @@ test("import don moi khi user KHONG co no -> tin nhan KHONG co cau thua ve no", 
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Yeu cau rut TU DONG bi huy khi mot don trong do bao "Da huy" luc import
+// (2026-10-08, yeu cau truc tiep cua user - DAO NGUOC quyet dinh brainstorm ban
+// dau "canh bao admin, admin tu quyet").
+// ---------------------------------------------------------------------------
+
+test("import bao 'Da huy' cho don dang trong 1 yeu cau rut -> TU DONG huy yeu cau + DM user + Kha dung ve dung", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup(undefined, false);
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+
+    const firstCsv = [SHOPEE_REPORT_HEADER, shopeeReportRow("BAOLONG-001", "Hoàn thành", ["zalo", "user-a", "abc", "def"])].join("\n");
+    const firstForm = new FormData();
+    firstForm.append("file", new Blob([firstCsv], { type: "text/csv" }), "report1.csv");
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/record-orders/shopee-report`, { method: "POST", headers: { cookie: cookie! }, body: firstForm });
+
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000); // 80% cua 10_000
+    const w = ledgerStore.requestWithdrawal("zalo", "user-a", 1, BANK_INFO);
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0, "da bi gom vao yeu cau rut");
+
+    notifyUserCalls.length = 0; // bo qua DM cua lan import dau, chi quan tam lan 2
+
+    const secondCsv = [SHOPEE_REPORT_HEADER, shopeeReportRow("BAOLONG-001", "Đã hủy", ["zalo", "user-a", "abc", "def"])].join("\n");
+    const secondForm = new FormData();
+    secondForm.append("file", new Blob([secondCsv], { type: "text/csv" }), "report2.csv");
+    await fetch(`${baseUrl}/admin/record-orders/shopee-report`, { method: "POST", headers: { cookie: cookie! }, body: secondForm });
+
+    // Yeu cau rut phai chuyen ngay sang 'cancelled', don bi tra hang phai 'reversed' (thu hoi tron,
+    // khong phai ghi no - tien chua he ra khoi tay).
+    assert.equal(ledgerStore.getPendingWithdrawal("zalo", "user-a"), null);
+    assert.equal(ledgerStore.listCancelledWithdrawals()[0]?.id, w.id);
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "BAOLONG-001")?.status, "reversed");
+    assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), 0, "khong phai no, da thu hoi tron");
+
+    // Kha dung phai duoc TINH LAI dung: don duy nhat cua user nay da bi huy -> ve 0.
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0);
+
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+    assert.match(notifyUserCalls[0].message, /đã được huỷ/);
+    assert.match(
+      notifyUserCalls[0].message,
+      /đơn hàng bị trả lại/,
+      `tin nhan phai noi ro ly do, nhan duoc: ${notifyUserCalls[0].message}`
+    );
+  } finally {
+    cleanup();
+  }
+});

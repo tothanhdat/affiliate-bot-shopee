@@ -66,6 +66,23 @@ export interface ShopeeReportImportResult {
   debtCreatedCount: number;
   /** Chi tiet no vua sinh - route web dung de DM user. */
   debtsByUser: Array<{ platform: Platform; userId: string; orderId: string; amount: number }>;
+  /**
+   * Yeu cau rut bi TU DONG huy vi mot don trong do bao "Da huy" (2026-10-08, yeu cau truc tiep cua
+   * user - DAO NGUOC quyet dinh "canh bao admin, admin tu quyet" ban dau). amount la so NET da huy
+   * (tien user se thay lai trong Kha dung). Route web dung de DM user ngay.
+   *
+   * RUI RO DA DUOC NGUOI DUNG CHAP NHAN: neu admin DA chuyen khoan tay cho yeu cau nay nhung CHUA
+   * bam "Danh dau da tra" tren he thong truoc khi import chay, tien se bi tinh la "chua chuyen" va
+   * quay lai Kha dung cua user - tao ra lech so voi thuc te admin da chuyen. Khong co cach nao phat
+   * hien tu phia he thong (khong biet admin da chuyen khoan that ngoai doi hay chua).
+   */
+  cancelledWithdrawals: Array<{
+    platform: Platform;
+    userId: string;
+    withdrawalId: string;
+    amount: number;
+    orderId: string;
+  }>;
 }
 
 const STATUS_COMPLETED = "Hoàn thành";
@@ -322,6 +339,7 @@ export function importShopeeReport(
     heldCount: 0,
     debtCreatedCount: 0,
     debtsByUser: [],
+    cancelledWithdrawals: [],
   };
 
   const confirmedRows: OrderRowResult[] = [];
@@ -480,30 +498,61 @@ export function importShopeeReport(
       // BA ca khac nhau HAN nhau ve TIEN, khong duoc gop (xem spec muc 4):
       //  - confirmed + chua nam trong yeu cau rut: tien con trong tay -> thu hoi TRON, khong no.
       //    Ke ca don dang bi giam: hold da lam dung viec cua no.
-      //  - confirmed + da nam trong yeu cau rut 'requested': tien chua di nhung admin CO THE da chuyen
-      //    khoan ma chua bam "da tra" -> ghi no NGAY (mac dinh an toan, so van khop du admin bo qua)
-      //    va canh bao de admin con co hoi huy yeu cau neu chua chuyen.
-      //  - paid: tien da di that -> ghi no + DM user.
+      //  - confirmed + da nam trong yeu cau rut 'requested': tien CHUA di (yeu cau chi la 'requested',
+      //    chua 'paid') -> TU DONG huy ca yeu cau rut, thu hoi TRON don nay, khong no (2026-10-08, yeu
+      //    cau truc tiep cua user - DAO NGUOC quyet dinh ban dau "canh bao admin, admin tu quyet": xem
+      //    doc comment cua result.cancelledWithdrawals o dau file ve rui ro da duoc chap nhan).
+      //  - paid: tien da di that -> ghi no + DM user. Yeu cau DA 'paid' thi khong con gi de huy.
       if (existing.status === "reversed") continue;
 
-      if (existing.status === "confirmed" && existing.withdrawalId === null) {
-        try {
-          // allowNonPending: entry dang 'confirmed' nen reverseCommissionEntry mac dinh tu choi. An
-          // toan o day vi da kiem withdrawalId === null ngay tren - tien chac chan con trong tay.
-          ledgerStore.reverseCommissionEntry(existing.id, reverseReason(order.rawStatusLabel), {
-            allowNonPending: true,
-          });
-          result.reversedCount += 1;
-          result.statusTransitions.push({ orderId, from: "confirmed", to: "reversed" });
-          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
-        } catch (err) {
-          const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-          result.errors.push(`[${orderId}] ${msg}`);
+      if (existing.status === "confirmed") {
+        // existing la SNAPSHOT doc 1 lan dau vong lap nay - KHONG tu refresh sau khi cancelWithdrawal
+        // ghi DB, nen phai dung 1 CO RIENG (released) de biet tien da ve tay chua, khong duoc re-check
+        // existing.withdrawalId (van giu gia tri CU, da dinh bug nay luc viet, xem lai truoc khi sua
+        // logic nay lan nua).
+        let released = existing.withdrawalId === null;
+        if (!released) {
+          const withdrawalId = existing.withdrawalId!;
+          try {
+            const cancelled = ledgerStore.cancelWithdrawal(withdrawalId, reverseReason(order.rawStatusLabel));
+            result.cancelledWithdrawals.push({
+              platform: cancelled.platform,
+              userId: cancelled.userId,
+              withdrawalId,
+              amount: cancelled.amount,
+              orderId,
+            });
+            released = true;
+          } catch (err) {
+            // WithdrawalNotCancellableError: yeu cau da chuyen sang 'paid' GIUA luc doc existing (hiem,
+            // dua tranh voi admin bam "Danh dau da tra" cung luc). KHONG the reverse an toan nua - tien
+            // CO THE da di that, de nguyen cho nhanh ben duoi xu li o lan import SAU (luc do existing.status
+            // da la 'paid' that trong DB, se di dung vao nhanh ghi no).
+            const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+            result.errors.push(`[${orderId}] Khong huy duoc yeu cau rut ${withdrawalId}: ${msg}`);
+          }
+        }
+
+        if (released) {
+          try {
+            // allowNonPending: entry dang 'confirmed' nen reverseCommissionEntry mac dinh tu choi. An
+            // toan o day vi tien chac chan dang trong tay (chua tung vao yeu cau rut, hoac vua duoc
+            // tha ra tu lenh huy o tren).
+            ledgerStore.reverseCommissionEntry(existing.id, reverseReason(order.rawStatusLabel), {
+              allowNonPending: true,
+            });
+            result.reversedCount += 1;
+            result.statusTransitions.push({ orderId, from: "confirmed", to: "reversed" });
+            ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
+          } catch (err) {
+            const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+            result.errors.push(`[${orderId}] ${msg}`);
+          }
         }
         continue;
       }
 
-      if (existing.status === "confirmed" || existing.status === "paid") {
+      if (existing.status === "paid") {
         const debt = ledgerStore.recordPayoutDebt({
           platform: existing.platform,
           userId: existing.userId,
@@ -521,13 +570,6 @@ export function importShopeeReport(
             orderId,
             amount: existing.userShareAmount,
           });
-          if (existing.status === "confirmed") {
-            // Tien CHUA di - admin con kip huy yeu cau rut de khoi mat. Canh bao nay la co hoi lam tot
-            // hon, KHONG phai dieu kien de dung: no da duoc ghi nen so van khop du admin bo qua.
-            result.errors.push(
-              `[${orderId}] Don bi tra hang nhung dang nam trong 1 yeu cau rut CHUA thanh toan - da ghi no. Neu CHUA chuyen khoan, vao /admin/withdrawals huy yeu cau do de khoi mat tien.`
-            );
-          }
         }
         continue;
       }

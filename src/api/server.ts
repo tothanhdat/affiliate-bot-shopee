@@ -1102,6 +1102,32 @@ export function createServer(
           console.warn("[user-notify] gui thong bao don bi tra hang that bai:", notifyErr);
         });
       }
+      // Yeu cau rut BI TU DONG HUY vi mot don trong do bao "Da huy" (2026-10-08, yeu cau truc tiep
+      // cua user - DAO NGUOC quyet dinh brainstorm ban dau "canh bao admin, admin tu quyet"). Dung
+      // LAI dung template/ham da xay cho route huy THU CONG tren /admin/withdrawals (Task 7/12), chi
+      // khac nguon goc (import tu dong thay vi admin bam nut) - cung 1 cau cho user doc, khong tao
+      // thanh 2 kieu tin nhan rieng cho cung 1 su kien "yeu cau rut cua ban bi huy".
+      //
+      // RUI RO DA DUOC NGUOI DUNG CHAP NHAN (xem doc comment cua ShopeeReportImportResult.cancelledWithdrawals):
+      // neu admin DA chuyen khoan tay nhung CHUA bam "Danh dau da tra" truoc khi import nay chay, tien
+      // se bi tinh la "chua chuyen" va quay lai Kha dung cua user - khong co cach nao he thong tu phat
+      // hien duoc dieu nay.
+      const withdrawalCancelledTemplate = ledgerStore.getWithdrawalCancelledTemplate(
+        WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT
+      );
+      for (const cancelled of result.cancelledWithdrawals) {
+        const { token } = ledgerStore.findOrCreateDashboardToken(cancelled.platform, cancelled.userId);
+        notifyUser(cancelled.platform, cancelled.userId, {
+          text: formatWithdrawalCancelledReply(withdrawalCancelledTemplate, {
+            amount: cancelled.amount,
+            reason: "bạn có đơn hàng bị trả lại",
+            dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
+          }),
+        }).catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao tu dong huy yeu cau rut that bai:", notifyErr);
+        });
+      }
+
       // 2026-09-11 (yeu cau truc tiep cua user): bao CA GROUP biet du lieu hoa hong vua duoc cap nhat,
       // thay vi chi DM rieng tung user co don moi. Gui MOI lan import thanh cong - ke ca khi 0 don moi
       // (quyet dinh cua user: giu nhip thong bao hang ngay) - nen noi dung khong noi gi ve so luong don.

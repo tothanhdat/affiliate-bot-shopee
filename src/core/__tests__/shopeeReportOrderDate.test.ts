@@ -428,19 +428,83 @@ test("'Da huy' + entry da 'paid' -> sinh no, status VAN la 'paid'", () => {
   ]);
 });
 
-test("'Da huy' + entry trong yeu cau rut 'requested' -> sinh no + canh bao admin", () => {
+// 2026-10-08 (yeu cau truc tiep cua user, DAO NGUOC quyet dinh brainstorm ban dau "canh bao admin,
+// admin tu quyet"): don trong 1 yeu cau rut dang 'requested' (chua 'paid') bao "Da huy" thi TU DONG
+// huy ca yeu cau rut, thu hoi TRON don do (khong no), va bao cho qua result.cancelledWithdrawals de
+// route web DM user ngay.
+test("'Da huy' + entry trong yeu cau rut 'requested' -> TU DONG huy yeu cau, thu hoi tron, KHONG no", () => {
   const { logStore, ledgerStore } = setupImport();
   importDone(logStore, ledgerStore);
-  ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  const w = ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
 
   const result = importCancelled(logStore, ledgerStore);
 
-  assert.equal(result.debtCreatedCount, 1);
-  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "confirmed", "chua doi status");
-  assert.ok(
-    result.errors.some((e) => e.includes("X1") && /huy yeu cau/i.test(e)),
-    `can canh bao admin co the huy yeu cau rut, nhan duoc: ${JSON.stringify(result.errors)}`
+  assert.equal(result.debtCreatedCount, 0, "tien chua di (yeu cau moi 'requested') nen KHONG phai no");
+  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "reversed", "thu hoi TRON don nay");
+  assert.equal(
+    ledgerStore.listCancelledWithdrawals()[0]?.id,
+    w.id,
+    "yeu cau rut phai duoc chuyen sang trang thai 'cancelled'"
   );
+  assert.equal(ledgerStore.getPendingWithdrawal("zalo", "user-a"), null, "khong con yeu cau nao dang cho");
+
+  assert.deepEqual(result.cancelledWithdrawals, [
+    { platform: "zalo", userId: "user-a", withdrawalId: w.id, amount: w.amount, orderId: "X1" },
+  ]);
+});
+
+// Yeu cau rut co NHIEU don, chi 1 don bi tra hang: ca yeu cau van bi huy TRON (khong the "huy mot
+// nua yeu cau rut"), nhung CHI don bi tra hang moi bi reverse - don con lai tha ve Kha dung nguyen
+// ven, KHONG mat gi.
+test("yeu cau rut co 2 don, 1 don bi tra hang -> huy ca yeu cau, don CON LAI tha ve Kha dung nguyen ven", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore); // X1, commission mac dinh 50_000
+  // Them 1 don thu 2 cho CUNG user (ghi truc tiep qua recordConversion, khong qua CSV - don nay se
+  // KHONG duoc nhac den trong bao cao huy ben duoi, dung de kiem no "khong bi dung cham").
+  const otherEntry = ledgerStore.recordConversion({
+    subId: "k-user-a-aaa-222",
+    platform: "zalo",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId: "X2-KEEP",
+    orderAmount: 300_000,
+    commissionAmount: 30_000,
+    taxPercent: ORDER_CONFIG.taxPercent,
+    platformFeePercent: ORDER_CONFIG.platformFeePercent,
+    userSharePercent: ORDER_CONFIG.userSharePercent,
+    maxCommissionRatioPercent: ORDER_CONFIG.maxCommissionRatioPercent,
+    holdConfig: ORDER_CONFIG.holdConfig,
+  });
+  const w = ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  const grossBefore = w.amount;
+
+  importCancelled(logStore, ledgerStore); // bao X1 "Da huy"
+
+  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "reversed");
+  const otherAfter = ledgerStore.getEntryByOrderId("shopee", "X2-KEEP");
+  assert.equal(otherAfter?.status, "confirmed", "don con lai KHONG bi dung cham");
+  assert.equal(otherAfter?.withdrawalId, null, "duoc tha ve Kha dung, khong con khoa trong yeu cau da huy");
+  assert.equal(
+    ledgerStore.getAvailableBalance("zalo", "user-a"),
+    otherEntry.userShareAmount,
+    "Kha dung = dung so tien cua don con lai, khong mat gi"
+  );
+  assert.ok(grossBefore > otherEntry.userShareAmount, "chot: yeu cau cu DUNG la gop ca 2 don");
+});
+
+// Import LAI cung bao cao huy 2 lan: lan 1 da huy xong (X1 'reversed', yeu cau 'cancelled'), lan 2
+// phai la NO-OP hoan toan - khong duoc goi cancelWithdrawal lan nua (se nem WithdrawalNotCancellableError
+// roi bi nuot vao result.errors mot cach vo ich).
+test("import lai cung bao cao huy 2 lan -> lan 2 khong lam gi them, khong co loi moi", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  importCancelled(logStore, ledgerStore);
+
+  const second = importCancelled(logStore, ledgerStore);
+  assert.deepEqual(second.cancelledWithdrawals, []);
+  assert.deepEqual(second.errors, []);
+  assert.equal(second.reversedCount, 0);
 });
 
 test("import LAI cung bao cao huy 2 lan -> no KHONG nhan doi", () => {
