@@ -169,7 +169,10 @@ test("dashboard: co don bi giam -> the 'Đang tạm giữ' hien SO TIEN, KHONG h
   const statCardEnd = html.indexOf("</div></div>", statCardStart);
   const statCardHtml = html.slice(statCardStart, statCardEnd);
   assert.doesNotMatch(statCardHtml, /\d{2}\/\d{2}/, "the tong hop khong duoc chua ngay thang nao nua");
-  assert.match(statCardHtml, /xem ngày mở khoá/, "thay vao do la cau TRO TOI chi tiet don ben duoi");
+  // (2026-10-08, yeu cau truc tiep cua user) Khong con ca cau "xem ngay mo khoa o dau" - the nay chi
+  // con dung LABEL + SO TIEN, khong co dong hint nao ca (truoc do co tung the mot cau tro toi, da
+  // bi bo vi khong can thiet).
+  assert.doesNotMatch(statCardHtml, /class="hint"/, "khong con dong hint nao duoi the nay");
 });
 
 // Day la vi tri DUY NHAT con hien ngay mo khoa: duoi badge "Đang tạm giữ" cua CHINH don do trong

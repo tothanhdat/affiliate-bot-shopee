@@ -337,21 +337,6 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   http: "HTTP",
 };
 
-/**
- * Cau TRO TOI chi tiet don (2026-10-08, doi theo yeu cau truc tiep cua user) - KHONG con liet ke
- * ngay mo khoa o day nua. Truoc do ham nay gop het ngay mo khoa cua moi don bi giam thanh 1 chuoi
- * ("mở khoá: 12/10 · 15/10") roi nhet vao the tong hop VA vao cau thong bao - 2 noi cung lap lai
- * cung mot thong tin, va don co moc giao hang RIENG nen goi chung thanh 1 cho de doc nham. Ngay mo
- * khoa gio CHI hien dung 1 noi: ngay duoi badge "Đang tạm giữ" cua TUNG don (xem vong lap ve entries
- * ben duoi) - mot nguon su that duy nhat, khong con 2 cho phai dong bo voi nhau.
- */
-function heldDetailPointer(heldEntries: CommissionEntry[]): string {
-  if (heldEntries.length === 0) return "";
-  return heldEntries.length === 1
-    ? "xem ngày mở khoá ở đơn bên dưới"
-    : `xem ngày mở khoá của từng đơn (${heldEntries.length} đơn) bên dưới`;
-}
-
 export function renderDashboardPage(input: {
   entries: CommissionEntry[];
   /** DA tru no hoan tra, floor 0 - chinh so user rut duoc. */
@@ -361,6 +346,12 @@ export function renderDashboardPage(input: {
   /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
   heldBalance: number;
   /** Tung don dang bi giam - moi don hien ngay mo khoa cua CHINH no. */
+  /**
+   * (2026-10-08) KHONG con duoc DOC o file nay - ngay mo khoa hien truc tiep tu `e.availableFrom`
+   * cua tung phan tu trong `entries` (vong lap render tung don ben duoi), khong can gop qua day
+   * nua. Van giu field nay trong signature de khop voi UserLedgerSummary (server.ts truyen qua
+   * `...summary`), tranh phai sua ca 2 noi goi renderDashboardPage() chi vi 1 field khong dung toi.
+   */
   heldEntries: CommissionEntry[];
   /** No hoan tra con phai tru. */
   debtRemaining: number;
@@ -497,7 +488,10 @@ export function renderDashboardPage(input: {
         //   - cho xac nhan -> cho Shopee duyet
         input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
         ? notice(
-            `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày (${heldDetailPointer(input.heldEntries)}). Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
+            // (2026-10-08, yeu cau truc tiep cua user) KHONG con cau "xem ngay mo khoa o dau" -
+            // ngay mo khoa da hien san duoi badge cua TUNG don trong phan chi tiet ben duoi, khong
+            // can nhac lai o day.
+            `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày. Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
             "i"
           )
         : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
@@ -533,7 +527,7 @@ export function renderDashboardPage(input: {
   // luat khong ap dung cho ho.
   const heldRow =
     input.heldBalance > 0
-      ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldDetailPointer(input.heldEntries)}</div></div>`
+      ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div></div>`
       : "";
   // No KHONG phai 1 the trong hang nay: hang nay la "tien ban co", con no la mot khoan BI TRU -
   // dat chung vao nhau thi user doc ra nhu mot loai so du nua (feedback that cua user 2026-10-08).
