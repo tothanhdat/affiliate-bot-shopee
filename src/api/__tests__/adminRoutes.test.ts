@@ -1460,84 +1460,16 @@ function seedConfirmedOrder(ledgerStore: LedgerStore, orderId: string, commissio
   });
 }
 
-test("POST /admin/withdrawals/:id/cancel: tien ve lai Kha dung, DM user", async () => {
-  const { ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+test("POST /admin/withdrawals/:id/cancel da bi go -> 404", async () => {
+  const { baseUrl, cleanup } = setup();
   try {
-    seedConfirmedOrder(ledgerStore, "CANCEL1", 100_000);
-    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0, "tien dang bi giu");
-
     const cookie = await loginAndGetCookie(baseUrl);
-    const res = await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
+    const res = await fetch(`${baseUrl}/admin/withdrawals/abc/cancel`, {
       method: "POST",
-      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
-      body: "reason=don+bi+tra+hang",
+      headers: { cookie: cookie! },
       redirect: "manual",
     });
-
-    assert.equal(res.status, 303);
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 100_000, "tien ve lai Kha dung");
-    assert.equal(ledgerStore.getPendingWithdrawal("telegram", "user-a"), null);
-    assert.equal(ledgerStore.listCancelledWithdrawals()[0].cancelReason, "don bi tra hang");
-
-    assert.equal(notifyUserCalls.length, 1);
-    assert.match(notifyUserCalls[0].message, /đã được huỷ/);
-    assert.match(notifyUserCalls[0].message, /vẫn nằm nguyên trong số dư/);
-  } finally {
-    cleanup();
-  }
-});
-
-test("POST /admin/withdrawals/:id/cancel tren yeu cau DA TRA -> 422, khong doi gi", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    seedConfirmedOrder(ledgerStore, "CANCEL2", 100_000);
-    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
-    ledgerStore.markWithdrawalPaid(w.id, null);
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    const res = await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
-      method: "POST",
-      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
-      body: "",
-      redirect: "manual",
-    });
-
-    assert.equal(res.status, 422);
-    assert.equal(ledgerStore.listPaidWithdrawals().length, 1, "van la yeu cau da tra");
-    assert.equal(ledgerStore.listCancelledWithdrawals().length, 0);
-  } finally {
-    cleanup();
-  }
-});
-
-// Huy yeu cau rut khi don trong do vua bi tra hang: tien CHUA di nen khong con la no - entry phai bi
-// reverse va dong no bi xoa HAN.
-test("POST cancel: don vua bi tra hang trong yeu cau -> reverse entry + xoa han dong no", async () => {
-  const { ledgerStore, baseUrl, cleanup } = setup();
-  try {
-    const entry = seedConfirmedOrder(ledgerStore, "CANCEL3", 100_000);
-    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
-    // Mo phong import ghi no cho don dang nam trong yeu cau rut cho duyet
-    ledgerStore.recordPayoutDebt({
-      platform: "telegram",
-      userId: "user-a",
-      merchant: "shopee",
-      orderId: "CANCEL3",
-      amount: entry.userShareAmount,
-    });
-
-    const cookie = await loginAndGetCookie(baseUrl);
-    await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
-      method: "POST",
-      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
-      body: "",
-      redirect: "manual",
-    });
-
-    assert.equal(ledgerStore.getEntryByOrderId("shopee", "CANCEL3")?.status, "reversed");
-    assert.equal(ledgerStore.getDebtByOrder("shopee", "CANCEL3"), null, "no bi xoa HAN, khong phai write-off");
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0, "don bi huy nen khong con tien");
+    assert.equal(res.status, 404);
   } finally {
     cleanup();
   }

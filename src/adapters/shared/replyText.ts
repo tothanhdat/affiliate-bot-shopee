@@ -333,7 +333,7 @@ export function formatPayoutDebtNotice(
   });
 }
 
-/** DM khi admin huy 1 yeu cau rut dang cho (POST /admin/withdrawals/:id/cancel). */
+/** DM khi import TU DONG huy 1 yeu cau rut dang cho vi co don trong do bi huy (xem shopeeReportImport.ts). */
 export function formatWithdrawalCancelledReply(
   template: string,
   params: { amount: number; reason: string; dashboardUrl: string }

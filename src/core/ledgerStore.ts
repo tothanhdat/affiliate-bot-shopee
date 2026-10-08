@@ -1273,6 +1273,7 @@ export class LedgerStore {
     heldBalance: number;
     /** No hoan tra con phai tru. */
     debtRemaining: number;
+    /** So admin PHAI CHUYEN cua yeu cau dang cho (da tru no) - khac pendingBalance cua getUserSummary. */
     pendingBalance: number;
     paidTotal: number;
     ordersCount: number;
@@ -1289,8 +1290,10 @@ export class LedgerStore {
             COALESCE((SELECT SUM(pd.remaining) FROM payout_debts pd
               WHERE pd.platform = ce.platform AND pd.user_id = ce.user_id
                 AND pd.settled_at IS NULL AND pd.written_off_at IS NULL), 0) AS debt_remaining,
-            -- pending = so YEU CAU rut (W), paid = so NET da chuyen - cung quy tac voi getUserSummary.
-            COALESCE((SELECT SUM(wr.amount + wr.debt_applied) FROM withdrawal_requests wr
+            -- pending/paid = so NET (so admin THAT SU phai chuyen / da chuyen), khop /admin/withdrawals
+            -- (yeu cau user 2026-10-08). KHAC getUserSummary.pendingBalance (dashboard user) la so
+            -- user YEU CAU rut (W) - user chi biet con so minh bam rut, admin can so phai chuyen.
+            COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
               WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'requested'), 0) AS pending,
             COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
               WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'paid'), 0) AS paid,
@@ -1668,14 +1671,6 @@ export class LedgerStore {
       this.db.exec("ROLLBACK");
       throw err;
     }
-  }
-
-  /**
-   * Xoa HAN dong no. Chi dung khi don hoa ra khong he mat tien (admin huy yeu cau rut truoc khi
-   * chuyen khoan) - khac writeOffDebt() la "mat tien thuc nhung thoi khong doi".
-   */
-  deleteDebtByOrder(merchant: MerchantId, orderId: string): void {
-    this.db.prepare(`DELETE FROM payout_debts WHERE merchant = ? AND order_id = ?`).run(merchant, orderId);
   }
 
   requestWithdrawal(

@@ -222,7 +222,7 @@ export interface PayoutDebt {
   settledAt: string | null;
   /**
    * Admin xoa no (user bo di, no treo vinh vien lam meo moi con so tong). Dong van duoc GIU LAI de
-   * con doi soat - khac deleteDebtByOrder() la xoa han vi hoa ra khong he mat tien.
+   * con doi soat.
    */
   writtenOffAt: string | null;
 }

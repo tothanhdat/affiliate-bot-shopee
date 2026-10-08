@@ -650,11 +650,6 @@ export function renderWithdrawalsPage(
   paidHistory: WithdrawalRequest[],
   displayNames: Map<string, string>,
   errorMessage?: string | null,
-  /**
-   * Don trong tung yeu cau vua bi bao cao Shopee ghi la tra hang (2026-10-08), khoa theo withdrawal
-   * id. Tien CHUA di nen admin con kip huy yeu cau de khoi mat - xem nut "Huy yeu cau".
-   */
-  debtWarnings: Map<string, Array<{ orderId: string; amount: number }>> = new Map(),
   cancelledHistory: WithdrawalRequest[] = []
 ): string {
   const errorBlock = errorMessage
@@ -785,40 +780,6 @@ export function renderWithdrawalsPage(
       // khac nhau. Day la cach hop le duy nhat de giu nguyen bo cuc.
       const formId = `pay-${w.id}`;
 
-      // Canh bao don vua bi tra hang: tien CHUA ra khoi ngan hang nen admin con kip huy. No DA duoc
-      // ghi roi (mac dinh an toan) nen bo qua canh bao nay thi so van khop - day chi la co hoi lam
-      // tot hon. Hang canh bao la 1 <tr> RIENG colspan het bang: nhet vao mot <td> se lam cot do
-      // gian rong ra va vo bo cuc 6 cot.
-      const warned = debtWarnings.get(w.id) ?? [];
-      const warnedTotal = warned.reduce((sum, d) => sum + d.amount, 0);
-      // Phai mang CUNG data-search voi hang chinh: script tim kiem an moi <tr> khong khop, khong co
-      // thuoc tinh nay thi hang canh bao bien mat ngay khi admin go tim du hang chinh van hien.
-      const rowSearch = escapeHtml(
-        `${displayNames.get(nameKey(w.platform, w.userId)) ?? ""} ${w.userId} ${w.bankAccountNumber} ${
-          w.bankAccountHolder
-        } ${w.bankName}`.toLowerCase()
-      );
-      const warningRow =
-        warned.length === 0
-          ? ""
-          : `
-<tr class="bg-rose-50/60" data-search="${rowSearch}">
-  <td colspan="6" class="px-6 py-3">
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-snug text-rose-800">
-      <span class="font-bold">⚠ ${warned.length} đơn trong yêu cầu này vừa bị trả hàng (−${formatVnd(
-        warnedTotal
-      )})</span>
-      <span>— số đúng là <strong class="tabular-nums">${formatVnd(
-        Math.max(0, w.amount - warnedTotal)
-      )}</strong>.</span>
-      <span>Nếu CHƯA chuyển khoản, bấm "Huỷ yêu cầu" để khỏi mất tiền. Đã chuyển rồi thì cứ đánh dấu đã trả, khoản này thành nợ và sẽ được trừ ở lần rút sau của user.</span>
-      <span class="font-mono text-[10px] text-rose-600">${warned
-        .map((d) => escapeHtml(d.orderId))
-        .join(" · ")}</span>
-    </div>
-  </td>
-</tr>`;
-
       return `<tr class="transition hover:bg-slate-50/80" data-search="${escapeHtml(
         `${displayNames.get(nameKey(w.platform, w.userId)) ?? ""} ${w.userId} ${w.bankAccountNumber} ${
           w.bankAccountHolder
@@ -848,15 +809,8 @@ export function renderWithdrawalsPage(
     <button type="submit" form="${formId}" class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
       ${icon("check", "h-3.5 w-3.5")} Đánh dấu đã trả
     </button>
-    ${
-      warned.length > 0
-        ? `<button type="submit" form="cancel-${w.id}" class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50">
-      ${icon("x-circle", "h-3.5 w-3.5")} Huỷ yêu cầu
-    </button>`
-        : ""
-    }
   </td>
-</tr>${warningRow}`;
+</tr>`;
     })
     .join("\n");
 
@@ -866,17 +820,9 @@ export function renderWithdrawalsPage(
     .map((w) => {
       const who = displayNames.get(nameKey(w.platform, w.userId)) ?? `${w.platform}/${w.userId}`;
       const confirmMsg = `Xác nhận ĐÃ CHUYỂN KHOẢN ${formatVnd(w.amount)} cho ${who}? Hành động này không thể hoàn tác.`;
-      const warned = debtWarnings.get(w.id) ?? [];
-      const cancelForm =
-        warned.length === 0
-          ? ""
-          : `
-<form id="cancel-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/cancel" ${confirmOnSubmit(
-              `Huỷ yêu cầu rút ${formatVnd(w.amount + w.debtApplied)} của ${who}? Tiền sẽ trở lại số dư khả dụng của họ.`
-            )} hidden><input type="hidden" name="reason" value="Đơn trong yêu cầu đã bị trả hàng"></form>`;
       return `<form id="pay-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/mark-paid" enctype="multipart/form-data" ${confirmOnSubmit(
         confirmMsg
-      )} hidden></form>${cancelForm}`;
+      )} hidden></form>`;
     })
     .join("\n");
 

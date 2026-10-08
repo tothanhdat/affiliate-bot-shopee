@@ -595,70 +595,14 @@ export function createServer(
    */
   function withdrawalsPage(errorMessage?: string | null): string {
     const pending = ledgerStore.listPendingWithdrawals();
-    // Don trong yeu cau dang cho ma DA co dong no = don vua bi tra hang, tien chua di -> admin con kip huy.
-    const debtWarnings = new Map<string, Array<{ orderId: string; amount: number }>>();
-    for (const w of pending) {
-      const warned = ledgerStore
-        .listEntriesByWithdrawal(w.id)
-        .map((e) => ledgerStore.getDebtByOrder(e.merchant, e.orderId))
-        .filter((d): d is NonNullable<typeof d> => d !== null && d.settledAt === null && d.writtenOffAt === null)
-        .map((d) => ({ orderId: d.orderId, amount: d.amount }));
-      if (warned.length > 0) debtWarnings.set(w.id, warned);
-    }
     return renderWithdrawalsPage(
       pending,
       ledgerStore.listPaidWithdrawals(),
       ledgerStore.getDisplayNamesMap(),
       errorMessage,
-      debtWarnings,
       ledgerStore.listCancelledWithdrawals()
     );
   }
-
-  app.post("/admin/withdrawals/:id/cancel", requireAdminAuth, (req: Request, res: Response) => {
-    try {
-      const reason =
-        typeof req.body?.reason === "string" && req.body.reason.trim()
-          ? req.body.reason.trim()
-          : "Đơn hàng bị trả lại";
-
-      // PHAI chup danh sach entry TRUOC khi huy: cancelWithdrawal() set withdrawal_id = NULL nen sau
-      // do khong con cach nao biet entry nao thuoc yeu cau vua huy.
-      const entriesInWithdrawal = ledgerStore.listEntriesByWithdrawal(req.params.id);
-      const cancelled = ledgerStore.cancelWithdrawal(req.params.id, reason);
-
-      // Don bi tra hang nam trong yeu cau nay: gio tien CHUA di nen khong con la no - reverse entry va
-      // xoa HAN dong no (khac writeOffDebt la "mat tien thuc nhung thoi khong doi").
-      for (const entry of entriesInWithdrawal) {
-        const debt = ledgerStore.getDebtByOrder(entry.merchant, entry.orderId);
-        if (!debt || debt.settledAt || debt.writtenOffAt) continue;
-        ledgerStore.reverseCommissionEntry(entry.id, `Huy yeu cau rut: ${reason}`, { allowNonPending: true });
-        ledgerStore.deleteDebtByOrder(entry.merchant, entry.orderId);
-      }
-
-      // Best-effort: loi gui thong bao khong duoc lam fail response, yeu cau da huy trong DB roi.
-      const { token } = ledgerStore.findOrCreateDashboardToken(cancelled.platform, cancelled.userId);
-      notifyUser(cancelled.platform, cancelled.userId, {
-        text: formatWithdrawalCancelledReply(
-          ledgerStore.getWithdrawalCancelledTemplate(WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT),
-          // So user DA YEU CAU rut (W), khong phai so net admin se chuyen - user chi biet con so W.
-          { amount: cancelled.amount + cancelled.debtApplied, reason, dashboardUrl: `${dashboardBaseUrl}/d/${token}` }
-        ),
-      }).catch((notifyErr) => {
-        console.warn("[user-notify] gui thong bao huy yeu cau rut that bai:", notifyErr);
-      });
-
-      res.redirect(303, "/admin/withdrawals");
-    } catch (err) {
-      const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res
-        .status(422)
-        .type("html")
-        .send(
-          withdrawalsPage(message)
-        );
-    }
-  });
 
   // Xem lai anh chup bang chung da luu - basename() chan path traversal tu :filename. sendFile can
   // duong dan tuyet doi (resolve tu withdrawalProofDir co the la relative, vd "./data/...").

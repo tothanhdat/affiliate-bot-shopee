@@ -47,14 +47,6 @@ test("writeOffDebt: no da xoa khong tinh vao tong nua nhung dong van con de doi 
   assert.ok(s.getDebtByOrder("shopee", "order-1")?.writtenOffAt, "dong van con, co moc xoa");
 });
 
-test("deleteDebtByOrder: xoa han dong no (dung khi admin huy yeu cau rut)", () => {
-  const s = store();
-  s.recordPayoutDebt(DEBT);
-  s.deleteDebtByOrder("shopee", "order-1");
-  assert.equal(s.getDebtByOrder("shopee", "order-1"), null);
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 0);
-});
-
 test("no cua user khac khong lan sang nhau", () => {
   const s = store();
   s.recordPayoutDebt(DEBT);
@@ -394,7 +386,7 @@ test("getUserSummary: availableBalance = gross, debtRemaining/debts rieng, heldB
   assert.equal(summary.heldEntries[0].availableFrom, addDaysToVnIso(todayVnIso(), 7));
 });
 
-test("listUsers: Kha dung = gross, no rieng, pending = W, paid = so that chuyen", () => {
+test("listUsers: Kha dung = gross, no rieng, pending/paid = so THAT phai chuyen (khop /admin/withdrawals)", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
@@ -405,7 +397,8 @@ test("listUsers: Kha dung = gross, no rieng, pending = W, paid = so that chuyen"
 
   const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
   row = s.listUsers().find((u) => u.userId === "user-a");
-  assert.equal(row?.pendingBalance, 100_000);
+  assert.equal(row?.pendingBalance, 60_000, "100k - no 40k = so admin phai chuyen");
+  assert.equal(s.getUserSummary("zalo", "user-a").pendingBalance, 100_000, "dashboard user van la so YEU CAU rut");
 
   s.markWithdrawalPaid(w.id, null);
   row = s.listUsers().find((u) => u.userId === "user-a");
