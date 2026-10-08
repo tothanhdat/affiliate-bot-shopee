@@ -107,6 +107,8 @@ export interface UserLedgerSummary {
   heldEntries: CommissionEntry[];
   /** No hoan tra con phai tru. */
   debtRemaining: number;
+  /** Tung khoan no con lai - dashboard noi RO don nao de user doi chieu duoc, khong chi bao tong. */
+  debts: PayoutDebt[];
   pendingBalance: number;
   paidTotal: number;
 }
@@ -1075,6 +1077,7 @@ export class LedgerStore {
       heldBalance: this.getHeldBalance(platform, userId),
       heldEntries: this.getHeldEntries(platform, userId),
       debtRemaining: this.getOutstandingDebtTotal(platform, userId),
+      debts: this.listOutstandingDebts(platform, userId),
       pendingBalance: pendingRow.total,
       paidTotal: paidRow.total,
     };

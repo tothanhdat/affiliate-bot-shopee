@@ -56,6 +56,7 @@ function render(input: {
   heldBalance?: number;
   heldEntries?: CommissionEntry[];
   debtRemaining?: number;
+  debts?: Array<{ orderId: string; remaining: number }>;
 }): string {
   return renderDashboardPage({
     entries: input.entries,
@@ -64,6 +65,9 @@ function render(input: {
     heldBalance: input.heldBalance ?? 0,
     heldEntries: input.heldEntries ?? [],
     debtRemaining: input.debtRemaining ?? 0,
+    debts:
+      input.debts ??
+      (input.debtRemaining ? [{ orderId: "OLD-ORDER", remaining: input.debtRemaining }] : []),
     pendingBalance: 0,
     paidTotal: 0,
     pendingWithdrawal: null,
@@ -173,21 +177,63 @@ test("dashboard: nhieu don bi giam ngay khac nhau -> liet ke TUNG ngay, khong go
   assert.match(html, /15\/10/);
 });
 
-// THU TU la rang buoc: Kha dung DA la so net, nen dat dong no DUOI no va goi "Dang tru lai" se bi doc
-// thanh "so nay con bi tru nua" - hieu sai theo huong TE HON thuc te.
-test("dashboard: dong no nam TREN Kha dung va mang dau tru", () => {
+// (2026-10-08, feedback that cua user) No KHONG duoc la 1 the trong hang "tien ban co" - dat chung
+// vao do thi user doc ra nhu mot loai so du nua. No la mot dong THONG BAO rieng ngay DUOI cac the.
+test("dashboard: no KHONG phai 1 the trong hang so du", () => {
   const html = render({
     availableBalance: 32_000,
     grossAvailableBalance: 72_000,
     debtRemaining: 40_000,
     entries: [entry({ status: "confirmed" })],
   });
-  const posDebt = html.indexOf("Đã trừ hoàn trả");
-  const posAvail = html.indexOf("Khả dụng");
-  assert.ok(posDebt > -1, "phai hien dong no");
-  assert.ok(posDebt < posAvail, "dong no phai nam TREN Kha dung");
-  assert.match(html, /−40\.000/, "phai mang dau tru");
-  assert.match(html, /đã trừ hoàn trả ở trên/, "Kha dung phai noi ro la so da tru");
+  const totals = html.slice(html.indexOf('<div class="totals">'), html.indexOf("</div>\n${") + 1);
+  assert.doesNotMatch(
+    html.slice(html.indexOf('<div class="totals">'), html.indexOf('class="notice"')),
+    /Đã trừ hoàn trả/,
+    "khong duoc co the no nao trong hang the"
+  );
+  assert.ok(totals !== null);
+});
+
+test("dashboard: dong thong bao no nam DUOI cac the va giai thich du y", () => {
+  const html = render({
+    availableBalance: 32_000,
+    grossAvailableBalance: 72_000,
+    debtRemaining: 40_000,
+    debts: [{ orderId: "260925VX0R3SQ9", remaining: 40_000 }],
+    entries: [entry({ status: "confirmed" })],
+  });
+
+  const posCards = html.indexOf('<div class="totals">');
+  const posNotice = html.indexOf("đang được trừ lại");
+  assert.ok(posNotice > posCards, "dong thong bao phai nam DUOI hang the");
+
+  assert.match(html, /40\.000đ đang được trừ lại/, "noi ro so tien");
+  assert.match(html, /260925VX0R3SQ9/, "noi ro DON NAO de user doi chieu duoc");
+  assert.match(html, /đã được trả hàng/, "noi ro VI SAO");
+  assert.match(html, /không phải chuyển tiền lại/, "y quan trong nhat - thieu la user tuong phai tra tien ra");
+  assert.match(html, /tự hết dần khi bạn có đơn mới/, "noi ro khoan nay se het the nao");
+  assert.match(html, /đã trừ hoàn trả/, "the Kha dung van phai noi ro la so DA tru");
+});
+
+test("dashboard: nhieu khoan no -> liet ke du cac don", () => {
+  const html = render({
+    availableBalance: 0,
+    debtRemaining: 50_000,
+    debts: [
+      { orderId: "ORDER-A", remaining: 30_000 },
+      { orderId: "ORDER-B", remaining: 20_000 },
+    ],
+    entries: [entry({ status: "confirmed" })],
+  });
+  assert.match(html, /2 đơn đã được trả hàng/);
+  assert.match(html, /ORDER-A/);
+  assert.match(html, /ORDER-B/);
+});
+
+test("dashboard: khong no -> KHONG co dong thong bao nao", () => {
+  const html = render({ availableBalance: 50_000, entries: [entry({ status: "confirmed" })] });
+  assert.doesNotMatch(html, /đang được trừ lại/);
 });
 
 test("form rut hien so bi tru TRUOC KHI user bam gui", () => {

@@ -361,6 +361,8 @@ export function renderDashboardPage(input: {
   heldEntries: CommissionEntry[];
   /** No hoan tra con phai tru. */
   debtRemaining: number;
+  /** Tung khoan no - de noi RO don nao bi tra hang, user doi chieu duoc. */
+  debts: Array<{ orderId: string; remaining: number }>;
   pendingBalance: number;
   paidTotal: number;
   pendingWithdrawal: WithdrawalRequest | null;
@@ -523,12 +525,29 @@ export function renderDashboardPage(input: {
     input.heldBalance > 0
       ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldUnlockHint(input.heldEntries)}</div></div>`
       : "";
-  const debtRow =
+  // No KHONG phai 1 the trong hang nay: hang nay la "tien ban co", con no la mot khoan BI TRU -
+  // dat chung vao nhau thi user doc ra nhu mot loai so du nua (feedback that cua user 2026-10-08).
+  // Thay bang 1 dong thong bao RIENG ngay duoi cac the, noi du: vi sao, don nao, va quan trong nhat
+  // la ho KHONG phai chuyen tien lai.
+  const availableHint = input.debtRemaining > 0 ? `<div class="hint">đã trừ hoàn trả</div>` : "";
+  const debtNotice =
     input.debtRemaining > 0
-      ? `<div class="stat danger"><div class="label">Đã trừ hoàn trả</div><div class="value">−${formatVnd(input.debtRemaining)}</div><div class="hint">đơn đã trả hàng, trừ dần vào các đơn tới</div></div>`
+      ? notice(
+          `<strong>Có ${formatVnd(input.debtRemaining)} đang được trừ lại.</strong><br>` +
+            `${
+              input.debts.length === 1
+                ? `Đơn <code>${escapeHtml(input.debts[0].orderId)}</code> đã được trả hàng`
+                : `${input.debts.length} đơn đã được trả hàng (${input.debts
+                    .map((d) => `<code>${escapeHtml(d.orderId)}</code>`)
+                    .join(", ")})`
+            } sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của ${
+              input.debts.length === 1 ? "đơn đó" : "những đơn đó"
+            }. ` +
+            `Số dư "Khả dụng" ở trên đã trừ khoản này rồi. ` +
+            `<strong>Bạn không phải chuyển tiền lại</strong> — khoản này sẽ tự hết dần khi bạn có đơn mới.`,
+          "↩"
+        )
       : "";
-  const availableHint =
-    input.debtRemaining > 0 ? `<div class="hint">đã trừ hoàn trả ở trên</div>` : "";
 
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
@@ -536,11 +555,11 @@ ${errorBlock}
 <div class="totals">
   <div class="stat warning"><div class="label">Chờ xác nhận</div><div class="value">${formatVnd(pendingConfirmationTotal)}</div></div>
   ${heldRow}
-  ${debtRow}
   <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div>${availableHint}</div>
   <div class="stat info"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
   <div class="stat success"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>
+${debtNotice}
 ${reversalWarning}
 ${withdrawBlock}
 ${table}`;
