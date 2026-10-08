@@ -432,9 +432,23 @@ export function renderDashboardPage(input: {
   </div>
   <button type="submit">Yêu cầu rút ${formatVnd(input.availableBalance)}</button>
 </form>`
-      : notice(
-          `Tích luỹ thêm ${formatVnd(Math.max(0, input.thresholdVnd - pendingConfirmationTotal))} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
-        );
+      : // 2026-10-08 (bug that, user bao cao kem anh chup): Kha dung 0d + Cho xac nhan 48.114d,
+        // nguong 20.000d -> trang hien "Tich luy them 0d nua". Nguyen nhan: so con thieu tinh bang
+        // (nguong - CHO XAC NHAN) trong khi dieu kien mo form rut doc KHA DUNG - commit 7c12ebb
+        // (2026-09-16) muon CONG tien pending vao tien do nhung lai THAY luon availableBalance.
+        // Gio chia dung 2 tinh huong, va "con thieu" tru CA HAI nguon tien:
+        //   - tong da du nguong, chi la chua duoc Shopee duyet -> noi dang cho duyet. Doi user
+        //     "tich luy them" o day la sai ban chat: ho khong con phai mua them gi nua.
+        //   - tong chua du -> moi noi con thieu bao nhieu. Nhanh nay bao dam so con thieu > 0,
+        //     nen khong co duong nao sinh ra lai cau "them 0d" (co test chan).
+        input.availableBalance + pendingConfirmationTotal >= input.thresholdVnd
+        ? notice(
+            `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng" (tối thiểu ${formatVnd(input.thresholdVnd)}) là bạn rút được ngay.`,
+            "i"
+          )
+        : notice(
+            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+          );
 
   const platformLabel = PLATFORM_LABELS[input.platform];
   const identityLine = input.displayName
