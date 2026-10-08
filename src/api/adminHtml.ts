@@ -1,5 +1,6 @@
 import { adminCssHref } from "./adminAssets.js";
 import type { OrdersFilterTotals } from "../core/ledgerStore.js";
+import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import { vietQrImageUrl } from "../core/vietQr.js";
 import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
@@ -1745,6 +1746,7 @@ export function renderOrdersPage(
    */
   debtOrderIds: Set<string> = new Set()
 ): string {
+  const todayVn = todayVnIso();
   const rows = entries
     .map((e) => {
       const badge = statusBadge(e);
@@ -1780,10 +1782,20 @@ export function renderOrdersPage(
       // Dat DUOI pill trang thai thay vi them 1 cot rieng: bang nay da 9 cot va padding px-4 la muc
       // VUA DU de cot "Thao tac" khong bi day ra ngoai man ~1700px (xem CLAUDE.md). Ve nghia thi ngay
       // mo khoa cung la chi tiet cua trang thai ("Kha dung, nhung tu ngay X"), nen o day la dung cho.
+      // PHAI so voi hom nay, khong chi kiem availableFrom !== null: don da qua ngay mo khoa van giu
+      // nguyen gia tri trong cot do, nen bo phep so sanh thi sau vai tuan MOI don to deu deo nhan
+      // "dang bi giam" vinh vien (bug that, phat hien khi xem trang that chu khong qua test).
+      //
+      // withdrawalId === null la chot phong thu: requestWithdrawal() da loai don bi giam nen trang
+      // thai "vua bi giam vua nam trong yeu cau rut" khong the xay ra - nhung neu rang buoc do vo
+      // thi nhan giam o day se mau thuan voi pill "Dang cho rut" ngay ben canh.
       const heldHint =
-        e.availableFrom !== null && e.status === "confirmed"
-          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Đơn to bị giam để kịp phát hiện khách trả hàng">🔒 mở khoá ${escapeHtml(
-              e.availableFrom
+        e.availableFrom !== null &&
+        e.status === "confirmed" &&
+        e.withdrawalId === null &&
+        e.availableFrom > todayVn
+          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Đơn to được giữ thêm vài ngày để kịp phát hiện khách trả hàng">🔒 mở khoá ${escapeHtml(
+              formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
             )}</div>`
           : "";
       const returnedHint = debtOrderIds.has(e.orderId)

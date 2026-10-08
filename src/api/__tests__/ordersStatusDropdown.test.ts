@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { renderOrdersPage, type OrdersFilters } from "../adminHtml.js";
 import type { CommissionEntry, CommissionStatus } from "../../core/types.js";
+import { addDaysToVnIso, formatVnDateDdMm, todayVnIso } from "../../core/vietnamDate.js";
 
 const PAGINATION = { page: 1, totalPages: 1, totalEntries: 0 };
 const TOTALS = { totalEntries: 0, pendingEntries: 0, userShareTotal: 0, ownerShareTotal: 0 };
@@ -207,9 +208,27 @@ test("/admin/orders: don binh thuong -> khong co dau hieu giam / tra hang", () =
   assert.doesNotMatch(html, /đã trả hàng/);
 });
 
-test("/admin/orders: don dang bi giam -> hien ngay mo khoa duoi pill trang thai", () => {
-  const html = renderOne(orderEntry({ availableFrom: "2026-10-15" }));
-  assert.match(html, /mở khoá 2026-10-15/);
+test("/admin/orders: don dang bi giam -> hien ngay mo khoa duoi pill trang thai (dang dd/mm)", () => {
+  const future = addDaysToVnIso(todayVnIso(), 7);
+  const html = renderOne(orderEntry({ availableFrom: future }));
+  assert.match(html, /mở khoá/);
+  assert.match(html, new RegExp(formatVnDateDdMm(new Date(`${future}T12:00:00Z`)).replace("/", "\\/")));
+  assert.doesNotMatch(html, new RegExp(future), "phai hien dd/mm, khong phai chuoi ISO tho");
+});
+
+// BUG THAT (phat hien khi xem trang that, test cu khong bat): don DA qua ngay mo khoa van giu nguyen
+// gia tri trong cot available_from, nen neu chi kiem "!== null" thi sau vai tuan MOI don to deu deo
+// nhan "dang bi giam" vinh vien.
+test("/admin/orders: don DA qua ngay mo khoa -> KHONG con nhan giam", () => {
+  const html = renderOne(orderEntry({ availableFrom: "2020-01-08" }));
+  assert.doesNotMatch(html, /mở khoá/);
+});
+
+test("/admin/orders: don dang nam trong yeu cau rut -> khong deo nhan giam", () => {
+  const html = renderOne(
+    orderEntry({ availableFrom: addDaysToVnIso(todayVnIso(), 7), withdrawalId: "w1" })
+  );
+  assert.doesNotMatch(html, /mở khoá/, "don da duoc gom vao yeu cau rut thi nhan giam vo nghia");
 });
 
 test("/admin/orders: don da tra tien roi bi tra hang -> badge canh bao", () => {
