@@ -31,6 +31,7 @@ function recordSample(
     platformFeePercent: 0,
     userSharePercent: 80,
     maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
   });
 }
 
@@ -61,6 +62,7 @@ test("LedgerStore: recordConversion lam tron so le VND", () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     assert.equal(entry.userShareAmount, Math.round((33_333 * 80) / 100));
   } finally {
@@ -85,6 +87,7 @@ test("LedgerStore: recordConversion tru thue truoc, phi san tren phan da tru thu
       platformFeePercent: 1,
       userSharePercent: 90,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     assert.equal(entry.taxAmount, 758); // round(7584 * 10%)
@@ -113,6 +116,7 @@ test("LedgerStore: recordConversion nem ImplausibleCommissionAmountError khi vuo
           platformFeePercent: 0,
           userSharePercent: 80,
           maxCommissionRatioPercent: 50,
+          holdConfig: { thresholdVnd: 0, holdDays: 0 },
         }),
       ImplausibleCommissionAmountError
     );
@@ -137,6 +141,7 @@ test("LedgerStore: recordConversion cho qua khi commissionAmount trong nguong ty
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 50,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     assert.equal(entry.commissionAmount, 100_000);
   } finally {
@@ -169,6 +174,7 @@ test("LedgerStore: recordConversion voi status='pending' khong tinh vao so du kh
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
@@ -195,6 +201,7 @@ test("LedgerStore: confirmPendingEntry chuyen entry tu pending sang confirmed, t
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     assert.equal(store.getAvailableBalance("telegram", "user-a"), 0);
@@ -204,6 +211,7 @@ test("LedgerStore: confirmPendingEntry chuyen entry tu pending sang confirmed, t
       commissionAmount: 10_000, // so that luc duyet - khac so uoc tinh luc hold
       fallbackPercents: { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80 },
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     assert.equal(confirmed.id, pending.id); // UPDATE tai cho, khong tao id moi
@@ -369,6 +377,7 @@ test("LedgerStore: reverseCommissionEntry huy dung don dang 'pending'", () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
 
@@ -885,6 +894,7 @@ function recordManySamples(store: LedgerStore, n: number, status?: "pending" | "
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status,
     });
   }
@@ -943,6 +953,7 @@ test("LedgerStore: listCommissionEntries loc duoc NHIEU trang thai cung luc", ()
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     store.recordConversion({
@@ -957,6 +968,7 @@ test("LedgerStore: listCommissionEntries loc duoc NHIEU trang thai cung luc", ()
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     store.reverseCommissionEntry(store.getEntryByOrderId("shopee", "order-reversed")!.id, "test");

@@ -51,6 +51,7 @@ function setup() {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     },
     withdrawalProofDir,
     adminLoginRateLimiter,
@@ -103,6 +104,7 @@ test("GET /d/:token hien ty le DA CHOT cua don, khong suy nguoc tu so tien", asy
       platformFeePercent: 1,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     const res = await fetch(`${baseUrl}/d/${token}`);
@@ -133,6 +135,7 @@ test("GET /d/:token duoi nguong -> khong co form rut tien", async () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     const res = await fetch(`${baseUrl}/d/${token}`);
@@ -160,6 +163,7 @@ test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdm
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     const dashboardHtml = await (await fetch(`${baseUrl}/d/${token}`)).text();
@@ -215,6 +219,7 @@ test("don da rut hien link xem anh bang chung; user khac khong xem duoc anh cua 
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
     writeFileSync(`${withdrawalProofDir}/proof-a.png`, "fake-image-bytes");

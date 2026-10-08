@@ -27,7 +27,9 @@ import type {
   WithdrawalRequest,
   ZaloGroup,
 } from "./types.js";
+import { resolveAvailableFrom, type PayoutHoldConfig } from "./payoutHold.js";
 import { resolveUserSharePercent } from "./userCommissionOverride.js";
+import { todayVnIso } from "./vietnamDate.js";
 import type { UserCommissionOverride } from "./userCommissionOverride.js";
 
 /**
@@ -77,6 +79,16 @@ export interface RecordConversionInput {
    * do moi thong ke se tu lui ve created_at. KHONG bao gio doan ngay.
    */
   orderDate?: string | null;
+  /**
+   * Ngay Shopee ghi don "Hoan thanh" ("YYYY-MM-DD" gio VN, tu cot "Thời gian hoàn thành"). null hoac
+   * bo trong = nguon khong cho biet (ghi don le bang tay, bao cao cu) -> moc giam lui ve HOM NAY.
+   */
+  completedAt?: string | null;
+  /**
+   * BAT BUOC chu khong optional: day la duong tien, moi call site phai quyet dinh ro rang thay vi
+   * nhan mot default am tham. Khong muon giam thi truyen { thresholdVnd: 0, holdDays: 0 }.
+   */
+  holdConfig: PayoutHoldConfig;
   status?: CommissionStatus;
   note?: string;
 }
@@ -200,6 +212,8 @@ export class LedgerStore {
         tax_percent REAL,
         platform_fee_percent REAL,
         user_share_percent REAL,
+        completed_at TEXT,
+        available_from TEXT,
         status TEXT NOT NULL,
         withdrawal_id TEXT,
         note TEXT
@@ -215,6 +229,8 @@ export class LedgerStore {
     this.migrateAddOrderDateColumn();
     // DB tao truoc 2026-10-01 (truoc khi ty le duoc CHOT theo tung don) se thieu 3 cot nay.
     this.migrateAddRatePercentColumns();
+    // DB tao truoc 2026-10-08 (truoc khi co tinh nang giam tien don to) se thieu 2 cot nay.
+    this.migrateAddPayoutHoldColumns();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawal_requests (
         id TEXT PRIMARY KEY,
@@ -521,6 +537,24 @@ export class LedgerStore {
   }
 
   /**
+   * 2 cot cua tinh nang giam tien don to (2026-10-08, xem payoutHold.ts). Nullable, khong DEFAULT,
+   * KHONG backfill: bao cao da import khong luu lai nen khong suy lai duoc ngay giao hang cua don cu.
+   * De NULL -> don cu kha dung ngay, tuc KHONG giam hoi to (tien da hua roi).
+   */
+  private migrateAddPayoutHoldColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(commission_entries)").all() as Array<{
+      name: string;
+    }>;
+    const hasColumn = (name: string) => columns.some((col) => col.name === name);
+    if (!hasColumn("completed_at")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN completed_at TEXT");
+    }
+    if (!hasColumn("available_from")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN available_from TEXT");
+    }
+  }
+
+  /**
    * DB tao truoc 2026-10-01 (truoc khi ty le duoc CHOT theo tung don, xem CommissionEntry.userSharePercent)
    * se thieu 3 cot nay. Nullable CO CHU DICH - khong dat DEFAULT va khong backfill: ty le that luc ghi
    * nhan don cu khong con luu o dau, va suy nguoc tu so tien thi sai khi hoa hong nho. Entry cu de NULL
@@ -629,17 +663,32 @@ export class LedgerStore {
       userSharePercent: input.userSharePercent,
     });
 
+    const completedAt = input.completedAt ?? null;
+    // CHI don da "confirmed" moi co ngay mo khoa: don pending chua co tien kha dung nen chua tinh
+    // (ghi o day se la hua mot ngay roi den luc duyet lai tinh ra ngay khac).
+    const availableFrom =
+      status === "confirmed"
+        ? resolveAvailableFrom({
+            userShareAmount,
+            completedAtVn: completedAt,
+            fallbackDayVn: todayVnIso(),
+            config: input.holdConfig,
+          })
+        : null;
+
     try {
       this.db
         .prepare(
           `INSERT INTO commission_entries
-            (id, created_at, order_date, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, tax_percent, platform_fee_percent, user_share_percent, status, withdrawal_id, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+            (id, created_at, order_date, completed_at, available_from, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, tax_percent, platform_fee_percent, user_share_percent, status, withdrawal_id, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
         )
         .run(
           id,
           createdAt,
           input.orderDate ?? null,
+          completedAt,
+          availableFrom,
           input.platform,
           input.userId,
           input.merchant,
@@ -671,6 +720,8 @@ export class LedgerStore {
       id,
       createdAt,
       orderDate: input.orderDate ?? null,
+      completedAt,
+      availableFrom,
       platform: input.platform,
       userId: input.userId,
       merchant: input.merchant,
@@ -786,6 +837,10 @@ export class LedgerStore {
       productName?: string | null;
       fallbackPercents: RatePercents;
       maxCommissionRatioPercent: number;
+      /** Ngay Shopee ghi don "Hoan thanh" - chi co o bao cao luc don duoc duyet, xem payoutHold.ts. */
+      completedAt?: string | null;
+      /** BAT BUOC: day la luc CHOT ngay mo khoa cua don. Khong giam thi truyen thresholdVnd: 0. */
+      holdConfig: PayoutHoldConfig;
     }
   ): CommissionEntry {
     const row = this.db.prepare(`SELECT * FROM commission_entries WHERE id = ?`).get(entryId);
@@ -810,11 +865,22 @@ export class LedgerStore {
     });
     const productName = input.productName ?? existing.productName;
 
+    // Day la DUNG luc don chuyen sang confirmed, tuc luc CHOT ngay mo khoa. Bao cao luc duyet moi co
+    // cot "Thời gian hoàn thành" (don con pending thi cot do trong - da doi chieu file that).
+    const completedAt = input.completedAt ?? existing.completedAt;
+    const availableFrom = resolveAvailableFrom({
+      userShareAmount,
+      completedAtVn: completedAt,
+      fallbackDayVn: todayVnIso(),
+      config: input.holdConfig,
+    });
+
     this.db
       .prepare(
         `UPDATE commission_entries SET status = 'confirmed', order_amount = ?, commission_amount = ?,
           tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?,
-          tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?, product_name = ?
+          tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?, product_name = ?,
+          completed_at = ?, available_from = ?
          WHERE id = ?`
       )
       .run(
@@ -828,6 +894,8 @@ export class LedgerStore {
         percents.platformFeePercent,
         percents.userSharePercent,
         productName,
+        completedAt,
+        availableFrom,
         entryId
       );
 
@@ -842,18 +910,57 @@ export class LedgerStore {
       userShareAmount,
       ...percents,
       productName,
+      completedAt,
+      availableFrom,
     };
   }
 
-  /** Tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut tien nao (kha dung de rut). */
+  /**
+   * Tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut tien nao, VA da qua ngay mo khoa.
+   *
+   * available_from NULL nghia la kha dung ngay (don duoi nguong giam, hoac entry ghi truoc
+   * 2026-10-08 nen khong giam hoi to) - xem payoutHold.ts.
+   *
+   * Dung todayVnIso() chu KHONG date('now') cua SQLite: cai do la UTC, se mo khoa lech 7 tieng
+   * (Railway chay UTC, 00:30 ngay 09/10 gio VN van la 17:30 ngay 08/10 UTC).
+   */
   getAvailableBalance(platform: Platform, userId: string): number {
     const row = this.db
       .prepare(
         `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
-         WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL`
+         WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL
+           AND (available_from IS NULL OR available_from <= ?)`
       )
-      .get(platform, userId) as { total: number };
+      .get(platform, userId, todayVnIso()) as { total: number };
     return row.total;
+  }
+
+  /** Tien da duoc Shopee duyet nhung con bi giam - doi xung voi getAvailableBalance(). */
+  getHeldBalance(platform: Platform, userId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
+         WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL
+           AND available_from IS NOT NULL AND available_from > ?`
+      )
+      .get(platform, userId, todayVnIso()) as { total: number };
+    return row.total;
+  }
+
+  /**
+   * Danh sach don dang bi giam, de dashboard hien ngay mo khoa cua TUNG don (moi don co moc giao
+   * hang rieng - gop lai thanh 1 ngay chung la noi sai voi don mo som).
+   */
+  getHeldEntries(platform: Platform, userId: string): CommissionEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM commission_entries
+         WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL
+           AND available_from IS NOT NULL AND available_from > ?
+         ORDER BY available_from ASC, rowid DESC`
+      )
+      .all(platform, userId, todayVnIso());
+    return rows.map(rowToCommissionEntry);
   }
 
   /** Danh sach entries + cac tong, dung cho dashboard ca nhan. */
@@ -1392,12 +1499,16 @@ export class LedgerStore {
         )
         .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder);
 
+      // Phai lap LAI dieu kien available_from giong getAvailableBalance(): thieu no thi don dang bi
+      // giam van bi gan withdrawal_id (tuc bi khoa vao mot yeu cau rut khong he tinh tien cua no),
+      // user mat quyen rut so tien do cho den khi admin tra xong yeu cau kia.
       this.db
         .prepare(
           `UPDATE commission_entries SET withdrawal_id = ?
-           WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL`
+           WHERE platform = ? AND user_id = ? AND status = 'confirmed' AND withdrawal_id IS NULL
+             AND (available_from IS NULL OR available_from <= ?)`
         )
-        .run(id, platform, userId);
+        .run(id, platform, userId, todayVnIso());
 
       this.db.exec("COMMIT");
     } catch (err) {
@@ -1571,6 +1682,14 @@ export class LedgerStore {
 
   getWithdrawalThresholdVnd(defaultValue: number): number {
     return this.getSettingInt(SETTINGS_KEYS.withdrawalThresholdVnd, defaultValue);
+  }
+
+  getPayoutHoldThresholdVnd(defaultValue: number): number {
+    return this.getSettingInt(SETTINGS_KEYS.payoutHoldThresholdVnd, defaultValue);
+  }
+
+  getPayoutHoldDays(defaultValue: number): number {
+    return this.getSettingInt(SETTINGS_KEYS.payoutHoldDays, defaultValue);
   }
 
   getUsageText(defaultValue: string): string {
@@ -1893,6 +2012,8 @@ function rowToCommissionEntry(row: unknown): CommissionEntry {
     id: r.id as string,
     createdAt: r.created_at as string,
     orderDate: (r.order_date as string | null) ?? null,
+    completedAt: (r.completed_at as string | null) ?? null,
+    availableFrom: (r.available_from as string | null) ?? null,
     platform: r.platform as Platform,
     userId: r.user_id as string,
     merchant: r.merchant as MerchantId,

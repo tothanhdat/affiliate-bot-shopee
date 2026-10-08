@@ -18,7 +18,7 @@ import { todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
 const THRESHOLD_VND = 50_000;
 const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
 const ADMIN_PASSWORD = "test-admin-password";
-const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000 };
+const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000, holdConfig: { thresholdVnd: 0, holdDays: 0 } };
 
 // Mac dinh rong rai de cac test dang nhap nhieu lan (nhieu it() lien tiep) khong vo tinh dinh
 // rate limit login - test rieng ve rate limit tu tao 1 RateLimiter gioi han thap cua rieng no.
@@ -223,6 +223,7 @@ test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, lu
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
@@ -270,6 +271,7 @@ test("POST /admin/withdrawals/:id/mark-paid KHONG kem anh -> van chuyen sang pai
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
@@ -312,6 +314,7 @@ test("/admin/users tinh dung tong theo user", async () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     ledgerStore.recordConversion({
       subId: "telegram-user-a-2",
@@ -325,6 +328,7 @@ test("/admin/users tinh dung tong theo user", async () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     ledgerStore.upsertUserProfile("telegram", "user-a", "Nguyễn Văn A");
 
@@ -362,6 +366,7 @@ test("/admin/orders hien cot % chot cua tung don", async () => {
       platformFeePercent: 0,
       userSharePercent: 65,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     const cookie = await loginAndGetCookie(baseUrl);
@@ -392,6 +397,7 @@ test("/admin/orders loc dung theo status va merchant", async () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     ledgerStore.recordConversion({
       subId: "telegram-user-b-1",
@@ -405,6 +411,7 @@ test("/admin/orders loc dung theo status va merchant", async () => {
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     const cookie = await loginAndGetCookie(baseUrl);
@@ -432,6 +439,7 @@ test("huy don (reverse) thanh cong voi don dang 'pending' (Cho xac nhan)", async
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
 
@@ -469,6 +477,7 @@ test("khong the huy don da 'confirmed' (Kha dung) - an link, chan ca GET confirm
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
 
@@ -1034,6 +1043,7 @@ function seedOrders(ledgerStore: LedgerStore, n: number, overrides: Partial<{ me
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: overrides.status,
     });
   }
@@ -1079,6 +1089,7 @@ test("/admin/orders loc duoc NHIEU trang thai cung luc qua checkbox (status=pend
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     ledgerStore.recordConversion({
@@ -1093,6 +1104,7 @@ test("/admin/orders loc duoc NHIEU trang thai cung luc qua checkbox (status=pend
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
       status: "pending",
     });
     ledgerStore.reverseCommissionEntry(ledgerStore.getEntryByOrderId("shopee", "don-reversed")!.id, "test");
@@ -1190,6 +1202,7 @@ function seedUserWithOrder(ledgerStore: LedgerStore, userId = "user-a"): void {
     platformFeePercent: 0,
     userSharePercent: 80,
     maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
   });
 }
 

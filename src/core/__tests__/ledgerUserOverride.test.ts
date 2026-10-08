@@ -111,6 +111,7 @@ test("listUsers: kem override cua tung user de trang /admin/users hien duoc cot 
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     store.recordConversion({
       subId: "k-user-b-1",
@@ -124,6 +125,7 @@ test("listUsers: kem override cua tung user de trang /admin/users hien duoc cot 
       platformFeePercent: 0,
       userSharePercent: 80,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
     store.setUserCommissionOverride({
       platform: "zalo",

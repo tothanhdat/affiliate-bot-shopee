@@ -100,6 +100,18 @@ export interface CommissionEntry {
    * truoc khi co cot nay - moi thong ke tu lui ve createdAt, xem dashboardStats.ts.
    */
   orderDate: string | null;
+  /**
+   * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang ("YYYY-MM-DD" gio VN, 2026-10-08), doc tu cot
+   * "Thời gian hoàn thành" cua bao cao. null khi bao cao khong co gia tri (don ghi tay, bao cao cu).
+   * Day la moc Shopee dem 15 ngay duoc tra hang - xem payoutHold.ts.
+   */
+  completedAt: string | null;
+  /**
+   * Ngay tien cua don nay duoc phep rut ("YYYY-MM-DD" gio VN). null = kha dung ngay (don duoi nguong,
+   * don con pending, hoac entry ghi truoc 2026-10-08 nen khong giam hoi to). Tinh 1 lan luc entry
+   * chuyen confirmed roi CHOT - doi setting khong tinh lai, xem resolveAvailableFrom().
+   */
+  availableFrom: string | null;
   platform: Platform;
   userId: string;
   merchant: MerchantId;

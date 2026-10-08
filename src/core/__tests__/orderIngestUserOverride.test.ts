@@ -11,7 +11,7 @@ import { todayVnIso } from "../vietnamDate.js";
  * nhat tren duong tien quyet dinh ty le (xem resolveUserSharePercent trong ledgerStore).
  */
 
-const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000 };
+const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000, holdConfig: { thresholdVnd: 0, holdDays: 0 } };
 
 const HEADER = [
   "ID đơn hàng",

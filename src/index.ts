@@ -160,6 +160,7 @@ const app = createServer(
     platformFeePercent: env.commission.platformFeePercent,
     userSharePercent: env.commission.userSharePercent,
     maxCommissionRatioPercent: env.commission.maxRatioPercent,
+    holdConfig: env.payoutHold,
   },
   env.withdrawal.proofDir,
   adminLoginRateLimiter,

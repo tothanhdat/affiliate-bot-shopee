@@ -1,6 +1,7 @@
 import { SubIdNotFoundError } from "./errors.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
+import type { PayoutHoldConfig } from "./payoutHold.js";
 import type { CommissionEntry, CommissionStatus, Platform } from "./types.js";
 import { todayVnIso } from "./vietnamDate.js";
 
@@ -14,6 +15,11 @@ export interface RecordOrderConfig {
   platformFeePercent: number;
   userSharePercent: number;
   maxCommissionRatioPercent: number;
+  /**
+   * Quy tac giam tien don to (2026-10-08, xem payoutHold.ts). Caller doc tu LedgerStore chu khong tu
+   * env truc tiep - admin doi o /admin/settings phai co hieu luc ngay khong can restart.
+   */
+  holdConfig: PayoutHoldConfig;
 }
 
 /**
@@ -67,6 +73,10 @@ export function recordSingleOrder(
     platformFeePercent: config.platformFeePercent,
     userSharePercent,
     maxCommissionRatioPercent: config.maxCommissionRatioPercent,
+    // Form "Ghi 1 don le" khong co truong ngay giao hang -> completedAt null, moc giam lui ve HOM NAY
+    // (thong tin gan dung nhat co duoc, khong doan nguoc - giong cach xu li han uu dai % o tren).
+    completedAt: null,
+    holdConfig: config.holdConfig,
     note: input.note,
     status: input.status,
   });

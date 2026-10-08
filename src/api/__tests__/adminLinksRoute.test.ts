@@ -20,7 +20,7 @@ import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
  */
 
 const ADMIN_PASSWORD = "test-admin-password";
-const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000 };
+const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000, holdConfig: { thresholdVnd: 0, holdDays: 0 } };
 
 function setup() {
   const logStore = new LogStore(":memory:");

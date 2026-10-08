@@ -44,6 +44,7 @@ function setup() {
       platformFeePercent: 1,
       userSharePercent: ENV_USER_SHARE_PERCENT,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     },
     withdrawalProofDir,
     adminLoginRateLimiter,

@@ -6,6 +6,10 @@
 export const SETTINGS_KEYS = {
   userSharePercent: "commission_user_share_percent",
   withdrawalThresholdVnd: "withdrawal_threshold_vnd",
+  /** Nguong user_share bi giam truoc khi cho rut (2026-10-08, xem payoutHold.ts). 0 = tat han. */
+  payoutHoldThresholdVnd: "payout_hold_threshold_vnd",
+  /** So ngay giam, dem tu ngay Shopee ghi don "Hoan thanh" (= ngay giao hang). */
+  payoutHoldDays: "payout_hold_days",
   usageText: "usage_text",
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",

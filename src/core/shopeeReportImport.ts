@@ -364,6 +364,7 @@ export function importShopeeReport(
               userSharePercent,
             },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+            holdConfig: recordOrderConfig.holdConfig,
           });
           result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
           ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
@@ -382,6 +383,7 @@ export function importShopeeReport(
             platformFeePercent: recordOrderConfig.platformFeePercent,
             userSharePercent,
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+            holdConfig: recordOrderConfig.holdConfig,
             note: "Nhap tu bao cao Shopee (file CSV admin upload)",
           });
           result.newOrderIds.push(orderId);
@@ -480,6 +482,7 @@ export function importShopeeReport(
         platformFeePercent: recordOrderConfig.platformFeePercent,
         userSharePercent,
         maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+        holdConfig: recordOrderConfig.holdConfig,
         orderDate: order.orderDate,
         status: "pending",
         note: "Nhap tu bao cao Shopee - dang cho xu ly",

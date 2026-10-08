@@ -13,6 +13,7 @@ const ORDER_CONFIG = {
   platformFeePercent: 0,
   userSharePercent: 80,
   maxCommissionRatioPercent: 1000,
+  holdConfig: { thresholdVnd: 0, holdDays: 0 },
 };
 
 // ---------------------------------------------------------------------------

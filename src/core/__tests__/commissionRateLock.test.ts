@@ -73,6 +73,7 @@ function recordPendingOrder(store: LedgerStore, orderId = "order-1") {
     commissionAmount: 100_000,
     ...RATES_AT_RECORD,
     maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
     status: "pending",
   });
 }
@@ -125,6 +126,7 @@ test("confirmPendingEntry tinh lai tien theo ty le DA CHOT, bo qua ty le hien ha
       commissionAmount: 200_000,
       fallbackPercents: RATES_AFTER_CHANGE,
       maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
     });
 
     assert.equal(confirmed.status, "confirmed");

@@ -132,6 +132,10 @@ async function main(): Promise<void> {
     platformFeePercent: env.commission.platformFeePercent,
     userSharePercent: ledgerStore.getUserSharePercent(env.commission.userSharePercent),
     maxCommissionRatioPercent: env.commission.maxRatioPercent,
+    holdConfig: {
+      thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(env.payoutHold.thresholdVnd),
+      holdDays: ledgerStore.getPayoutHoldDays(env.payoutHold.holdDays),
+    },
   };
 
   try {

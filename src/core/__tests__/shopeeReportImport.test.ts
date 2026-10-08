@@ -4,7 +4,7 @@ import { LedgerStore } from "../ledgerStore.js";
 import { LogStore } from "../logStore.js";
 import { importShopeeReport } from "../shopeeReportImport.js";
 
-const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000 };
+const ORDER_CONFIG = { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000, holdConfig: { thresholdVnd: 0, holdDays: 0 } };
 
 const HEADER = [
   "ID đơn hàng",

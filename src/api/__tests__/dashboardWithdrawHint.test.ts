@@ -24,6 +24,8 @@ function entry(overrides: Partial<CommissionEntry>): CommissionEntry {
     id: "e1",
     createdAt: "2026-10-07T01:56:43.000Z",
     orderDate: "2026-10-07",
+    completedAt: null,
+    availableFrom: null,
     platform: "zalo",
     userId: "u1",
     merchant: "shopee",

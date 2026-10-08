@@ -155,6 +155,21 @@ export const env = {
     enabled: optionalBool("ORDER_IMAGE_ENABLED", true),
   },
 
+  /**
+   * Giam co dieu kien tien cua don TO truoc khi cho rut (2026-10-08, xem src/core/payoutHold.ts).
+   * Chi la gia tri khoi tao/fallback - admin doi duoc ngay tai /admin/settings khong can restart.
+   */
+  payoutHold: {
+    /** user_share_amount tu muc nay tro len thi bi giam. Dat 0 de TAT han tinh nang. */
+    thresholdVnd: optionalInt("PAYOUT_HOLD_THRESHOLD_VND", 100_000),
+    /**
+     * So ngay giam, dem tu ngay Shopee ghi don "Hoan thanh" (= ngay giao hang). Mac dinh 7 - Shopee
+     * cho tra hang 15 ngay ke tu giao hang thanh cong (dieu 3.2), 7 ngay phu khoang mot nua cua so
+     * do ma van nghe duoc voi user.
+     */
+    holdDays: optionalInt("PAYOUT_HOLD_DAYS", 7),
+  },
+
   withdrawal: {
     /** So du kha dung toi thieu (VND) de duoc gui yeu cau rut tien. */
     // Mac dinh 20.000d - ha tu 50.000d ngay 2026-08-20 theo phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 2.
