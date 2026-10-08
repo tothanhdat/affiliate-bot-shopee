@@ -77,7 +77,9 @@ export function buildOrderImageView(input: OrderImageInput): OrderImageView {
     .sort((a, b) => b.userShareAmount - a.userShareAmount)
     .slice(0, ORDER_IMAGE_MAX_CARDS);
 
-  const missingVnd = withdrawalThresholdVnd - availableVnd;
+  // Kha dung < no hoan tra thi chua rut duoc (mo hinh no 2026-10-08): moc la so LON hon giua nguong
+  // va no - khop dung dieu kien o ledgerStore.requestWithdrawal va cau goi y tren dashboard.
+  const missingVnd = Math.max(withdrawalThresholdVnd, input.debtVnd ?? 0) - availableVnd;
   const canWithdraw = missingVnd <= 0;
 
   return {

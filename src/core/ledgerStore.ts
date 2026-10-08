@@ -9,6 +9,7 @@ import {
   EntryNotPendingError,
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
+  DebtNotCoveredError,
   MissingBankInfoError,
   WithdrawalAlreadyPendingError,
   WithdrawalNotCancellableError,
@@ -1665,23 +1666,27 @@ export class LedgerStore {
       throw new WithdrawalAlreadyPendingError();
     }
 
-    // Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): nguong rut ap tren Kha dung (KHONG tru no)
-    // - user co Kha dung >= nguong la rut duoc, du dang no bao nhieu. No chi bi tru o day, khi yeu
-    // cau DUOC DUYET, theo 1 trong 2 nhanh:
-    //   1/ W > no: amount = W - no (so admin phai chuyen), CHO admin duyet. No van con nguyen cho toi
-    //      luc admin bam "da tra" (xem settleWithdrawal) - nho vay huy yeu cau chi viec tha entry ra,
-    //      khong phai hoan no lai dung tung dong.
-    //   2/ W <= no: khong co dong nao phai chuyen nen TU DONG xac nhan ngay trong transaction nay -
-    //      entry thanh 'paid', no tru di W, phan con lai van la no cho lan rut sau. W == no cung vao
-    //      nhanh nay: bat admin duyet mot lenh chuyen 0d (va sinh QR 0d) la vo nghia.
+    // Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): Kha dung KHONG tru no, no dung rieng va
+    // chi bi tru o day. Dieu kien rut = Kha dung >= nguong VA Kha dung >= no (Kha dung < no thi CHUA
+    // cho rut - quy tac don gian user chon thay cho nhanh "tu dong tru mot phan no" truoc do). Sau do:
+    //   - W > no: amount = W - no (so admin phai chuyen), CHO admin duyet. No van con nguyen cho toi
+    //     luc admin bam "da tra" (xem settleWithdrawal) - nho vay huy yeu cau chi viec tha entry ra,
+    //     khong phai hoan no lai dung tung dong.
+    //   - W == no: khong co dong nao phai chuyen nen TU DONG xac nhan ngay trong transaction nay
+    //     (bat admin duyet mot lenh chuyen 0d va sinh QR 0d la vo nghia).
+    // Chan o DAY chu khong chi an nut tren dashboard: POST /d/:token/withdraw ai cung goi tay duoc.
     // debt_applied luu lai so no se tru, vi den luc duyet no co the da doi (no moi phat sinh trong
     // luc cho duyet thuoc ve lan rut SAU, khong duoc tru lan nay - admin da thay con so tren man hinh).
     const requested = this.getAvailableBalance(platform, userId);
-    if (requested < thresholdVnd) {
-      throw new InsufficientBalanceError(requested, thresholdVnd);
-    }
     const debt = this.getOutstandingDebtTotal(platform, userId);
-    const debtApplied = Math.min(requested, debt);
+    // Moc that su dang chan la so LON hon trong 2 so: no >= nguong thi bao theo no (khong kem
+    // "toi thieu ..."), nguoc lai bao theo nguong nhu cu.
+    if (requested < Math.max(thresholdVnd, debt)) {
+      throw debt >= thresholdVnd
+        ? new DebtNotCoveredError(requested, debt)
+        : new InsufficientBalanceError(requested, thresholdVnd);
+    }
+    const debtApplied = debt;
     const amount = requested - debtApplied;
     const autoSettle = amount === 0;
 

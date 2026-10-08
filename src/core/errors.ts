@@ -8,6 +8,7 @@ export type ErrorCode =
   | "AFFILIATE_API_TIMEOUT"
   | "RATE_LIMITED"
   | "INSUFFICIENT_BALANCE"
+  | "DEBT_NOT_COVERED"
   | "INVALID_DASHBOARD_TOKEN"
   | "WITHDRAWAL_ALREADY_PENDING"
   | "DUPLICATE_CONVERSION"
@@ -107,6 +108,19 @@ export class InsufficientBalanceError extends AppError {
     super(
       "INSUFFICIENT_BALANCE",
       `Số dư khả dụng của bạn (${formatVnd(currentBalanceVnd)}) chưa đạt mức tối thiểu để rút (${formatVnd(thresholdVnd)}).`
+    );
+  }
+}
+
+/**
+ * Kha dung < no hoan tra (2026-10-08, yeu cau truc tiep cua user): chua cho rut cho toi khi Kha dung
+ * bu du no. Cau chu KHONG kem "(toi thieu ...)" - moc that su dang chan la so no, khong phai nguong.
+ */
+export class DebtNotCoveredError extends AppError {
+  constructor(availableVnd: number, debtVnd: number) {
+    super(
+      "DEBT_NOT_COVERED",
+      `Bạn đang nợ ${formatVnd(debtVnd)} hoàn trả. Tích luỹ thêm ${formatVnd(debtVnd - availableVnd)} nữa để đủ điều kiện rút tiền.`
     );
   }
 }

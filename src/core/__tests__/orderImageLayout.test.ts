@@ -73,6 +73,28 @@ test("chua du nguong thi bao con thieu bao nhieu", () => {
   assert.equal(view.missingText, "1.572đ");
 });
 
+// Kha dung < no thi chua rut duoc (yeu cau user 2026-10-08) - anh phai noi cung mot so voi dashboard.
+test("dang no lon hon Kha dung: con thieu = no - Kha dung, du Kha dung da qua nguong", () => {
+  const view = buildOrderImageView({
+    items: [item("A", 1000)],
+    availableVnd: 25_000,
+    withdrawalThresholdVnd: 20_000,
+    debtVnd: 40_000,
+  });
+  assert.equal(view.canWithdraw, false);
+  assert.equal(view.missingText, "15.000đ");
+});
+
+test("Kha dung du bu no va qua nguong: rut duoc", () => {
+  const view = buildOrderImageView({
+    items: [item("A", 1000)],
+    availableVnd: 40_000,
+    withdrawalThresholdVnd: 20_000,
+    debtVnd: 40_000,
+  });
+  assert.equal(view.canWithdraw, true);
+});
+
 test("khong lam thay doi mang items cua caller", () => {
   const items = [item("A", 100), item("B", 900)];
   buildOrderImageView({ items, availableVnd: 0, withdrawalThresholdVnd: 1 });

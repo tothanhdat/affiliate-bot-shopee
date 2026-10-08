@@ -447,29 +447,28 @@ export function renderDashboardPage(input: {
     .reduce((sum, e) => sum + e.userShareAmount, 0);
 
   // Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): Kha dung va no la HAI so tach bach, no chi
-  // bi tru LUC yeu cau rut duoc duyet. Phai noi ro TRUOC KHI user bam gui ket qua se roi vao nhanh
-  // nao, neu khong ho gui yeu cau roi moi biet nhan it hon (hoac khong nhan dong nao).
-  // KHONG nhac lai "ban dang no X" - debtNotice ngay phia tren form da noi.
-  //   - Kha dung > no: Admin tru no roi chuyen phan con lai.
-  //   - Kha dung <= no: khong co gi de chuyen, he thong tu dung ca so du de tru no ngay luc gui.
-  const debtAtRequest = Math.min(input.availableBalance, input.debtRemaining);
-  const transferAfterDebt = input.availableBalance - debtAtRequest;
+  // bi tru LUC yeu cau rut duoc duyet. Dieu kien rut = Kha dung >= nguong VA Kha dung >= no (chan ca
+  // o ledgerStore.requestWithdrawal). Moc that su dang chan la so LON hon trong 2 so nay.
+  // Phai noi ro TRUOC KHI user bam gui Admin se tru bao nhieu, neu khong ho gui yeu cau roi moi biet
+  // nhan it hon. KHONG nhac lai "ban dang no X" - debtNotice ngay phia tren form da noi.
+  const withdrawTargetVnd = Math.max(input.thresholdVnd, input.debtRemaining);
+  // No >= nguong thi cau goi y noi theo NO va KHONG kem "(toi thieu ...)" - yeu cau truc tiep cua
+  // user: luc do nguong khong phai thu dang chan, nhac no chi gay roi.
+  const debtIsBinding = input.debtRemaining > 0 && input.debtRemaining >= input.thresholdVnd;
+  const transferAfterDebt = input.availableBalance - input.debtRemaining;
   const debtDeductionNote =
     input.debtRemaining <= 0
       ? ""
       : transferAfterDebt > 0
-        ? `<p class="debt-note">Khi yêu cầu được duyệt, Admin sẽ trừ ${formatVnd(debtAtRequest)} nợ và chuyển cho bạn <strong>${formatVnd(transferAfterDebt)}</strong>.</p>`
-        : `<p class="debt-note">Số dư khả dụng không lớn hơn số nợ, nên gửi yêu cầu thì toàn bộ ${formatVnd(input.availableBalance)} sẽ được dùng để trừ nợ ngay — lần này bạn sẽ <strong>không nhận tiền chuyển khoản</strong>${
-            input.debtRemaining > input.availableBalance
-              ? `, và còn nợ ${formatVnd(input.debtRemaining - input.availableBalance)}`
-              : ""
-          }.</p>`;
+        ? `<p class="debt-note">Khi yêu cầu được duyệt, Admin sẽ trừ ${formatVnd(input.debtRemaining)} nợ và chuyển cho bạn <strong>${formatVnd(transferAfterDebt)}</strong>.</p>`
+        : // Kha dung DUNG BANG no: tru vua het no, khong co dong nao de chuyen (tu dong xac nhan).
+          `<p class="debt-note">Số dư khả dụng vừa bằng số nợ, nên gửi yêu cầu thì toàn bộ ${formatVnd(input.availableBalance)} sẽ được dùng để trả hết nợ — lần này bạn sẽ <strong>không nhận tiền chuyển khoản</strong>.</p>`;
   const withdrawConfirmText =
     input.debtRemaining <= 0
       ? `Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`
       : transferAfterDebt > 0
-        ? `Xác nhận gửi yêu cầu rút ${formatVnd(input.availableBalance)}? Admin sẽ trừ nợ ${formatVnd(debtAtRequest)} và chuyển cho bạn ${formatVnd(transferAfterDebt)}.`
-        : `Xác nhận dùng ${formatVnd(input.availableBalance)} để trừ nợ? Lần này bạn sẽ không nhận tiền chuyển khoản.`;
+        ? `Xác nhận gửi yêu cầu rút ${formatVnd(input.availableBalance)}? Admin sẽ trừ nợ ${formatVnd(input.debtRemaining)} và chuyển cho bạn ${formatVnd(transferAfterDebt)}.`
+        : `Xác nhận dùng ${formatVnd(input.availableBalance)} để trả hết nợ? Lần này bạn sẽ không nhận tiền chuyển khoản.`;
 
   const pending = input.pendingWithdrawal;
   const pendingDebtLine =
@@ -479,7 +478,7 @@ export function renderDashboardPage(input: {
 
   const withdrawBlock = input.pendingWithdrawal
     ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount + input.pendingWithdrawal.debtApplied)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}).${pendingDebtLine} Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
-    : input.availableBalance >= input.thresholdVnd
+    : input.availableBalance >= withdrawTargetVnd
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(withdrawConfirmText)}>
   ${debtDeductionNote}
   <div class="form-field">
@@ -505,23 +504,28 @@ export function renderDashboardPage(input: {
         //   - bi giam (Dang tam giu) -> cho toi ngay mo khoa, khong can mua them gi
         //   - cho xac nhan            -> cho Shopee duyet
         //   - chua du                 -> moi noi con thieu bao nhieu (luon > 0, co test chan "them 0d")
-        // NO HOAN TRA KHONG nam trong phep tinh nay (mo hinh no 2026-10-08, yeu cau truc tiep cua
-        // user): nguong 20.000d chi xet Kha dung de duoc GUI yeu cau rut, no tru sau o buoc duyet.
-        // Ban truoc cong no vao day ra cau "Tich luy them 48.512d nua" ma user thay "nghe sai sai".
-        input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
+        // Moc so sanh la withdrawTargetVnd = max(nguong, no) (yeu cau truc tiep cua user 2026-10-08):
+        // Kha dung < no thi chua rut duoc, so con thieu = no - Kha dung (tru them tien dang cho/giu).
+        // KHONG cong no VAO nguong (ban truoc ra "Tich luy them 48.512d" = no + nguong - Kha dung,
+        // user thay "nghe sai sai") - lay so LON hon, khong phai TONG.
+        input.availableBalance + input.heldBalance >= withdrawTargetVnd && input.heldBalance > 0
         ? notice(
             // (2026-10-08, yeu cau truc tiep cua user) KHONG con cau "xem ngay mo khoa o dau" -
             // ngay mo khoa da hien san duoi badge cua TUNG don trong phan chi tiet ben duoi.
             `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày. Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
             "i"
           )
-        : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
+        : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= withdrawTargetVnd
         ? notice(
-            `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng" (tối thiểu ${formatVnd(input.thresholdVnd)}) là bạn rút được ngay.`,
+            `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng"${
+              debtIsBinding ? "" : ` (tối thiểu ${formatVnd(input.thresholdVnd)})`
+            } là bạn rút được ngay.`,
             "i"
           )
         : notice(
-            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+            `Tích luỹ thêm ${formatVnd(withdrawTargetVnd - input.availableBalance - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền${
+              debtIsBinding ? "." : ` (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+            }`
           );
 
   const platformLabel = PLATFORM_LABELS[input.platform];

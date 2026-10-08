@@ -287,24 +287,41 @@ test("dashboard: khong no -> KHONG co dong thong bao nao", () => {
   assert.doesNotMatch(html, /đang nợ/);
 });
 
-test("nguong rut chi xet Kha dung: dang no van mo form rut khi Kha dung >= nguong", () => {
+// Quy tac (yeu cau truc tiep cua user 2026-10-08): Kha dung < no thi KHONG hien nut rut, cau goi y
+// noi "Tich luy them (no - Kha dung)" va KHONG kem "(toi thieu 20.000d)".
+test("Kha dung < no: KHONG hien form rut du Kha dung da qua nguong", () => {
   const html = render({
     availableBalance: 25_000,
     debtRemaining: 85_536,
     entries: [entry({ status: "confirmed" })],
   });
-  assert.match(html, /withdraw-form/);
+  assert.doesNotMatch(html, /<form[^>]*withdraw-form/);
+  assert.match(html, /Tích luỹ thêm 60\.536đ nữa để đủ điều kiện rút tiền\./);
+  assert.doesNotMatch(html, /tối thiểu/);
+});
+
+test("Khue 04: no 28.512d, Kha dung 0 -> tich luy them 28.512d, khong kem 'toi thieu'", () => {
+  const html = render({ availableBalance: 0, debtRemaining: 28_512, entries: [entry({ status: "paid" })] });
+  assert.match(html, /Tích luỹ thêm 28\.512đ nữa để đủ điều kiện rút tiền\./);
+  assert.doesNotMatch(html, /tối thiểu/);
+  assert.doesNotMatch(html, /<form[^>]*withdraw-form/);
+});
+
+test("Thu Ha: no 40.000d, Kha dung 8.554d -> tich luy them 31.446d", () => {
+  const html = render({ availableBalance: 8_554, debtRemaining: 40_000, entries: [entry({ status: "confirmed" })] });
+  assert.match(html, /Tích luỹ thêm 31\.446đ nữa để đủ điều kiện rút tiền\./);
+  assert.doesNotMatch(html, /tối thiểu/);
+});
+
+test("Kha dung dung bang no -> hien form, khong bao gio noi 'them 0d'", () => {
+  const html = render({ availableBalance: 28_512, debtRemaining: 28_512, entries: [entry({ status: "confirmed" })] });
+  assert.match(html, /<form[^>]*withdraw-form/);
   assert.doesNotMatch(html, /Tích luỹ thêm/);
 });
 
-test("Kha dung < nguong khi dang no: so con thieu KHONG cong no vao (bo cau 48.512d)", () => {
-  const html = render({
-    availableBalance: 10_000,
-    debtRemaining: 85_536,
-    entries: [entry({ status: "confirmed" })],
-  });
-  assert.match(html, /Tích luỹ thêm 10\.000đ/);
-  assert.doesNotMatch(html, /48\.512/);
+test("no NHO hon nguong: van bao theo nguong kem '(toi thieu ...)'", () => {
+  const html = render({ availableBalance: 10_000, debtRemaining: 5_000, entries: [entry({ status: "confirmed" })] });
+  assert.match(html, /Tích luỹ thêm 10\.000đ nữa để đủ điều kiện rút tiền \(tối thiểu 20\.000đ\)\./);
 });
 
 test("form rut case 1 (Kha dung > no): noi ro admin tru no va chuyen bao nhieu", () => {
@@ -319,15 +336,15 @@ test("form rut case 1 (Kha dung > no): noi ro admin tru no va chuyen bao nhieu",
   assert.match(html, /Yêu cầu rút 100\.000đ/, "nut van ghi so user YEU CAU rut");
 });
 
-test("form rut case 2 (Kha dung <= no): noi ro se KHONG nhan tien chuyen khoan va con no bao nhieu", () => {
+test("form rut khi Kha dung DUNG BANG no: noi ro tra het no, KHONG nhan tien chuyen khoan", () => {
   const html = render({
-    availableBalance: 30_000,
+    availableBalance: 50_000,
     debtRemaining: 50_000,
     entries: [entry({ status: "confirmed" })],
   });
   const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /trả hết nợ/);
   assert.match(text, /không nhận tiền chuyển khoản/);
-  assert.match(text, /còn nợ 20\.000đ/);
 });
 
 test("yeu cau rut dang cho co tru no -> hien W, so no se tru va so se chuyen; khong nhac no 2 lan", () => {
