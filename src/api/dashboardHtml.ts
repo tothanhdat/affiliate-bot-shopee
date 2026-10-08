@@ -477,13 +477,24 @@ export function renderDashboardPage(input: {
         //     "tich luy them" o day la sai ban chat: ho khong con phai mua them gi nua.
         //   - tong chua du -> moi noi con thieu bao nhieu. Nhanh nay bao dam so con thieu > 0,
         //     nen khong co duong nao sinh ra lai cau "them 0d" (co test chan).
-        input.availableBalance + pendingConfirmationTotal >= input.thresholdVnd
+        // (2026-10-08, bug that thu HAI cung kieu) Tien DANG GIU la tien user DA CO, chi chua toi
+        // ngay mo khoa - nhung no khong nam trong availableBalance lan pendingConfirmationTotal, nen
+        // cong thuc cu noi "Tich luy them 11.744d nua" voi mot nguoi dang co 213.840d bi giam. Ho
+        // khong con phai mua them gi ca. Vi vay phai xet CA BA tui tien, va noi dung ly do dang cho:
+        //   - bi giam     -> cho toi NGAY MO KHOA
+        //   - cho xac nhan -> cho Shopee duyet
+        input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
+        ? notice(
+            `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày (${heldUnlockHint(input.heldEntries)}). Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
+            "i"
+          )
+        : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
         ? notice(
             `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng" (tối thiểu ${formatVnd(input.thresholdVnd)}) là bạn rút được ngay.`,
             "i"
           )
         : notice(
-            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
           );
 
   const platformLabel = PLATFORM_LABELS[input.platform];

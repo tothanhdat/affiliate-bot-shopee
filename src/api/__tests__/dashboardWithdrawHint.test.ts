@@ -201,3 +201,30 @@ test("form rut hien so bi tru TRUOC KHI user bam gui", () => {
   assert.match(html, /40\.000/, "so bi tru");
   assert.match(html, /bạn sẽ nhận/);
 });
+
+// BUG THAT thu HAI cung kieu (2026-10-08, phat hien khi xem trang that): tien DANG GIU la tien user
+// DA CO, chi chua toi ngay mo khoa - nhung khong nam trong availableBalance lan pendingConfirmation,
+// nen cong thuc cu noi "Tich luy them 11.744d nua" voi mot nguoi dang co 213.840d bi giam.
+test("co don bi giam du nguong -> KHONG bao 'tich luy them', ma bao cho toi ngay mo khoa", () => {
+  const html = render({
+    availableBalance: 8_256,
+    heldBalance: 213_840,
+    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+  });
+  assert.doesNotMatch(html, /Tích luỹ thêm/, "ho khong con phai mua them gi ca");
+  assert.match(html, /được giữ thêm vài ngày/);
+  assert.match(html, /15\/10/);
+  assert.match(html, /không cần mua thêm gì/);
+});
+
+test("so con thieu TRU CA tien dang giam, khong noi thua", () => {
+  // nguong 20.000; co 1.000 kha dung + 2.000 dang giam -> con thieu 17.000 (khong phai 19.000)
+  const html = render({
+    availableBalance: 1_000,
+    heldBalance: 2_000,
+    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+  });
+  assert.match(html, /Tích luỹ thêm 17\.000/);
+});
