@@ -88,5 +88,5 @@ test("buildOrdersConfirmedNotification truyen debtVnd xuong view, doc lap voi he
     },
   });
   assert.equal(seen!.heldLine, null, "no khong lien quan gi toi giam, heldVnd khong duoc truyen");
-  assert.equal(seen!.debtLine, "Đã trừ 120.000đ nợ hoàn trả");
+  assert.equal(seen!.debtLine, "Đang nợ 120.000đ, trừ khi rút tiền");
 });

@@ -339,10 +339,8 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 
 export function renderDashboardPage(input: {
   entries: CommissionEntry[];
-  /** DA tru no hoan tra, floor 0 - chinh so user rut duoc. */
+  /** KHONG tru no (mo hinh no 2026-10-08) - no chi bi tru luc yeu cau rut duoc duyet. */
   availableBalance: number;
-  /** Truoc khi tru no - de giai thich con so da bi tru trong form rut (2026-10-08). */
-  grossAvailableBalance: number;
   /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
   heldBalance: number;
   /** Tung don dang bi giam - moi don hien ngay mo khoa cua CHINH no. */
@@ -360,6 +358,11 @@ export function renderDashboardPage(input: {
   pendingBalance: number;
   paidTotal: number;
   pendingWithdrawal: WithdrawalRequest | null;
+  /**
+   * Yeu cau rut VUA duoc tu dong xac nhan de tru no (W <= no) - chi co ngay sau khi user bam rut,
+   * de trang noi ro chuyen gi vua xay ra thay vi Kha dung tu nhien ve 0 khong ly do.
+   */
+  settledWithdrawal?: WithdrawalRequest | null;
   thresholdVnd: number;
   token: string;
   platform: Platform;
@@ -443,22 +446,41 @@ export function renderDashboardPage(input: {
     .filter((e) => e.status === "pending")
     .reduce((sum, e) => sum + e.userShareAmount, 0);
 
-  // Hieu so THO gross - no (KHONG floor ve 0 nhu availableBalance) - dung chung cho ca 3 nhanh
-  // "goi y rut tien" ben duoi. Khi no > gross, so nay AM; cong them heldBalance/pendingConfirmationTotal
-  // van cho ra dung so "con thieu bao nhieu tinh ca phan no chua bu het", thay vi mat han phan no
-  // mot khi availableBalance (da floor) ve 0 (xem bug that o duoi).
-  const grossMinusDebt = input.grossAvailableBalance - input.debtRemaining;
-
-  // Phai noi ro TRUOC KHI user bam gui, neu khong ho gui yeu cau roi moi biet nhan it hon so da thay.
+  // Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): Kha dung va no la HAI so tach bach, no chi
+  // bi tru LUC yeu cau rut duoc duyet. Phai noi ro TRUOC KHI user bam gui ket qua se roi vao nhanh
+  // nao, neu khong ho gui yeu cau roi moi biet nhan it hon (hoac khong nhan dong nao).
+  // KHONG nhac lai "ban dang no X" - debtNotice ngay phia tren form da noi.
+  //   - Kha dung > no: Admin tru no roi chuyen phan con lai.
+  //   - Kha dung <= no: khong co gi de chuyen, he thong tu dung ca so du de tru no ngay luc gui.
+  const debtAtRequest = Math.min(input.availableBalance, input.debtRemaining);
+  const transferAfterDebt = input.availableBalance - debtAtRequest;
   const debtDeductionNote =
-    input.debtRemaining > 0
-      ? `<p class="debt-note">Số dư ${formatVnd(input.grossAvailableBalance)} trừ ${formatVnd(input.debtRemaining)} đã hoàn trả — bạn sẽ nhận <strong>${formatVnd(input.availableBalance)}</strong>.</p>`
+    input.debtRemaining <= 0
+      ? ""
+      : transferAfterDebt > 0
+        ? `<p class="debt-note">Khi yêu cầu được duyệt, Admin sẽ trừ ${formatVnd(debtAtRequest)} nợ và chuyển cho bạn <strong>${formatVnd(transferAfterDebt)}</strong>.</p>`
+        : `<p class="debt-note">Số dư khả dụng không lớn hơn số nợ, nên gửi yêu cầu thì toàn bộ ${formatVnd(input.availableBalance)} sẽ được dùng để trừ nợ ngay — lần này bạn sẽ <strong>không nhận tiền chuyển khoản</strong>${
+            input.debtRemaining > input.availableBalance
+              ? `, và còn nợ ${formatVnd(input.debtRemaining - input.availableBalance)}`
+              : ""
+          }.</p>`;
+  const withdrawConfirmText =
+    input.debtRemaining <= 0
+      ? `Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`
+      : transferAfterDebt > 0
+        ? `Xác nhận gửi yêu cầu rút ${formatVnd(input.availableBalance)}? Admin sẽ trừ nợ ${formatVnd(debtAtRequest)} và chuyển cho bạn ${formatVnd(transferAfterDebt)}.`
+        : `Xác nhận dùng ${formatVnd(input.availableBalance)} để trừ nợ? Lần này bạn sẽ không nhận tiền chuyển khoản.`;
+
+  const pending = input.pendingWithdrawal;
+  const pendingDebtLine =
+    pending && pending.debtApplied > 0
+      ? ` Admin sẽ trừ ${formatVnd(pending.debtApplied)} nợ hoàn trả và chuyển cho bạn <strong>${formatVnd(pending.amount)}</strong>.`
       : "";
 
   const withdrawBlock = input.pendingWithdrawal
-    ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
+    ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount + input.pendingWithdrawal.debtApplied)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}).${pendingDebtLine} Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
     : input.availableBalance >= input.thresholdVnd
-      ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(`Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`)}>
+      ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(withdrawConfirmText)}>
   ${debtDeductionNote}
   <div class="form-field">
     <label for="bankName">Ngân hàng / Ví điện tử</label>
@@ -478,47 +500,28 @@ export function renderDashboardPage(input: {
   <button type="submit">Yêu cầu rút ${formatVnd(input.availableBalance)}</button>
 </form>`
       : // 2026-10-08 (bug that, user bao cao kem anh chup): Kha dung 0d + Cho xac nhan 48.114d,
-        // nguong 20.000d -> trang hien "Tich luy them 0d nua". Nguyen nhan: so con thieu tinh bang
-        // (nguong - CHO XAC NHAN) trong khi dieu kien mo form rut doc KHA DUNG - commit 7c12ebb
-        // (2026-09-16) muon CONG tien pending vao tien do nhung lai THAY luon availableBalance.
-        // Gio chia dung 2 tinh huong, va "con thieu" tru CA HAI nguon tien:
-        //   - tong da du nguong, chi la chua duoc Shopee duyet -> noi dang cho duyet. Doi user
-        //     "tich luy them" o day la sai ban chat: ho khong con phai mua them gi nua.
-        //   - tong chua du -> moi noi con thieu bao nhieu. Nhanh nay bao dam so con thieu > 0,
-        //     nen khong co duong nao sinh ra lai cau "them 0d" (co test chan).
-        // (2026-10-08, bug that thu HAI cung kieu) Tien DANG GIU la tien user DA CO, chi chua toi
-        // ngay mo khoa - nhung no khong nam trong availableBalance lan pendingConfirmationTotal, nen
-        // cong thuc cu noi "Tich luy them 11.744d nua" voi mot nguoi dang co 213.840d bi giam. Ho
-        // khong con phai mua them gi ca. Vi vay phai xet CA BA tui tien, va noi dung ly do dang cho:
-        //   - bi giam     -> cho toi NGAY MO KHOA
-        //   - cho xac nhan -> cho Shopee duyet
-        // (2026-10-08, BUG THAT thu BA cung ho - phat hien khi tu dong vai nguoi dung di het cac
-        // case). Ca 3 nhanh TRUOC day deu cong input.availableBalance (da bi floor ve 0 boi
-        // Math.max(0, gross-debt)) thay vi dung HIEU SO THO gross-debt. Khi no > gross, availableBalance
-        // luon la 0 nen cong thuc mat han phan "con thieu bao nhieu de bu het no" - vi du that: Khue 02
-        // co gross 57.024d, no 85.536d, nguong 20.000d -> cong thuc cu noi "Tich luy them 20.000d nua",
-        // nhung du co them dung 20.000d gross thi Kha dung van la max(0, 77.024-85.536) = 0d, LOI HUA
-        // SAI mat 28.512d. So dung phai la ngay het THEM 48.512d (= bu 28.512d con thieu so voi no,
-        // CONG them 20.000d nguong).
-        //
-        // Sua bang 1 bien HIEU SO THO duy nhat (KHONG floor) de ca 3 nhanh dung chung 1 nguon su that -
-        // khi debtRemaining = 0 thi bien nay trung het voi cong thuc cu (gross === availableBalance luc
-        // khong no), nen khong doi hanh vi cua moi case KHONG co no da dung tu truoc.
-        grossMinusDebt + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
+        // nguong 20.000d -> trang hien "Tich luy them 0d nua". Gio chia dung tinh huong, va "con
+        // thieu" tru CA BA tui tien user da co:
+        //   - bi giam (Dang tam giu) -> cho toi ngay mo khoa, khong can mua them gi
+        //   - cho xac nhan            -> cho Shopee duyet
+        //   - chua du                 -> moi noi con thieu bao nhieu (luon > 0, co test chan "them 0d")
+        // NO HOAN TRA KHONG nam trong phep tinh nay (mo hinh no 2026-10-08, yeu cau truc tiep cua
+        // user): nguong 20.000d chi xet Kha dung de duoc GUI yeu cau rut, no tru sau o buoc duyet.
+        // Ban truoc cong no vao day ra cau "Tich luy them 48.512d nua" ma user thay "nghe sai sai".
+        input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
         ? notice(
             // (2026-10-08, yeu cau truc tiep cua user) KHONG con cau "xem ngay mo khoa o dau" -
-            // ngay mo khoa da hien san duoi badge cua TUNG don trong phan chi tiet ben duoi, khong
-            // can nhac lai o day.
+            // ngay mo khoa da hien san duoi badge cua TUNG don trong phan chi tiet ben duoi.
             `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày. Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
             "i"
           )
-        : grossMinusDebt + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
+        : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
         ? notice(
             `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng" (tối thiểu ${formatVnd(input.thresholdVnd)}) là bạn rút được ngay.`,
             "i"
           )
         : notice(
-            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - grossMinusDebt - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
           );
 
   const platformLabel = PLATFORM_LABELS[input.platform];
@@ -536,48 +539,57 @@ export function renderDashboardPage(input: {
     ? `<p class="warning-note">⚠️ Đơn đang "Chờ xác nhận" có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn.</p>`
     : "";
 
-  // THU TU va CACH GOI TEN la rang buoc, khong phai tham my: availableBalance DA la so net (da tru
-  // no), nen neu dat dong no DUOI no va goi la "Dang tru lai" thi user doc ra "32.000d nay con bi tru
-  // 40.000d nua" - hieu sai theo huong TE HON thuc te. Vi vay dong no nam TREN Kha dung, mang dau tru,
-  // ten o the DA HOAN THANH, va Kha dung co chu thich "da tru o tren".
-  //
   // Ca 2 dong CHI hien khi > 0: hien "0d" cho user chua bao gio bi giam/bi tru la tao lo lang ve mot
   // luat khong ap dung cho ho.
   const heldRow =
     input.heldBalance > 0
       ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div></div>`
       : "";
-  // No KHONG phai 1 the trong hang nay: hang nay la "tien ban co", con no la mot khoan BI TRU -
+  // No KHONG phai 1 the trong hang nay: hang nay la "tien ban co", con no la mot khoan SE BI TRU -
   // dat chung vao nhau thi user doc ra nhu mot loai so du nua (feedback that cua user 2026-10-08).
-  // Thay bang 1 dong thong bao RIENG ngay duoi cac the, noi du: vi sao, don nao, va quan trong nhat
-  // la ho KHONG phai chuyen tien lai.
-  const availableHint = input.debtRemaining > 0 ? `<div class="hint">đã trừ hoàn trả</div>` : "";
+  // Cau chu lay NGUYEN VAN theo yeu cau cua user (2026-10-08) - Kha dung o tren KHONG tru no, nen
+  // cau nay phai noi ro no se bi tru o dau (lan rut sau), khong phai "da tru roi".
+  //
+  // Phan no DA nam trong yeu cau rut dang cho duyet (debtApplied) thi khong nhac lai o day - thong
+  // bao yeu cau rut da noi so do se bi tru, nhac 2 lan doc ra thanh bi tru 2 lan.
+  const uncoveredDebt = Math.max(0, input.debtRemaining - (pending?.debtApplied ?? 0));
   const debtNotice =
-    input.debtRemaining > 0
+    uncoveredDebt > 0
       ? notice(
-          `<strong>Có ${formatVnd(input.debtRemaining)} đang được trừ lại.</strong><br>` +
-            `${
-              input.debts.length === 1
-                ? `Đơn <code>${escapeHtml(input.debts[0].orderId)}</code> đã được trả hàng`
-                : `${input.debts.length} đơn đã được trả hàng (${input.debts
-                    .map((d) => `<code>${escapeHtml(d.orderId)}</code>`)
-                    .join(", ")})`
-            } sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của ${
-              input.debts.length === 1 ? "đơn đó" : "những đơn đó"
-            }. ` +
-            `Số dư "Khả dụng" ở trên đã trừ khoản này rồi. ` +
-            `<strong>Bạn không phải chuyển tiền lại</strong> — khoản này sẽ tự hết dần khi bạn có đơn mới.`,
+          `${
+            input.debts.length === 1
+              ? `Đơn <code>${escapeHtml(input.debts[0].orderId)}</code> đã được trả hàng`
+              : `${input.debts.length} đơn (${input.debts
+                  .map((d) => `<code>${escapeHtml(d.orderId)}</code>`)
+                  .join(", ")}) đã được trả hàng`
+          } sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của ${
+            input.debts.length === 1 ? "đơn đó" : "những đơn đó"
+          }. Hiện bạn đang nợ <strong>${formatVnd(uncoveredDebt)}</strong>, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau.`,
           "↩"
         )
       : "";
 
+  // Ngay sau khi 1 yeu cau rut duoc TU DONG xac nhan de tru no: Kha dung ve 0 ma khong co tien nao
+  // vao tai khoan - khong noi ra thi user tuong tien bien mat.
+  const settled = input.settledWithdrawal;
+  const settledNotice = settled
+    ? notice(
+        // So no CON LAI khong nhac o day - debtNotice ngay ben duoi da noi, nhac 2 lan la thua.
+        `Đã dùng ${formatVnd(settled.debtApplied)} số dư khả dụng để trừ nợ hoàn trả, lần này không có tiền chuyển khoản.${
+          input.debtRemaining > 0 ? "" : " Bạn đã trả hết nợ."
+        }`,
+        "✓"
+      )
+    : "";
+
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
+${settledNotice}
 <div class="totals">
   <div class="stat warning"><div class="label">Chờ xác nhận</div><div class="value">${formatVnd(pendingConfirmationTotal)}</div></div>
   ${heldRow}
-  <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div>${availableHint}</div>
+  <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div></div>
   <div class="stat info"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
   <div class="stat success"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>

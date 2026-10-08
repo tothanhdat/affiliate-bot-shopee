@@ -278,3 +278,105 @@ test("GET /d/:token hien dung nguong rut tien MOI NHAT tu setting, khong phai gi
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): no chi bi tru LUC yeu cau
+// rut duoc duyet. W > no -> cho admin duyet, chuyen W - no. W <= no -> tu dong
+// xac nhan, khong co dong nao chuyen.
+// ---------------------------------------------------------------------------
+
+function seedOrderAndDebt(ledgerStore: LedgerStore, userShareVnd: number, debtVnd: number) {
+  ledgerStore.recordConversion({
+    subId: "telegram-user-a-abc-123",
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId: "order-moi",
+    orderAmount: 1_000_000,
+    commissionAmount: userShareVnd,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 100,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+  });
+  ledgerStore.recordPayoutDebt({
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId: "C2-PAID",
+    amount: debtVnd,
+  });
+}
+
+const BANK_BODY = () =>
+  new URLSearchParams({ bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" });
+
+test("rut khi W > no: bao admin du 3 so, DM user noi so chuyen khoan that", async () => {
+  const { ledgerStore, baseUrl, notifyCalls, notifyUserCalls, cleanup } = setup();
+  try {
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+    seedOrderAndDebt(ledgerStore, 100_000, 40_000);
+
+    const res = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: BANK_BODY(),
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/d/${token}`);
+    assert.equal(notifyCalls.length, 1);
+    assert.match(notifyCalls[0], /rút 100\.000đ, trừ nợ 40\.000đ, cần chuyển 60\.000đ/);
+    assert.match(notifyUserCalls[0].message, /yêu cầu rút 100\.000đ/);
+    assert.match(notifyUserCalls[0].message, /trừ 40\.000đ nợ hoàn trả, số tiền chuyển khoản cho bạn là 60\.000đ/);
+    // No CHUA bi tru cho toi luc admin duyet.
+    assert.equal(ledgerStore.getOutstandingDebtTotal("telegram", "user-a"), 40_000);
+  } finally {
+    cleanup();
+  }
+});
+
+test("rut khi W <= no: tu dong xac nhan, KHONG bao admin, DM noi khong co tien chuyen, trang noi ro", async () => {
+  const { ledgerStore, baseUrl, notifyCalls, notifyUserCalls, cleanup } = setup();
+  try {
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+    seedOrderAndDebt(ledgerStore, 60_000, 85_536);
+
+    const res = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: BANK_BODY(),
+    });
+    assert.equal(res.status, 303);
+    const location = res.headers.get("location")!;
+    assert.match(location, new RegExp(`^/d/${token}\\?tru-no=`));
+    assert.equal(notifyCalls.length, 0, "khong co viec gi cho admin lam");
+    assert.equal(ledgerStore.listPendingWithdrawals().length, 0);
+    assert.equal(ledgerStore.getOutstandingDebtTotal("telegram", "user-a"), 25_536);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+    assert.match(notifyUserCalls[0].message, /trừ nợ hoàn trả, nên lần này không có tiền chuyển khoản/);
+    assert.match(notifyUserCalls[0].message, /còn nợ 25\.536đ/);
+
+    const html = (await (await fetch(`${baseUrl}${location}`)).text()).replace(/<[^>]+>/g, "");
+    assert.match(html, /Đã dùng 60\.000đ số dư khả dụng để trừ nợ hoàn trả/);
+    assert.match(html, /Hiện bạn đang nợ 25\.536đ, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("?tru-no=<id> cua user KHAC khong hien thong bao tren dashboard cua minh", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedOrderAndDebt(ledgerStore, 60_000, 85_536);
+    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
+    assert.equal(w.status, "paid");
+    const { token: tokenB } = ledgerStore.findOrCreateDashboardToken("telegram", "user-b");
+    const html = await (await fetch(`${baseUrl}/d/${tokenB}?tru-no=${w.id}`)).text();
+    assert.doesNotMatch(html, /Đã dùng/);
+  } finally {
+    cleanup();
+  }
+});

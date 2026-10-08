@@ -41,6 +41,7 @@ import {
   formatOrdersConfirmedReply,
   formatPayoutDebtNotice,
   formatWithdrawalCancelledReply,
+  formatWithdrawalDebtSettledReply,
   formatWithdrawalPaidReply,
   formatWithdrawalRequestedReply,
   GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
@@ -328,10 +329,24 @@ export function createServer(
     const summary = ledgerStore.getUserSummary(identity.platform, identity.userId);
     const pendingWithdrawal = ledgerStore.getPendingWithdrawal(identity.platform, identity.userId);
     const displayName = ledgerStore.getDisplayName(identity.platform, identity.userId);
+    // ?tru-no=<id> do POST /withdraw gan vao khi yeu cau vua duoc tu dong xac nhan de tru no. Phai
+    // kiem tra yeu cau thuoc DUNG user nay (query string ai cung go tay duoc) va dung la loai tu dong.
+    const settledId = typeof req.query["tru-no"] === "string" ? req.query["tru-no"] : null;
+    const settledCandidate = settledId ? ledgerStore.getWithdrawalById(settledId) : null;
+    const settledWithdrawal =
+      settledCandidate &&
+      settledCandidate.platform === identity.platform &&
+      settledCandidate.userId === identity.userId &&
+      settledCandidate.status === "paid" &&
+      settledCandidate.amount === 0 &&
+      settledCandidate.debtApplied > 0
+        ? settledCandidate
+        : null;
     res.type("html").send(
       renderDashboardPage({
         ...summary,
         pendingWithdrawal,
+        settledWithdrawal,
         thresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
         token: req.params.token,
         platform: identity.platform,
@@ -383,9 +398,30 @@ export function createServer(
         bankAccountNumber,
         bankAccountHolder,
       });
+      const requestedVnd = withdrawal.amount + withdrawal.debtApplied;
+
+      // Mo hinh no 2026-10-08: so rut <= no -> requestWithdrawal() da TU DONG xac nhan (khong co
+      // dong nao phai chuyen). KHONG bao admin "yeu cau rut moi" - khong co viec gi cho admin lam,
+      // bao ra thi admin vao /admin/withdrawals tim mot yeu cau khong ton tai trong tab dang cho.
+      if (withdrawal.status === "paid") {
+        notifyUser(identity.platform, identity.userId, {
+          text: formatWithdrawalDebtSettledReply({
+            debtAppliedVnd: withdrawal.debtApplied,
+            debtRemainingVnd: ledgerStore.getOutstandingDebtTotal(identity.platform, identity.userId),
+            dashboardUrl: `${dashboardBaseUrl}/d/${req.params.token}`,
+          }),
+        }).catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao tu dong tru no that bai:", notifyErr);
+        });
+        res.redirect(303, `/d/${req.params.token}?tru-no=${encodeURIComponent(withdrawal.id)}`);
+        return;
+      }
+
       // Best-effort: loi gui thong bao khong duoc lam fail response, yeu cau rut tien da luu DB roi.
       notifyAdmin(
-        `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
+        withdrawal.debtApplied > 0
+          ? `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - rút ${formatVnd(requestedVnd)}, trừ nợ ${formatVnd(withdrawal.debtApplied)}, cần chuyển ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
+          : `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
       ).catch((notifyErr) => {
         console.warn("[admin-notify] gui thong bao yeu cau rut tien that bai:", notifyErr);
       });
@@ -393,7 +429,10 @@ export function createServer(
         WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT
       );
       notifyUser(identity.platform, identity.userId, {
-        text: formatWithdrawalRequestedReply(withdrawalRequestedTemplate, withdrawal.amount),
+        text: formatWithdrawalRequestedReply(withdrawalRequestedTemplate, requestedVnd, {
+          debtAppliedVnd: withdrawal.debtApplied,
+          transferVnd: withdrawal.amount,
+        }),
       }).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao xac nhan yeu cau rut tien that bai:", notifyErr);
         }
@@ -602,7 +641,8 @@ export function createServer(
       notifyUser(cancelled.platform, cancelled.userId, {
         text: formatWithdrawalCancelledReply(
           ledgerStore.getWithdrawalCancelledTemplate(WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT),
-          { amount: cancelled.amount, reason, dashboardUrl: `${dashboardBaseUrl}/d/${token}` }
+          // So user DA YEU CAU rut (W), khong phai so net admin se chuyen - user chi biet con so W.
+          { amount: cancelled.amount + cancelled.debtApplied, reason, dashboardUrl: `${dashboardBaseUrl}/d/${token}` }
         ),
       }).catch((notifyErr) => {
         console.warn("[user-notify] gui thong bao huy yeu cau rut that bai:", notifyErr);

@@ -279,8 +279,9 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
           body: `
             <ul>
               <li>Khi bạn trả hàng, Shopee thu lại hoa hồng của đơn đó — kể cả khi tiền đã được chuyển cho bạn rồi.</li>
-              <li>Khoản đó sẽ được <strong>trừ dần vào các đơn tiếp theo</strong> của bạn. Bạn <strong>không phải chuyển tiền lại</strong> cho bot.</li>
-              <li>Dashboard hiện rõ dòng "Đã trừ hoàn trả" để bạn biết số dư đang bị trừ bao nhiêu và vì đơn nào.</li>
+              <li>Khoản đó được ghi thành <strong>nợ hoàn trả</strong>, tách riêng khỏi số dư "Khả dụng" của bạn. Bạn <strong>không phải chuyển tiền lại</strong> cho bot.</li>
+              <li>Nợ chỉ được trừ <strong>khi bạn gửi yêu cầu rút tiền lần sau</strong>: rút nhiều hơn số nợ thì Admin trừ nợ rồi chuyển phần còn lại; rút ít hơn hoặc bằng số nợ thì toàn bộ số rút dùng để trừ nợ, lần đó không có tiền chuyển khoản.</li>
+              <li>Dashboard hiện rõ bạn đang nợ bao nhiêu và vì đơn nào.</li>
             </ul>`,
         },
         {

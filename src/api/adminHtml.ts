@@ -663,8 +663,34 @@ export function renderWithdrawalsPage(
       )}</div>`
     : "";
 
+  // Ca 2 the KPI dem so tien THAT di qua ngan hang (amount = so phai chuyen, da tru no) - day la
+  // con so admin can de biet phai chuan bi bao nhieu tien, khong phai tong user yeu cau.
   const pendingTotal = pending.reduce((sum, w) => sum + w.amount, 0);
   const paidTotal = paidHistory.reduce((sum, w) => sum + w.amount, 0);
+
+  /**
+   * O so tien (mo hinh no 2026-10-08, yeu cau truc tiep cua user): yeu cau co tru no thi PHAI hien du
+   * 3 so - user rut bao nhieu, dang no bao nhieu, va so cuoi cung admin phai chuyen (QR cung tao theo
+   * so nay). Chi hien 1 so thi admin khong doi chieu duoc voi con so user thay tren dashboard.
+   * amount = 0 la yeu cau TU DONG xac nhan (rut <= no): khong co dong nao chuyen.
+   */
+  const amountCell = (w: WithdrawalRequest, struck = false): string => {
+    const main = struck
+      ? "text-base font-bold tabular-nums text-slate-400 line-through"
+      : "text-base font-bold tabular-nums text-slate-900";
+    if (w.debtApplied <= 0) return `<div class="${main}">${formatVnd(w.amount)}</div>`;
+    return `<div class="inline-grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
+      <span class="text-left text-slate-500">Rút</span><span class="text-slate-700">${formatVnd(w.amount + w.debtApplied)}</span>
+      <span class="text-left text-slate-500">Trừ nợ</span><span class="text-rose-600">−${formatVnd(w.debtApplied)}</span>
+    </div>
+    <div class="mt-1 border-t border-slate-200 pt-1">
+      ${
+        w.amount > 0
+          ? `<div class="text-[10px] uppercase tracking-wide text-slate-400">Phải chuyển</div><div class="${main}">${formatVnd(w.amount)}</div>`
+          : `<div class="text-[11px] font-semibold text-slate-500">Tự trừ nợ, không chuyển</div>`
+      }
+    </div>`;
+  };
 
   const kpiRow = kpiGrid(
     [
@@ -785,7 +811,7 @@ export function renderWithdrawalsPage(
       <span>— số đúng là <strong class="tabular-nums">${formatVnd(
         Math.max(0, w.amount - warnedTotal)
       )}</strong>.</span>
-      <span>Nếu CHƯA chuyển khoản, bấm "Huỷ yêu cầu" để khỏi mất tiền. Đã chuyển rồi thì cứ đánh dấu đã trả, khoản này sẽ trừ dần vào các đơn sau.</span>
+      <span>Nếu CHƯA chuyển khoản, bấm "Huỷ yêu cầu" để khỏi mất tiền. Đã chuyển rồi thì cứ đánh dấu đã trả, khoản này thành nợ và sẽ được trừ ở lần rút sau của user.</span>
       <span class="font-mono text-[10px] text-rose-600">${warned
         .map((d) => escapeHtml(d.orderId))
         .join(" · ")}</span>
@@ -804,9 +830,7 @@ export function renderWithdrawalsPage(
   </td>
   <td class="px-6 py-4 align-top">${whoCell(w)}</td>
   <td class="px-6 py-4 align-top">${bankBlock}</td>
-  <td class="px-6 py-4 text-right align-top">
-    <div class="text-base font-bold tabular-nums text-slate-900">${formatVnd(w.amount)}</div>
-  </td>
+  <td class="px-6 py-4 text-right align-top">${amountCell(w)}</td>
   <td class="px-6 py-4 align-top">
     <!-- Boc trong span RELATIVE la bat buoc, dung bo: o chon file duoc an bang .sr-only (position:
          absolute). Khong co to tien nao position:relative thi khoi bao cua no la ca trang, nen no
@@ -848,7 +872,7 @@ export function renderWithdrawalsPage(
           ? ""
           : `
 <form id="cancel-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/cancel" ${confirmOnSubmit(
-              `Huỷ yêu cầu rút ${formatVnd(w.amount)} của ${who}? Tiền sẽ trở lại số dư khả dụng của họ.`
+              `Huỷ yêu cầu rút ${formatVnd(w.amount + w.debtApplied)} của ${who}? Tiền sẽ trở lại số dư khả dụng của họ.`
             )} hidden><input type="hidden" name="reason" value="Đơn trong yêu cầu đã bị trả hàng"></form>`;
       return `<form id="pay-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/mark-paid" enctype="multipart/form-data" ${confirmOnSubmit(
         confirmMsg
@@ -858,7 +882,9 @@ export function renderWithdrawalsPage(
 
   const historyRows = paidHistory
     .map((w) => {
-      const proofLink = w.proofImagePath
+      const proofLink = w.amount === 0 && w.debtApplied > 0
+        ? `<span class="text-[11px] text-slate-400">Tự động (trừ nợ)</span>`
+        : w.proofImagePath
         ? `<a class="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 no-underline hover:underline" href="/admin/withdrawal-proofs/${encodeURIComponent(
             w.proofImagePath
           )}" target="_blank" rel="noopener">Xem ảnh</a>`
@@ -877,9 +903,7 @@ export function renderWithdrawalsPage(
     <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-600">${escapeHtml(w.bankName)}</div>
     <div class="font-mono text-xs text-slate-500">${escapeHtml(w.bankAccountNumber)}</div>
   </td>
-  <td class="px-6 py-4 text-right align-top">
-    <div class="text-base font-bold tabular-nums text-slate-900">${formatVnd(w.amount)}</div>
-  </td>
+  <td class="px-6 py-4 text-right align-top">${amountCell(w)}</td>
   <td class="px-6 py-4 align-top">${proofLink}</td>
 </tr>`;
     })
@@ -896,7 +920,7 @@ export function renderWithdrawalsPage(
         <th class="${thClass}">Thời gian &amp; kênh</th>
         <th class="${thClass}">Người nhận</th>
         <th class="${thClass}">Tài khoản thụ hưởng</th>
-        <th class="${thClass} !text-right">Số tiền rút</th>
+        <th class="${thClass} !text-right">Số tiền</th>
         <th class="${thClass}">Ảnh chứng từ (tuỳ chọn)</th>
         <th class="${thClass} !text-right">Thao tác</th>
       </tr>
@@ -952,7 +976,7 @@ ${payForms}`
   <td class="px-6 py-4 text-right align-top">
     <!-- Gach ngang + lam mo: so that de doi soat, nhung de kieu thuong thi hang nay doc ra thanh
          "da tra cho khach" - tien nay khong ai nhan ca. Cung quy tac voi don reversed o /admin/orders. -->
-    <div class="text-base font-bold tabular-nums text-slate-400 line-through">${formatVnd(w.amount)}</div>
+    ${amountCell(w, true)}
   </td>
   <td class="px-6 py-4 align-top text-xs text-slate-500">${
     w.cancelReason ? escapeHtml(w.cancelReason) : `<span class="text-slate-400">—</span>`
@@ -1084,7 +1108,7 @@ function debtActions(
       (d) => `<form method="POST" action="/admin/users/${encodeURIComponent(platform)}/${encodeURIComponent(
         userId
       )}/debts/${encodeURIComponent(d.id)}/write-off" class="inline" ${confirmOnSubmit(
-        `Xoá khoản nợ ${formatVnd(d.amount)} (đơn ${d.orderId}) của user này? Số tiền sẽ không còn bị trừ vào số dư của họ nữa.`
+        `Xoá khoản nợ ${formatVnd(d.amount)} (đơn ${d.orderId}) của user này? Số tiền sẽ không còn bị trừ ở lần rút tiếp theo của họ nữa.`
       )}>
       <button type="submit" class="button-danger-sm" title="Đơn ${escapeHtml(d.orderId)} - ${formatVnd(
         d.amount
@@ -1287,7 +1311,7 @@ export function renderUsersPage(
           <th class="${thClass} !text-right">Khả dụng</th>
           <th class="${thClass} !text-right">Đang chờ rút</th>
           <th class="${thClass} !text-right">Đã nhận</th>
-          <th class="${thClass} !text-right" title="Tiền đã trả cho user rồi nhưng đơn bị trả hàng - đang trừ dần vào các đơn sau">Nợ hoàn trả</th>
+          <th class="${thClass} !text-right" title="Tiền đã trả cho user rồi nhưng đơn bị trả hàng - sẽ trừ khi user gửi yêu cầu rút tiền lần sau">Nợ hoàn trả</th>
           <th class="${thClass} !text-right">Hành động</th>
         </tr>
       </thead>
@@ -1799,7 +1823,7 @@ export function renderOrdersPage(
             )}</div>`
           : "";
       const returnedHint = debtOrderIds.has(e.orderId)
-        ? `<div class="mt-1 text-[10px] font-semibold text-rose-600" title="Đơn này bị trả hàng sau khi đã trả tiền cho user - đang trừ dần vào các đơn sau">⚠ đã trả hàng</div>`
+        ? `<div class="mt-1 text-[10px] font-semibold text-rose-600" title="Đơn này bị trả hàng sau khi đã trả tiền cho user - thành nợ, trừ khi user rút tiền lần sau">⚠ đã trả hàng</div>`
         : "";
       const statusDetail = `${heldHint}${returnedHint}`;
 

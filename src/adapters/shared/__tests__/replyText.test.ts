@@ -375,7 +375,7 @@ test("formatOrdersConfirmedReply: co no TU TRUOC (khong lien quan don trong lo) 
     null,
     120_000
   );
-  assert.match(text, /Đã trừ 120\.000đ nợ hoàn trả/);
+  assert.match(text, /Bạn đang nợ 120\.000đ hoàn trả, Admin sẽ trừ khi bạn rút tiền/);
   assert.match(text, /Tổng cộng: 50\.000đ/, "tong van la tien cua LO nay, khong tru no");
 });
 
@@ -388,7 +388,7 @@ test("formatOrdersConfirmedReply: co CA giam lan no cung luc -> ca hai cau deu x
     40_000
   );
   assert.match(text, /Trong đó 150\.000đ mở khoá từ 15\/10/);
-  assert.match(text, /Đã trừ 40\.000đ nợ hoàn trả/);
+  assert.match(text, /Bạn đang nợ 40\.000đ hoàn trả, Admin sẽ trừ khi bạn rút tiền/);
 });
 
 test("formatOrdersConfirmedCaption: debtLine cung mot slot 2 trang thai", () => {
@@ -400,7 +400,7 @@ test("formatOrdersConfirmedCaption: debtLine cung mot slot 2 trang thai", () => 
     null,
     40_000
   );
-  assert.match(withDebt, /Đã trừ 40\.000đ nợ hoàn trả/);
+  assert.match(withDebt, /Bạn đang nợ 40\.000đ hoàn trả, Admin sẽ trừ khi bạn rút tiền/);
 });
 
 // Mac dinh caption KHONG chua {{debtLine}} (giong {{heldLine}}): anh da tu ve dieu nay roi, caption

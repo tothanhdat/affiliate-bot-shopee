@@ -185,13 +185,13 @@ function heldLineText(held: { amountVnd: number; unlockDayText: string } | null)
 }
 
 /**
- * Giai thich khoan NO HOAN TRA dang tru vao Kha dung (2026-10-08) - DOC LAP voi heldLineText():
- * no co the den tu mot lan import HOAN TOAN KHAC (don bi tra hang tu truoc), khong lien quan gi toi
- * cac don dang duoc bao trong tin nhan nay. Thieu dong nay thi user thay "Tong cong" cua lo khac
- * "So du kha dung" ma khong biet vi sao - dung bay da sua cho heldLine, chi khac nguyen nhan.
+ * Nhac khoan NO HOAN TRA user dang co (2026-10-08) - DOC LAP voi heldLineText(): no co the den tu
+ * mot lan import HOAN TOAN KHAC (don bi tra hang tu truoc), khong lien quan gi toi cac don dang duoc
+ * bao trong tin nhan nay. Kha dung KHONG tru no (mo hinh no 2026-10-08), nen dong nay bao TRUOC
+ * lan rut toi se bi tru - de user khong rut roi moi thay nhan it hon so du da thay.
  */
 function debtLineText(debtVnd: number): string {
-  return debtVnd > 0 ? `\n(Đã trừ ${formatVnd(debtVnd)} nợ hoàn trả)` : "";
+  return debtVnd > 0 ? `\n(Bạn đang nợ ${formatVnd(debtVnd)} hoàn trả, Admin sẽ trừ khi bạn rút tiền)` : "";
 }
 
 export function formatOrdersConfirmedCaption(
@@ -257,9 +257,38 @@ export const WELCOME_MESSAGE_TEMPLATE_DEFAULT =
 export const WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT =
   `Đã ghi nhận yêu cầu rút {{amount}} nha 💸 Admin check thông tin xong sẽ nhắn riêng xác nhận trước khi chuyển khoản, chờ chút xíu nhen!`;
 
-/** DM tu dong khi user gui yeu cau rut tien thanh cong tren dashboard (POST /d/:token/withdraw). */
-export function formatWithdrawalRequestedReply(template: string, amountVnd: number): string {
-  return renderTemplate(template, { amount: formatVnd(amountVnd) });
+/**
+ * DM tu dong khi user gui yeu cau rut tien thanh cong tren dashboard (POST /d/:token/withdraw).
+ * amountVnd la so user YEU CAU rut (W). Khi co no, dong tru no duoc NOI THEM ngoai template (khong
+ * them placeholder moi): template da luu trong DB cua instance cu se khong co placeholder do, ma DB
+ * de len default - them placeholder thi instance cu khong bao gio thay dong nay.
+ */
+export function formatWithdrawalRequestedReply(
+  template: string,
+  amountVnd: number,
+  debt: { debtAppliedVnd: number; transferVnd: number } | null = null
+): string {
+  const base = renderTemplate(template, { amount: formatVnd(amountVnd) });
+  if (!debt || debt.debtAppliedVnd <= 0) return base;
+  return `${base}\n(Admin sẽ trừ ${formatVnd(debt.debtAppliedVnd)} nợ hoàn trả, số tiền chuyển khoản cho bạn là ${formatVnd(debt.transferVnd)}.)`;
+}
+
+/**
+ * DM khi yeu cau rut duoc TU DONG xac nhan vi so rut <= no (mo hinh no 2026-10-08): khong co dong
+ * nao duoc chuyen, toan bo so du dung de tru no. Cau "khong co tien chuyen khoan" la BAT BUOC - thieu
+ * no user se ngoi cho admin chuyen tien.
+ */
+export function formatWithdrawalDebtSettledReply(params: {
+  debtAppliedVnd: number;
+  debtRemainingVnd: number;
+  dashboardUrl: string;
+}): string {
+  const tail =
+    params.debtRemainingVnd > 0
+      ? `Bạn còn nợ ${formatVnd(params.debtRemainingVnd)}, số này sẽ được trừ khi bạn gửi yêu cầu Rút tiền lần sau.`
+      : "Bạn đã trả hết nợ rồi nha.";
+  return `Em đã dùng ${formatVnd(params.debtAppliedVnd)} số dư khả dụng để trừ nợ hoàn trả, nên lần này không có tiền chuyển khoản nhé. ${tail}
+Xem chi tiết: ${params.dashboardUrl}`;
 }
 
 /** Default cho setting "withdrawal_paid_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
@@ -278,8 +307,8 @@ export function formatWithdrawalPaidReply(template: string, dashboardUrl: string
  * 40.000d" ma khong co cau do thi user tuong phai tra tien ra ngoai.
  */
 export const PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT =
-  `Đơn {{orderId}} đã được trả hàng nên Shopee thu lại hoa hồng của đơn này.
-{{amount}} sẽ được trừ dần vào các đơn tới của bạn — bạn không phải chuyển tiền lại cho em nhé.
+  `Đơn {{orderId}} đã được trả hàng sau khi bạn đã nhận tiền, nên Shopee thu lại {{amount}} hoa hồng của đơn đó.
+Số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau — bạn không phải chuyển tiền lại cho em nhé.
 Xem chi tiết: {{dashboardUrl}}`;
 
 /**

@@ -177,7 +177,7 @@ test("co no tu TRUOC (khong lien quan lo nay) -> debtLine noi ro so tien", () =>
     withdrawalThresholdVnd: 20_000,
     debtVnd: 120_000,
   });
-  assert.equal(view.debtLine, "Đã trừ 120.000đ nợ hoàn trả");
+  assert.equal(view.debtLine, "Đang nợ 120.000đ, trừ khi rút tiền");
   assert.equal(view.totalText, "50.000đ", "tong van la tien cua LO nay");
   assert.equal(view.availableText, "0đ", "kha dung da tru het vi no lon hon gross");
 });
@@ -192,5 +192,5 @@ test("co CA held lan debt cung luc -> ca hai deu khac null, doc lap nhau", () =>
     debtVnd: 40_000,
   });
   assert.equal(view.heldLine, "Trong đó 150.000đ mở khoá từ 15/10");
-  assert.equal(view.debtLine, "Đã trừ 40.000đ nợ hoàn trả");
+  assert.equal(view.debtLine, "Đang nợ 40.000đ, trừ khi rút tiền");
 });

@@ -198,7 +198,8 @@ test("handbook: nguong giam = 0 -> AN ca muc (tinh nang dang tat)", () => {
 test("handbook: giai thich ro viec tra hang thi tien bi tru the nao", () => {
   const html = render();
   assert.match(html, /trả hàng/);
-  assert.match(html, /trừ dần/);
+  assert.match(html, /khi bạn gửi yêu cầu rút tiền lần sau/);
+  assert.doesNotMatch(html, /trừ dần/, "cau cua mo hinh no CU");
   assert.match(html, /không phải chuyển tiền lại/, "thieu cau nay thi user tuong phai tra tien ra");
 });
 

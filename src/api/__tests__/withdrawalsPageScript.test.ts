@@ -26,6 +26,7 @@ function wd(over: Partial<WithdrawalRequest> = {}): WithdrawalRequest {
     bankName: "Vietcombank",
     bankAccountNumber: "0123456789",
     bankAccountHolder: "LE THI THAO",
+    debtApplied: 0,
     ...over,
   } as WithdrawalRequest;
 }
@@ -174,4 +175,32 @@ test("tab 'Da huy' chi hien khi co yeu cau da huy", () => {
   assert.match(some, /Đã huỷ/);
   assert.match(some, /Đơn bị trả lại/);
   assert.match(some, /line-through/, "tien cua yeu cau da huy phai gach ngang - khong ai nhan so do");
+});
+
+// Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): yeu cau co tru no phai hien du 3 so - user rut
+// bao nhieu, no bao nhieu, va so cuoi cung admin phai chuyen. QR tao theo so phai chuyen.
+test("yeu cau co tru no: hien Rut / Tru no / Phai chuyen, QR theo so phai chuyen", () => {
+  const html = renderWithdrawalsPage([wd({ id: "d1", amount: 60_000, debtApplied: 40_000 })], [], new Map());
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(text, /Rút 100\.000đ/);
+  assert.match(text, /Trừ nợ −40\.000đ/);
+  assert.match(text, /Phải chuyển 60\.000đ/);
+  assert.match(html, /amount=60000/, "QR phai theo so PHAI CHUYEN, khong phai so user rut");
+  assert.match(html, /ĐÃ CHUYỂN KHOẢN 60\.000đ/, "hop xac nhan cung noi so phai chuyen");
+});
+
+test("yeu cau khong no: chi 1 so nhu cu", () => {
+  const html = renderWithdrawalsPage([wd({ id: "d2", amount: 60_000 })], [], new Map());
+  assert.doesNotMatch(html, /Trừ nợ/);
+  assert.doesNotMatch(html, /Phải chuyển/);
+});
+
+test("lich su: yeu cau tu dong tru no hien 'Tu tru no, khong chuyen'", () => {
+  const html = renderWithdrawalsPage(
+    [],
+    [wd({ id: "d3", amount: 0, debtApplied: 30_000, status: "paid", paidAt: "2026-10-08T05:00:00.000Z" })],
+    new Map()
+  );
+  assert.match(html, /Tự trừ nợ, không chuyển/);
+  assert.match(html, /Tự động \(trừ nợ\)/);
 });

@@ -80,6 +80,7 @@ export interface ShopeeReportImportResult {
     platform: Platform;
     userId: string;
     withdrawalId: string;
+    /** So user YEU CAU rut (W = so admin se chuyen + no se tru), khong phai so net. */
     amount: number;
     orderId: string;
   }>;
@@ -519,7 +520,8 @@ export function importShopeeReport(
               platform: cancelled.platform,
               userId: cancelled.userId,
               withdrawalId,
-              amount: cancelled.amount,
+              // So user DA YEU CAU rut (W = so net + no se tru) - user chi biet con so nay.
+              amount: cancelled.amount + cancelled.debtApplied,
               orderId,
             });
             released = true;

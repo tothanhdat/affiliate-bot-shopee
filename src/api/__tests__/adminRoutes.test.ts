@@ -1543,7 +1543,7 @@ test("POST cancel: don vua bi tra hang trong yeu cau -> reverse entry + xoa han 
   }
 });
 
-test("POST write-off: xoa no, Kha dung tang lai", async () => {
+test("POST write-off: xoa no, Kha dung KHONG doi (no dung rieng)", async () => {
   const { ledgerStore, baseUrl, cleanup } = setup();
   try {
     seedConfirmedOrder(ledgerStore, "WO1", 10_000);
@@ -1554,7 +1554,8 @@ test("POST write-off: xoa no, Kha dung tang lai", async () => {
       orderId: "OLD-ORDER",
       amount: 4_000,
     });
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 6_000);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 10_000);
+    assert.equal(ledgerStore.getOutstandingDebtTotal("telegram", "user-a"), 4_000);
 
     const cookie = await loginAndGetCookie(baseUrl);
     const res = await fetch(`${baseUrl}/admin/users/telegram/user-a/debts/${debt!.id}/write-off`, {
@@ -1565,6 +1566,7 @@ test("POST write-off: xoa no, Kha dung tang lai", async () => {
 
     assert.equal(res.status, 303);
     assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 10_000);
+    assert.equal(ledgerStore.getOutstandingDebtTotal("telegram", "user-a"), 0);
     assert.ok(ledgerStore.getDebtByOrder("shopee", "OLD-ORDER")?.writtenOffAt, "dong van con de doi soat");
   } finally {
     cleanup();
@@ -1595,12 +1597,12 @@ test("POST write-off voi platform khong hop le -> 404", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tin nhan "don ve" phai giai thich NO DA CO TU TRUOC (2026-10-08, yeu cau truc
-// tiep cua user) - KHONG doi user tu mo dashboard moi biet vi sao Kha dung thap
-// hon Tong cong cua lo vua ve.
+// Tin nhan "don ve" phai nhac NO DA CO TU TRUOC (2026-10-08, yeu cau truc tiep
+// cua user) - Kha dung KHONG tru no (mo hinh no 2026-10-08), nen phai bao truoc
+// lan rut toi se bi tru, khong doi user rut roi moi biet.
 // ---------------------------------------------------------------------------
 
-test("import don moi khi user DANG CO NO tu truoc -> tin nhan giai thich ngay, Kha dung da tru dung", async () => {
+test("import don moi khi user DANG CO NO tu truoc -> tin nhan nhac no, Kha dung KHONG tru no", async () => {
   const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup(undefined, false);
   try {
     seedRequestLog(logStore, "telegram-user-a-abc123-def");
@@ -1623,13 +1625,14 @@ test("import don moi khi user DANG CO NO tu truoc -> tin nhan giai thich ngay, K
     });
     assert.equal(res.status, 200);
 
-    // gross = 80% cua 50_000 = 40_000; no = 120_000 -> Kha dung = max(0, 40_000-120_000) = 0.
-    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+    // 80% cua 50_000 = 40_000. No 120_000 dung RIENG, chi tru luc yeu cau rut duoc duyet.
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 40_000);
+    assert.equal(ledgerStore.getOutstandingDebtTotal("telegram", "user-a"), 120_000);
 
     assert.equal(notifyUserCalls.length, 1);
     assert.match(
       notifyUserCalls[0].message,
-      /Đã trừ 120\.000đ nợ hoàn trả/,
+      /Bạn đang nợ 120\.000đ hoàn trả, Admin sẽ trừ khi bạn rút tiền/,
       `tin nhan phai giai thich NGAY trong lan import nay, nhan duoc: ${notifyUserCalls[0].message}`
     );
   } finally {
@@ -1647,7 +1650,7 @@ test("import don moi khi user KHONG co no -> tin nhan KHONG co cau thua ve no", 
       headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
       body: "subId=telegram-user-a-abc123-def&orderId=NEW-ORDER-002&orderAmount=500000&commissionAmount=50000",
     });
-    assert.doesNotMatch(notifyUserCalls[0].message, /nợ hoàn trả/);
+    assert.doesNotMatch(notifyUserCalls[0].message, /đang nợ/);
   } finally {
     cleanup();
   }

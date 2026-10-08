@@ -97,27 +97,46 @@ function recordConfirmed(s: LedgerStore, orderId: string, commissionAmount: numb
   });
 }
 
-test("getAvailableBalance tru no, co floor 0 - KHONG BAO GIO am", () => {
+// MO HINH NO (2026-10-08, DOI theo yeu cau truc tiep cua user): Kha dung = GROSS, no DUNG RIENG.
+// No KHONG bi tru vao Kha dung luc phat sinh - chi bi tru LUC YEU CAU RUT DUOC DUYET:
+//   case 1: W (so yeu cau rut) >= no -> amount = W - no, CHO admin duyet; duyet xong moi tru no.
+//   case 2: W <= no (gom ca W == no) -> so phai chuyen = 0 -> TU DONG xac nhan ngay, tru W vao no.
+// Nguong rut (20.000d) ap tren Kha dung (gross), KHONG dinh gi toi no.
+
+test("Kha dung KHONG tru no - no dung rieng", () => {
   const s = store();
   recordConfirmed(s, "order-1", 10_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
-  assert.equal(s.getAvailableBalance("zalo", "user-a"), 0, "10k - 40k phai la 0, khong phai -30k");
-  assert.equal(s.getGrossAvailableBalance("zalo", "user-a"), 10_000);
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 40_000, "no van con nguyen 40k");
+  assert.equal(s.getAvailableBalance("zalo", "user-a"), 10_000, "Kha dung la gross, khong bi tru no");
+  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 40_000);
 });
 
-test("requestWithdrawal: amount = net, ghi debt_applied, CHUA tru no", () => {
+test("nguong rut ap tren Kha dung (gross), du no lon hon van rut duoc", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 25_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 100_000 });
+  assert.doesNotThrow(() => s.requestWithdrawal("zalo", "user-a", 20_000, BANK));
+});
+
+test("duoi nguong (gross < nguong) van khong rut duoc", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 10_000);
+  assert.throws(() => s.requestWithdrawal("zalo", "user-a", 20_000, BANK), InsufficientBalanceError);
+});
+
+test("case 1 (W >= no): amount = W - no, CHO admin duyet, no CHUA bi tru", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
 
   const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
-  assert.equal(w.amount, 60_000, "100k - 40k");
+  assert.equal(w.status, "requested", "con tien phai chuyen -> cho admin duyet");
+  assert.equal(w.amount, 60_000, "so admin PHAI chuyen = 100k - 40k");
   assert.equal(w.debtApplied, 40_000);
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 40_000, "no CHUA bi tru o buoc nay");
+  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 40_000, "chua duyet thi no CHUA bi tru");
 });
 
-test("markWithdrawalPaid: tru no, dien settled_at khi remaining ve 0", () => {
+test("case 1: admin duyet -> tru het no, entries 'paid', paidTotal = so THAT da chuyen", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
@@ -126,13 +145,54 @@ test("markWithdrawalPaid: tru no, dien settled_at khi remaining ve 0", () => {
   s.markWithdrawalPaid(w.id, null);
   assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 0);
   assert.ok(s.getDebtByOrder("shopee", "old-order")?.settledAt);
+  assert.equal(s.getEntryByOrderId("shopee", "order-1")?.status, "paid");
+  assert.equal(s.getAvailableBalance("zalo", "user-a"), 0);
+  assert.equal(s.getUserSummary("zalo", "user-a").paidTotal, 60_000);
 });
 
-test("no lon hon tien -> khong rut duoc (net duoi nguong)", () => {
+test("case 2 (W < no): TU DONG xac nhan, khong cho admin, no con lai = no - W", () => {
   const s = store();
-  recordConfirmed(s, "order-1", 10_000);
+  recordConfirmed(s, "order-1", 30_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 50_000 });
+
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.status, "paid", "khong co tien phai chuyen -> tu dong xac nhan");
+  assert.ok(w.paidAt);
+  assert.equal(w.amount, 0, "so phai chuyen = 0");
+  assert.equal(w.debtApplied, 30_000, "toan bo W dung de tru no");
+  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 20_000, "50k - 30k");
+  assert.equal(s.getEntryByOrderId("shopee", "order-1")?.status, "paid", "don chuyen 'Da rut' nhu rule hien tai");
+  assert.equal(s.getAvailableBalance("zalo", "user-a"), 0);
+  assert.equal(s.getPendingWithdrawal("zalo", "user-a"), null, "khong de lai yeu cau nao cho admin");
+  assert.equal(s.listPendingWithdrawals().length, 0);
+});
+
+// W == no thi so phai chuyen = 0 - bat admin duyet 1 lenh chuyen khoan 0d kem QR 0d la vo nghia,
+// nen gop vao nhom tu dong xac nhan.
+test("W == no: tu dong xac nhan, no ve 0", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 40_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
-  assert.throws(() => s.requestWithdrawal("zalo", "user-a", 10_000, BANK), InsufficientBalanceError);
+
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.status, "paid");
+  assert.equal(w.amount, 0);
+  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 0);
+  assert.ok(s.getDebtByOrder("shopee", "old-order")?.settledAt);
+});
+
+test("case 2 xong van con no -> lan rut sau tru tiep PHAN CON LAI", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 30_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 50_000 });
+  s.requestWithdrawal("zalo", "user-a", 20_000, BANK); // tu dong, con no 20k
+
+  recordConfirmed(s, "order-2", 50_000);
+  assert.equal(s.getAvailableBalance("zalo", "user-a"), 50_000, "Kha dung van la gross, khong tru no");
+  const w2 = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w2.status, "requested");
+  assert.equal(w2.debtApplied, 20_000, "chi tru phan no CON LAI");
+  assert.equal(w2.amount, 30_000);
 });
 
 test("tru no uu tien no CU nhat truoc", () => {
@@ -141,62 +201,35 @@ test("tru no uu tien no CU nhat truoc", () => {
   s.recordPayoutDebt({ ...DEBT, orderId: "debt-old", amount: 30_000 });
   s.recordPayoutDebt({ ...DEBT, orderId: "debt-new", amount: 50_000 });
 
-  const w = s.requestWithdrawal("zalo", "user-a", 10_000, BANK);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
   assert.equal(w.amount, 20_000, "100k - 80k");
   s.markWithdrawalPaid(w.id, null);
-
-  assert.ok(s.getDebtByOrder("shopee", "debt-old")?.settledAt, "no cu settled");
-  assert.ok(s.getDebtByOrder("shopee", "debt-new")?.settledAt, "no moi cung settled");
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 0);
+  assert.ok(s.getDebtByOrder("shopee", "debt-old")?.settledAt);
+  assert.ok(s.getDebtByOrder("shopee", "debt-new")?.settledAt);
 });
 
-/**
- * BAT BIEN cua he: moi yeu cau rut THANH CONG deu tra HET no.
- *
- * Chung minh: yeu cau chi duoc tao khi net = gross - no >= nguong > 0, tuc gross > no, tuc
- * debtApplied = min(gross, no) = no. Nen khong co duong nao de mot yeu cau rut hop le chi tra duoc
- * mot phan no. Day la ly do test "tru no mot phan" phai ha nguong ve 0 moi cham toi duoc vong lap do.
- */
-test("nguong > 0: moi yeu cau rut thanh cong deu tra HET no (bat bien)", () => {
-  const s = store();
-  recordConfirmed(s, "order-1", 100_000);
-  s.recordPayoutDebt({ ...DEBT, orderId: "debt-old", amount: 30_000 });
-  s.recordPayoutDebt({ ...DEBT, orderId: "debt-new", amount: 40_000 });
-
-  const w = s.requestWithdrawal("zalo", "user-a", 10_000, BANK);
-  assert.equal(w.debtApplied, 70_000, "tru TRON ven ca 2 khoan no");
-  s.markWithdrawalPaid(w.id, null);
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 0);
-});
-
-// Vong lap tru no trong markWithdrawalPaid chi cham toi duoc qua nguong rut = 0 (admin dat duoc o
-// /admin/settings). Giu vong lap chu khong don gian hoa thanh "tra het": nguong la setting runtime,
-// khong phai hang so, nen bat bien o tren co the bien mat ma khong ai sua lai cho nay.
-test("nguong = 0: tru no MOT PHAN - no cu tra het, no moi con lai dung so du", () => {
+test("case 2 tru MOT PHAN: no cu tra het truoc, no moi con lai dung so du", () => {
   const s = store();
   recordConfirmed(s, "order-1", 50_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "debt-old", amount: 30_000 });
   s.recordPayoutDebt({ ...DEBT, orderId: "debt-new", amount: 40_000 });
 
-  const w = s.requestWithdrawal("zalo", "user-a", 0, BANK);
-  assert.equal(w.amount, 0, "50k - 70k -> floor 0");
-  assert.equal(w.debtApplied, 50_000, "chi tru duoc toi da so tien co");
-
-  s.markWithdrawalPaid(w.id, null);
-  assert.equal(s.getDebtByOrder("shopee", "debt-old")?.remaining, 0, "no cu tra het");
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.status, "paid");
+  assert.equal(s.getDebtByOrder("shopee", "debt-old")?.remaining, 0);
   assert.ok(s.getDebtByOrder("shopee", "debt-old")?.settledAt);
-  assert.equal(s.getDebtByOrder("shopee", "debt-new")?.remaining, 20_000, "no moi con 40k - 20k");
-  assert.equal(s.getDebtByOrder("shopee", "debt-new")?.settledAt, null, "chua tra het thi chua settled");
-  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 20_000);
+  assert.equal(s.getDebtByOrder("shopee", "debt-new")?.remaining, 20_000, "40k - 20k con lai sau khi tra no cu");
+  assert.equal(s.getDebtByOrder("shopee", "debt-new")?.settledAt, null);
 });
 
-test("no da bi admin XOA khong tru vao Kha dung nua", () => {
+test("no da bi admin XOA khong bi tru vao lan rut", () => {
   const s = store();
-  recordConfirmed(s, "order-1", 10_000);
+  recordConfirmed(s, "order-1", 100_000);
   const debt = s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
-  assert.equal(s.getAvailableBalance("zalo", "user-a"), 0);
   s.writeOffDebt(debt!.id);
-  assert.equal(s.getAvailableBalance("zalo", "user-a"), 10_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(w.amount, 100_000);
+  assert.equal(w.debtApplied, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -296,31 +329,41 @@ test("yeu cau da huy KHONG tinh vao getOutstandingTotals", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tien cua withdrawal doc tu withdrawal_requests, khong cong theo entry (Task 8)
+// Tien cua withdrawal doc tu withdrawal_requests (Task 8, sua theo mo hinh no 2026-10-08)
 // ---------------------------------------------------------------------------
 
-test("pendingBalance doc tu withdrawal_requests.amount (net), khong cong entry (gross)", () => {
+// Phia USER: "Dang cho rut" = so user YEU CAU rut (W = amount + debt_applied). No van hien rieng
+// cho toi luc duyet - neu the nay hien W - no thi cung luc user thay "dang no D" ma tien cho rut
+// lai DA tru D, doc ra nhu bi tru 2 lan.
+test("pendingBalance = so user YEU CAU rut (W), khong phai so admin chuyen", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
   s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
 
   const summary = s.getUserSummary("zalo", "user-a");
-  assert.equal(summary.pendingBalance, 60_000, "so THAT se duoc chuyen, khong phai 100k");
+  assert.equal(summary.pendingBalance, 100_000);
+  assert.equal(summary.debtRemaining, 40_000, "no van con nguyen cho toi luc duyet");
 });
 
-test("paidTotal doc tu withdrawal_requests.amount (net) - khop so vao tai khoan user", () => {
+test("paidTotal = so tien THAT da chuyen (W - no), khop sao ke ngan hang", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
   const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
   s.markWithdrawalPaid(w.id, null);
-
-  const summary = s.getUserSummary("zalo", "user-a");
-  assert.equal(summary.paidTotal, 60_000, "so THAT da vao tai khoan user");
+  assert.equal(s.getUserSummary("zalo", "user-a").paidTotal, 60_000);
 });
 
-test("getUserSummary tra them heldBalance/heldEntries/debtRemaining/grossAvailableBalance", () => {
+test("lan rut tu dong tru no (case 2) KHONG cong vao paidTotal - khong co dong nao vao tai khoan", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 30_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 50_000 });
+  s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(s.getUserSummary("zalo", "user-a").paidTotal, 0);
+});
+
+test("getUserSummary: availableBalance = gross, debtRemaining/debts rieng, heldBalance", () => {
   const s = store();
   recordConfirmed(s, "small", 10_000);
   s.recordConversion({
@@ -341,47 +384,37 @@ test("getUserSummary tra them heldBalance/heldEntries/debtRemaining/grossAvailab
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 4_000 });
 
   const summary = s.getUserSummary("zalo", "user-a");
-  assert.equal(summary.heldBalance, 300_000);
-  assert.equal(summary.heldEntries.length, 1);
-  assert.equal(summary.heldEntries[0].availableFrom, addDaysToVnIso(todayVnIso(), 7));
+  assert.equal(summary.availableBalance, 10_000, "KHONG tru no");
   assert.equal(summary.debtRemaining, 4_000);
-  assert.equal(summary.grossAvailableBalance, 10_000);
-  assert.equal(summary.availableBalance, 6_000);
+  assert.deepEqual(summary.debts.map((d) => d.orderId), ["old-order"]);
+  assert.equal(summary.heldBalance, 300_000);
+  assert.equal(summary.heldEntries[0].availableFrom, addDaysToVnIso(todayVnIso(), 7));
 });
 
-test("listUsers tra debtRemaining/heldBalance va loai don bi giam khoi availableBalance", () => {
-  const s = store();
-  recordConfirmed(s, "order-1", 10_000);
-  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 4_000 });
-  const row = s.listUsers().find((u) => u.userId === "user-a");
-  assert.equal(row?.debtRemaining, 4_000);
-  assert.equal(row?.heldBalance, 0);
-  assert.equal(row?.availableBalance, 6_000, "da tru no");
-});
-
-test("listUsers: pendingBalance/paidTotal cung doc tu withdrawal_requests (khop getUserSummary)", () => {
+test("listUsers: Kha dung = gross, no rieng, pending = W, paid = so that chuyen", () => {
   const s = store();
   recordConfirmed(s, "order-1", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
-  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
 
   let row = s.listUsers().find((u) => u.userId === "user-a");
-  assert.equal(row?.pendingBalance, 60_000);
+  assert.equal(row?.availableBalance, 100_000);
+  assert.equal(row?.debtRemaining, 40_000);
+
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  row = s.listUsers().find((u) => u.userId === "user-a");
+  assert.equal(row?.pendingBalance, 100_000);
 
   s.markWithdrawalPaid(w.id, null);
   row = s.listUsers().find((u) => u.userId === "user-a");
   assert.equal(row?.paidTotal, 60_000);
   assert.equal(row?.pendingBalance, 0);
+  assert.equal(row?.debtRemaining, 0);
 });
 
-// ORDER BY cua SQL chi biet so GROSS; availableBalance tra ve la so da tru no, ma /admin/users hien
-// "kha dung giam dan" - khong sap lai o JS thi user co no dung sai vi tri.
-test("listUsers sap theo availableBalance DA TRU NO, khong theo so gross", () => {
+test("listUsers sap theo Kha dung giam dan", () => {
   const s = store();
-  // user-a: gross 100k, no 90k -> net 10k
   recordConfirmed(s, "order-a", 100_000);
   s.recordPayoutDebt({ ...DEBT, orderId: "debt-a", amount: 90_000 });
-  // user-b: gross 50k, khong no -> net 50k
   s.recordConversion({
     subId: "k-user-b-abc-def",
     platform: "zalo",
@@ -396,10 +429,5 @@ test("listUsers sap theo availableBalance DA TRU NO, khong theo so gross", () =>
     maxCommissionRatioPercent: 50,
     holdConfig: HOLD_OFF,
   });
-
-  assert.deepEqual(
-    s.listUsers().map((u) => u.userId),
-    ["user-b", "user-a"],
-    "user-b (50k net) phai dung TREN user-a (10k net) du gross cua a lon hon"
-  );
+  assert.deepEqual(s.listUsers().map((u) => u.userId), ["user-a", "user-b"], "100k > 50k, no khong tinh vao");
 });

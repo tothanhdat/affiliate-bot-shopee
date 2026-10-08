@@ -52,10 +52,11 @@ export interface OrderImageView {
    */
   heldLine: string | null;
   /**
-   * Dong "Da tru X no hoan tra" - null khi user khong co no. CUNG LY DO voi heldLine (Tong cong cua
-   * lo khac So du kha dung) nhung khac NGUYEN NHAN va DOC LAP ve du lieu: no co the sinh ra tu mot
-   * lan import HOAN TOAN KHAC, khong lien quan gi toi cac don trong lo nay - nen dieu kien hien dong
-   * nay CHI phu thuoc debtVnd, khong phu thuoc gi vao heldVnd/items.
+   * Dong "Dang no X, tru khi rut tien" - null khi user khong co no. Tu mo hinh no 2026-10-08 So du
+   * kha dung tren anh KHONG tru no (no chi bi tru luc yeu cau rut duoc duyet), nen dong nay bao
+   * TRUOC cho user biet lan rut toi se bi tru, thay vi de ho rut roi moi thay nhan it hon. No co the
+   * sinh ra tu mot lan import HOAN TOAN KHAC, khong lien quan gi toi cac don trong lo nay - nen dieu
+   * kien hien dong nay CHI phu thuoc debtVnd, khong phu thuoc gi vao heldVnd/items.
    */
   debtLine: string | null;
 }
@@ -95,6 +96,6 @@ export function buildOrderImageView(input: OrderImageInput): OrderImageView {
       (input.heldVnd ?? 0) > 0 && input.heldUnlockDayText
         ? `Trong đó ${formatVnd(input.heldVnd ?? 0)} mở khoá từ ${input.heldUnlockDayText}`
         : null,
-    debtLine: (input.debtVnd ?? 0) > 0 ? `Đã trừ ${formatVnd(input.debtVnd ?? 0)} nợ hoàn trả` : null,
+    debtLine: (input.debtVnd ?? 0) > 0 ? `Đang nợ ${formatVnd(input.debtVnd ?? 0)}, trừ khi rút tiền` : null,
   };
 }

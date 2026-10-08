@@ -97,10 +97,11 @@ export interface RecordConversionInput {
 
 export interface UserLedgerSummary {
   entries: CommissionEntry[];
-  /** So rut duoc THAT SU = don da mo khoa - no hoan tra, floor 0. */
+  /**
+   * Tien don da mo khoa, CHUA nam trong yeu cau rut nao. KHONG tru no hoan tra - no dung rieng o
+   * debtRemaining va chi bi tru LUC YEU CAU RUT DUOC DUYET (mo hinh no 2026-10-08, xem requestWithdrawal).
+   */
   availableBalance: number;
-  /** Truoc khi tru no - de UI giai thich duoc con so da bi tru (2026-10-08). */
-  grossAvailableBalance: number;
   /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
   heldBalance: number;
   /** Tung don dang bi giam, de hien ngay mo khoa cua CHINH no. */
@@ -977,8 +978,12 @@ export class LedgerStore {
   }
 
   /**
-   * Tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut tien nao, VA da qua ngay mo khoa -
-   * nhung CHUA tru no hoan tra. Dung cho UI giai thich con so da bi tru, va de tinh debt_applied.
+   * Kha dung = tong hoa hong da xac nhan, CHUA bi giu boi 1 yeu cau rut nao, VA da qua ngay mo khoa.
+   *
+   * KHONG tru no hoan tra (mo hinh no 2026-10-08, yeu cau truc tiep cua user - DAO NGUOC ban dau
+   * "Kha dung = gross - no"): no dung RIENG (getOutstandingDebtTotal) va chi bi tru LUC YEU CAU RUT
+   * DUOC DUYET, xem requestWithdrawal. Ly do: tru thang vao Kha dung lam user thay so du "tut" ma
+   * khong lam gi, va tron 2 so voi nhau thanh 1 con so khong ai doi chieu duoc.
    *
    * available_from NULL nghia la kha dung ngay (don duoi nguong giam, hoac entry ghi truoc
    * 2026-10-08 nen khong giam hoi to) - xem payoutHold.ts.
@@ -986,7 +991,7 @@ export class LedgerStore {
    * Dung todayVnIso() chu KHONG date('now') cua SQLite: cai do la UTC, se mo khoa lech 7 tieng
    * (Railway chay UTC, 00:30 ngay 09/10 gio VN van la 17:30 ngay 08/10 UTC).
    */
-  getGrossAvailableBalance(platform: Platform, userId: string): number {
+  getAvailableBalance(platform: Platform, userId: string): number {
     const row = this.db
       .prepare(
         `SELECT COALESCE(SUM(user_share_amount), 0) AS total FROM commission_entries
@@ -997,19 +1002,7 @@ export class LedgerStore {
     return row.total;
   }
 
-  /**
-   * Tien user rut duoc THAT SU = don da mo khoa TRU no hoan tra, floor o 0.
-   *
-   * Floor la bat buoc: so am se chay vao moi the KPI, moi bieu do, va vao ca cau "Tich luy them X
-   * nua de du dieu kien rut tien" tren dashboard. No khong bao gio ep user chuyen tien ra - no ngoi
-   * do cho den khi co hoa hong moi.
-   */
-  getAvailableBalance(platform: Platform, userId: string): number {
-    const gross = this.getGrossAvailableBalance(platform, userId);
-    return Math.max(0, gross - this.getOutstandingDebtTotal(platform, userId));
-  }
-
-  /** Tien da duoc Shopee duyet nhung con bi giam - doi xung voi getGrossAvailableBalance(). */
+  /** Tien da duoc Shopee duyet nhung con bi giam - doi xung voi getAvailableBalance(). */
   getHeldBalance(platform: Platform, userId: string): number {
     const row = this.db
       .prepare(
@@ -1052,13 +1045,14 @@ export class LedgerStore {
       .all(platform, userId);
     const entries = rows.map(rowToCommissionEntry);
 
-    // Doc tu withdrawal_requests.amount chu KHONG cong user_share_amount cua entry: tu 2026-10-08
-    // amount la so NET (da tru no hoan tra) nen nho hon tong entry gan vao no. Cong theo entry se noi
-    // "dang cho chi tra 100k" trong khi yeu cau that la 60k, va "da nhan 100k" trong khi ngan hang chi
-    // di 60k - tuc lech voi chinh sao ke user dang cam.
+    // Doc tu withdrawal_requests chu KHONG cong user_share_amount cua entry (mo hinh no 2026-10-08):
+    // - "Dang cho rut" = so user YEU CAU rut (W = amount + debt_applied): no CHUA bi tru cho toi luc
+    //   admin duyet, nen user phai thay dung con so minh vua bam rut, khong phai so da tru no.
+    // - "Da nhan" = amount (so NET ngan hang that su chuyen) - khop sao ke user dang cam. Yeu cau tu
+    //   dong xac nhan (W <= no) co amount = 0 nen khong cong gi vao day: user khong nhan dong nao.
     const pendingRow = this.db
       .prepare(
-        `SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawal_requests
+        `SELECT COALESCE(SUM(amount + debt_applied), 0) AS total FROM withdrawal_requests
          WHERE platform = ? AND user_id = ? AND status = 'requested'`
       )
       .get(platform, userId) as { total: number };
@@ -1073,7 +1067,6 @@ export class LedgerStore {
     return {
       entries,
       availableBalance: this.getAvailableBalance(platform, userId),
-      grossAvailableBalance: this.getGrossAvailableBalance(platform, userId),
       heldBalance: this.getHeldBalance(platform, userId),
       heldEntries: this.getHeldEntries(platform, userId),
       debtRemaining: this.getOutstandingDebtTotal(platform, userId),
@@ -1273,10 +1266,8 @@ export class LedgerStore {
     platform: Platform;
     userId: string;
     displayName: string | null;
-    /** DA tru no hoan tra, floor 0 - khop con so user thay tren dashboard. */
+    /** Khop con so user thay tren dashboard - KHONG tru no (no nam rieng o debtRemaining). */
     availableBalance: number;
-    /** Truoc khi tru no, de admin doi chieu. */
-    grossAvailableBalance: number;
     /** Tien dang bi giam (chua qua ngay mo khoa). */
     heldBalance: number;
     /** No hoan tra con phai tru. */
@@ -1291,15 +1282,14 @@ export class LedgerStore {
       .prepare(
         `SELECT ce.platform AS platform, ce.user_id AS user_id, up.display_name AS display_name,
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
-              AND (ce.available_from IS NULL OR ce.available_from <= ?) THEN ce.user_share_amount ELSE 0 END), 0) AS gross_available,
+              AND (ce.available_from IS NULL OR ce.available_from <= ?) THEN ce.user_share_amount ELSE 0 END), 0) AS available,
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
               AND ce.available_from IS NOT NULL AND ce.available_from > ? THEN ce.user_share_amount ELSE 0 END), 0) AS held,
             COALESCE((SELECT SUM(pd.remaining) FROM payout_debts pd
               WHERE pd.platform = ce.platform AND pd.user_id = ce.user_id
                 AND pd.settled_at IS NULL AND pd.written_off_at IS NULL), 0) AS debt_remaining,
-            -- pending/paid doc tu withdrawal_requests (so NET) cho khop getUserSummary - cong theo
-            -- entry se ra so gross, lech voi chinh so tien se duoc chuyen.
-            COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
+            -- pending = so YEU CAU rut (W), paid = so NET da chuyen - cung quy tac voi getUserSummary.
+            COALESCE((SELECT SUM(wr.amount + wr.debt_applied) FROM withdrawal_requests wr
               WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'requested'), 0) AS pending,
             COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
               WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'paid'), 0) AS paid,
@@ -1317,7 +1307,7 @@ export class LedgerStore {
       platform: Platform;
       user_id: string;
       display_name: string | null;
-      gross_available: number;
+      available: number;
       held: number;
       debt_remaining: number;
       pending: number;
@@ -1333,10 +1323,7 @@ export class LedgerStore {
       platform: r.platform,
       userId: r.user_id,
       displayName: r.display_name,
-      // Floor 0 tinh o JS chu khong trong SQL de quy tac nay chi ton tai o MOT cho (giong
-      // getAvailableBalance) - lap lai trong SQL la cho de lech khi sua 1 ben.
-      availableBalance: Math.max(0, r.gross_available - r.debt_remaining),
-      grossAvailableBalance: r.gross_available,
+      availableBalance: r.available,
       heldBalance: r.held,
       debtRemaining: r.debt_remaining,
       pendingBalance: r.pending,
@@ -1355,10 +1342,8 @@ export class LedgerStore {
               updatedAt: r.override_updated_at ?? "",
             },
     }))
-      // Sap o JS chu khong ORDER BY trong SQL: SQL chi biet so GROSS, con availableBalance la so DA
-      // TRU NO. /admin/users mac dinh hien "kha dung giam dan" nen sap theo gross se dat user co no
-      // sai vi tri so voi con so hien ngay canh do. Tiebreak theo userId de thu tu on dinh giua cac
-      // lan goi (nhieu user that co cung so du 0d).
+      // /admin/users mac dinh hien "kha dung giam dan". Tiebreak theo userId de thu tu on dinh giua
+      // cac lan goi (nhieu user that co cung so du 0d).
       .sort(
         (a, b) => b.availableBalance - a.availableBalance || a.userId.localeCompare(b.userId)
       );
@@ -1680,18 +1665,29 @@ export class LedgerStore {
       throw new WithdrawalAlreadyPendingError();
     }
 
-    // Tach gross/net de ghi lai debt_applied: no CHUA bi tru o day (xem markWithdrawalPaid) nen phai
-    // luu so da tru vao chinh yeu cau, neu khong thi den luc tra tien khong con biet tru bao nhieu.
-    const gross = this.getGrossAvailableBalance(platform, userId);
-    const debt = this.getOutstandingDebtTotal(platform, userId);
-    const balance = Math.max(0, gross - debt);
-    const debtApplied = Math.min(gross, debt);
-    if (balance < thresholdVnd) {
-      throw new InsufficientBalanceError(balance, thresholdVnd);
+    // Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): nguong rut ap tren Kha dung (KHONG tru no)
+    // - user co Kha dung >= nguong la rut duoc, du dang no bao nhieu. No chi bi tru o day, khi yeu
+    // cau DUOC DUYET, theo 1 trong 2 nhanh:
+    //   1/ W > no: amount = W - no (so admin phai chuyen), CHO admin duyet. No van con nguyen cho toi
+    //      luc admin bam "da tra" (xem settleWithdrawal) - nho vay huy yeu cau chi viec tha entry ra,
+    //      khong phai hoan no lai dung tung dong.
+    //   2/ W <= no: khong co dong nao phai chuyen nen TU DONG xac nhan ngay trong transaction nay -
+    //      entry thanh 'paid', no tru di W, phan con lai van la no cho lan rut sau. W == no cung vao
+    //      nhanh nay: bat admin duyet mot lenh chuyen 0d (va sinh QR 0d) la vo nghia.
+    // debt_applied luu lai so no se tru, vi den luc duyet no co the da doi (no moi phat sinh trong
+    // luc cho duyet thuoc ve lan rut SAU, khong duoc tru lan nay - admin da thay con so tren man hinh).
+    const requested = this.getAvailableBalance(platform, userId);
+    if (requested < thresholdVnd) {
+      throw new InsufficientBalanceError(requested, thresholdVnd);
     }
+    const debt = this.getOutstandingDebtTotal(platform, userId);
+    const debtApplied = Math.min(requested, debt);
+    const amount = requested - debtApplied;
+    const autoSettle = amount === 0;
 
     const id = randomUUID();
     const createdAt = new Date().toISOString();
+    const paidAt = autoSettle ? createdAt : null;
 
     this.db.exec("BEGIN");
     try {
@@ -1701,7 +1697,7 @@ export class LedgerStore {
             (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder, debt_applied, cancelled_at, cancel_reason)
            VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?, ?, NULL, NULL)`
         )
-        .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder, debtApplied);
+        .run(id, createdAt, platform, userId, amount, bankName, bankAccountNumber, bankAccountHolder, debtApplied);
 
       // Phai lap LAI dieu kien available_from giong getAvailableBalance(): thieu no thi don dang bi
       // giam van bi gan withdrawal_id (tuc bi khoa vao mot yeu cau rut khong he tinh tien cua no),
@@ -1714,6 +1710,10 @@ export class LedgerStore {
         )
         .run(id, platform, userId, todayVnIso());
 
+      if (autoSettle) {
+        this.settleWithdrawal(id, platform, userId, debtApplied, createdAt, null);
+      }
+
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");
@@ -1723,11 +1723,11 @@ export class LedgerStore {
     return {
       id,
       createdAt,
-      paidAt: null,
+      paidAt,
       platform,
       userId,
-      amount: balance,
-      status: "requested",
+      amount,
+      status: autoSettle ? "paid" : "requested",
       proofImagePath: null,
       bankName,
       bankAccountNumber,
@@ -1736,6 +1736,53 @@ export class LedgerStore {
       cancelledAt: null,
       cancelReason: null,
     };
+  }
+
+  /**
+   * Chot 1 yeu cau rut: yeu cau + entry cua no thanh 'paid', tru debtApplied vao no CU nhat truoc.
+   * KHONG tu mo transaction - caller (markWithdrawalPaid / nhanh tu dong xac nhan cua
+   * requestWithdrawal) da mo san, de 2 duong chot dung CHUNG 1 cach tru no.
+   *
+   * No da bi admin xoa giua luc cho duyet thi vong lap dung som (khong tru vao dau ca) - phan
+   * debtApplied du ra khong duoc "tra lai" cho user vi so tien chuyen da chot tren man hinh admin.
+   */
+  private settleWithdrawal(
+    withdrawalId: string,
+    platform: Platform,
+    userId: string,
+    debtApplied: number,
+    paidAt: string,
+    proofImagePath: string | null
+  ): void {
+    this.db
+      .prepare(`UPDATE withdrawal_requests SET status = 'paid', paid_at = ?, proof_image_path = ? WHERE id = ?`)
+      .run(paidAt, proofImagePath, withdrawalId);
+    this.db
+      .prepare(`UPDATE commission_entries SET status = 'paid' WHERE withdrawal_id = ?`)
+      .run(withdrawalId);
+
+    let left = debtApplied;
+    if (left <= 0) return;
+    const debts = this.db
+      .prepare(
+        `SELECT id, remaining FROM payout_debts
+         WHERE platform = ? AND user_id = ? AND settled_at IS NULL AND written_off_at IS NULL
+         ORDER BY created_at ASC, rowid ASC`
+      )
+      .all(platform, userId) as Array<{ id: string; remaining: number }>;
+    const updateDebt = this.db.prepare(`UPDATE payout_debts SET remaining = ?, settled_at = ? WHERE id = ?`);
+    for (const debt of debts) {
+      if (left <= 0) break;
+      const take = Math.min(left, debt.remaining);
+      const remaining = debt.remaining - take;
+      updateDebt.run(remaining, remaining === 0 ? paidAt : null, debt.id);
+      left -= take;
+    }
+  }
+
+  getWithdrawalById(id: string): WithdrawalRequest | null {
+    const row = this.db.prepare(`SELECT * FROM withdrawal_requests WHERE id = ?`).get(id);
+    return row ? rowToWithdrawalRequest(row) : null;
   }
 
   getPendingWithdrawal(platform: Platform, userId: string): WithdrawalRequest | null {
@@ -1776,38 +1823,7 @@ export class LedgerStore {
     const paidAt = new Date().toISOString();
     this.db.exec("BEGIN");
     try {
-      this.db
-        .prepare(`UPDATE withdrawal_requests SET status = 'paid', paid_at = ?, proof_image_path = ? WHERE id = ?`)
-        .run(paidAt, storedProof, withdrawalId);
-      this.db
-        .prepare(`UPDATE commission_entries SET status = 'paid' WHERE withdrawal_id = ?`)
-        .run(withdrawalId);
-
-      // Tru no o DAY chu khong o requestWithdrawal: nho vay cancelWithdrawal() chi viec tha entry ra,
-      // khong phai hoan no lai dung tung dong (cho de sai nhat tren ca duong tien). Khong co cua so
-      // dem trung: trong luc yeu cau con 'requested', moi entry da mo khoa deu da bi gom nen
-      // getGrossAvailableBalance = 0.
-      let left = existing.debtApplied;
-      if (left > 0) {
-        const debts = this.db
-          .prepare(
-            `SELECT id, remaining FROM payout_debts
-             WHERE platform = ? AND user_id = ? AND settled_at IS NULL AND written_off_at IS NULL
-             ORDER BY created_at ASC, rowid ASC`
-          )
-          .all(existing.platform, existing.userId) as Array<{ id: string; remaining: number }>;
-        const updateDebt = this.db.prepare(
-          `UPDATE payout_debts SET remaining = ?, settled_at = ? WHERE id = ?`
-        );
-        for (const debt of debts) {
-          if (left <= 0) break;
-          const take = Math.min(left, debt.remaining);
-          const remaining = debt.remaining - take;
-          updateDebt.run(remaining, remaining === 0 ? paidAt : null, debt.id);
-          left -= take;
-        }
-      }
-
+      this.settleWithdrawal(withdrawalId, existing.platform, existing.userId, existing.debtApplied, paidAt, storedProof);
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");

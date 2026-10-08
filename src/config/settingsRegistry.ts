@@ -125,7 +125,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
     helpText:
-      "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{heldLine}} (câu giải thích phần tiền đang bị giam, rỗng nếu không có đơn nào bị giam), {{debtLine}} (câu giải thích phần đang bị trừ vì nợ hoàn trả, rỗng nếu không có nợ), {{dashboardUrl}}.",
+      "Placeholder hợp lệ: {{summaryLine}} (tự tính tên đơn/số tiền, khác nhau khi 1 đơn hay gộp nhiều đơn), {{heldLine}} (câu giải thích phần tiền đang bị giam, rỗng nếu không có đơn nào bị giam), {{debtLine}} (câu nhắc khoản nợ hoàn trả sẽ bị trừ khi user rút tiền, rỗng nếu không có nợ), {{dashboardUrl}}.",
   },
   {
     key: SETTINGS_KEYS.ordersConfirmedCaptionTemplate,
@@ -174,7 +174,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
     helpText:
-      "Gửi 1 lần cho mỗi đơn, khi báo cáo Shopee ghi đơn đã huỷ mà tiền đã chuyển cho user rồi. Khoản đó được trừ dần vào các đơn sau. Placeholder hợp lệ: {{orderId}}, {{amount}}, {{dashboardUrl}}.",
+      "Gửi 1 lần cho mỗi đơn, khi báo cáo Shopee ghi đơn đã huỷ mà tiền đã chuyển cho user rồi. Khoản đó thành nợ và được trừ khi user gửi yêu cầu rút tiền lần sau. Placeholder hợp lệ: {{orderId}}, {{amount}}, {{dashboardUrl}}.",
   },
   {
     key: SETTINGS_KEYS.withdrawalCancelledTemplate,

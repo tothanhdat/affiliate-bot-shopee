@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderDashboardPage } from "../dashboardHtml.js";
-import type { CommissionEntry } from "../../core/types.js";
+import type { CommissionEntry, WithdrawalRequest } from "../../core/types.js";
 
 /**
  * Khoi "con thieu bao nhieu de rut tien" tren dashboard ca nhan (/d/:token).
@@ -52,16 +52,16 @@ function entry(overrides: Partial<CommissionEntry>): CommissionEntry {
 function render(input: {
   availableBalance: number;
   entries: CommissionEntry[];
-  grossAvailableBalance?: number;
   heldBalance?: number;
   heldEntries?: CommissionEntry[];
   debtRemaining?: number;
   debts?: Array<{ orderId: string; remaining: number }>;
+  pendingWithdrawal?: WithdrawalRequest | null;
+  settledWithdrawal?: WithdrawalRequest | null;
 }): string {
   return renderDashboardPage({
     entries: input.entries,
     availableBalance: input.availableBalance,
-    grossAvailableBalance: input.grossAvailableBalance ?? input.availableBalance,
     heldBalance: input.heldBalance ?? 0,
     heldEntries: input.heldEntries ?? [],
     debtRemaining: input.debtRemaining ?? 0,
@@ -70,7 +70,8 @@ function render(input: {
       (input.debtRemaining ? [{ orderId: "OLD-ORDER", remaining: input.debtRemaining }] : []),
     pendingBalance: 0,
     paidTotal: 0,
-    pendingWithdrawal: null,
+    pendingWithdrawal: input.pendingWithdrawal ?? null,
+    settledWithdrawal: input.settledWithdrawal ?? null,
     thresholdVnd: THRESHOLD,
     token: "tok",
     platform: "zalo",
@@ -214,41 +215,55 @@ test("dashboard: don KHONG dang bi giam -> khong co dong 'mo khoa' duoi badge cu
 
 // (2026-10-08, feedback that cua user) No KHONG duoc la 1 the trong hang "tien ban co" - dat chung
 // vao do thi user doc ra nhu mot loai so du nua. No la mot dong THONG BAO rieng ngay DUOI cac the.
-test("dashboard: no KHONG phai 1 the trong hang so du", () => {
+function withdrawal(overrides: Partial<WithdrawalRequest>): WithdrawalRequest {
+  return {
+    id: "w1",
+    createdAt: "2026-10-08T03:00:00.000Z",
+    paidAt: null,
+    platform: "zalo",
+    userId: "u1",
+    amount: 60_000,
+    status: "requested",
+    proofImagePath: null,
+    bankName: "Vietcombank",
+    bankAccountNumber: "0123456789",
+    bankAccountHolder: "NGUYEN VAN A",
+    debtApplied: 0,
+    cancelledAt: null,
+    cancelReason: null,
+    ...overrides,
+  };
+}
+
+// Mo hinh no 2026-10-08 (yeu cau truc tiep cua user): Kha dung va no TACH BACH - Kha dung khong tru
+// no, no chi bi tru khi yeu cau rut duoc duyet.
+test("dashboard: no KHONG phai 1 the trong hang so du, Kha dung KHONG ghi 'da tru'", () => {
   const html = render({
-    availableBalance: 32_000,
-    grossAvailableBalance: 72_000,
+    availableBalance: 72_000,
     debtRemaining: 40_000,
     entries: [entry({ status: "confirmed" })],
   });
-  const totals = html.slice(html.indexOf('<div class="totals">'), html.indexOf("</div>\n${") + 1);
-  assert.doesNotMatch(
-    html.slice(html.indexOf('<div class="totals">'), html.indexOf('class="notice"')),
-    /Đã trừ hoàn trả/,
-    "khong duoc co the no nao trong hang the"
-  );
-  assert.ok(totals !== null);
+  const totals = html.slice(html.indexOf('<div class="totals">'), html.indexOf('class="notice"'));
+  assert.doesNotMatch(totals, /trừ hoàn trả/i, "khong the no / chu thich 'da tru' nao trong hang the");
+  assert.match(totals, /72\.000đ/, "Kha dung hien NGUYEN so, khong tru no");
 });
 
-test("dashboard: dong thong bao no nam DUOI cac the va giai thich du y", () => {
+test("dashboard: dong thong bao no dung NGUYEN VAN cau user yeu cau, nam DUOI cac the", () => {
   const html = render({
-    availableBalance: 32_000,
-    grossAvailableBalance: 72_000,
-    debtRemaining: 40_000,
-    debts: [{ orderId: "260925VX0R3SQ9", remaining: 40_000 }],
+    availableBalance: 0,
+    debtRemaining: 85_536,
+    debts: [{ orderId: "C2-PAID", remaining: 85_536 }],
     entries: [entry({ status: "confirmed" })],
   });
-
   const posCards = html.indexOf('<div class="totals">');
-  const posNotice = html.indexOf("đang được trừ lại");
+  const posNotice = html.indexOf("đã được trả hàng");
   assert.ok(posNotice > posCards, "dong thong bao phai nam DUOI hang the");
-
-  assert.match(html, /40\.000đ đang được trừ lại/, "noi ro so tien");
-  assert.match(html, /260925VX0R3SQ9/, "noi ro DON NAO de user doi chieu duoc");
-  assert.match(html, /đã được trả hàng/, "noi ro VI SAO");
-  assert.match(html, /không phải chuyển tiền lại/, "y quan trong nhat - thieu la user tuong phai tra tien ra");
-  assert.match(html, /tự hết dần khi bạn có đơn mới/, "noi ro khoan nay se het the nao");
-  assert.match(html, /đã trừ hoàn trả/, "the Kha dung van phai noi ro la so DA tru");
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(
+    text,
+    /Đơn C2-PAID đã được trả hàng sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của đơn đó\. Hiện bạn đang nợ 85\.536đ, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau/
+  );
+  assert.doesNotMatch(html, /trừ dần|tự hết dần|đã trừ khoản này/, "cau cua mo hinh CU");
 });
 
 test("dashboard: nhieu khoan no -> liet ke du cac don", () => {
@@ -261,26 +276,85 @@ test("dashboard: nhieu khoan no -> liet ke du cac don", () => {
     ],
     entries: [entry({ status: "confirmed" })],
   });
-  assert.match(html, /2 đơn đã được trả hàng/);
+  assert.match(html, /2 đơn \(/);
   assert.match(html, /ORDER-A/);
   assert.match(html, /ORDER-B/);
+  assert.match(html, /của những đơn đó/);
 });
 
 test("dashboard: khong no -> KHONG co dong thong bao nao", () => {
   const html = render({ availableBalance: 50_000, entries: [entry({ status: "confirmed" })] });
-  assert.doesNotMatch(html, /đang được trừ lại/);
+  assert.doesNotMatch(html, /đang nợ/);
 });
 
-test("form rut hien so bi tru TRUOC KHI user bam gui", () => {
+test("nguong rut chi xet Kha dung: dang no van mo form rut khi Kha dung >= nguong", () => {
   const html = render({
-    availableBalance: 60_000,
-    grossAvailableBalance: 100_000,
+    availableBalance: 25_000,
+    debtRemaining: 85_536,
+    entries: [entry({ status: "confirmed" })],
+  });
+  assert.match(html, /withdraw-form/);
+  assert.doesNotMatch(html, /Tích luỹ thêm/);
+});
+
+test("Kha dung < nguong khi dang no: so con thieu KHONG cong no vao (bo cau 48.512d)", () => {
+  const html = render({
+    availableBalance: 10_000,
+    debtRemaining: 85_536,
+    entries: [entry({ status: "confirmed" })],
+  });
+  assert.match(html, /Tích luỹ thêm 10\.000đ/);
+  assert.doesNotMatch(html, /48\.512/);
+});
+
+test("form rut case 1 (Kha dung > no): noi ro admin tru no va chuyen bao nhieu", () => {
+  const html = render({
+    availableBalance: 100_000,
     debtRemaining: 40_000,
     entries: [entry({ status: "confirmed" })],
   });
-  assert.match(html, /100\.000/, "so du goc");
-  assert.match(html, /40\.000/, "so bi tru");
-  assert.match(html, /bạn sẽ nhận/);
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /trừ 40\.000đ nợ và chuyển cho bạn 60\.000đ/);
+  assert.equal(text.match(/đang nợ 40\.000đ/g)?.length, 1, "khong nhac so no 2 lan");
+  assert.match(html, /Yêu cầu rút 100\.000đ/, "nut van ghi so user YEU CAU rut");
+});
+
+test("form rut case 2 (Kha dung <= no): noi ro se KHONG nhan tien chuyen khoan va con no bao nhieu", () => {
+  const html = render({
+    availableBalance: 30_000,
+    debtRemaining: 50_000,
+    entries: [entry({ status: "confirmed" })],
+  });
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /không nhận tiền chuyển khoản/);
+  assert.match(text, /còn nợ 20\.000đ/);
+});
+
+test("yeu cau rut dang cho co tru no -> hien W, so no se tru va so se chuyen; khong nhac no 2 lan", () => {
+  const html = render({
+    availableBalance: 0,
+    debtRemaining: 40_000,
+    debts: [{ orderId: "C-PAID", remaining: 40_000 }],
+    pendingWithdrawal: withdrawal({ amount: 60_000, debtApplied: 40_000 }),
+    entries: [entry({ status: "confirmed" })],
+  });
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /Yêu cầu rút 100\.000đ đang chờ xử lý/);
+  assert.match(text, /trừ 40\.000đ nợ hoàn trả và chuyển cho bạn 60\.000đ/);
+  assert.doesNotMatch(text, /sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau/, "no da nam trong yeu cau dang cho");
+});
+
+test("vua tu dong tru no -> trang noi ro khong co tien chuyen khoan", () => {
+  const html = render({
+    availableBalance: 0,
+    debtRemaining: 20_000,
+    debts: [{ orderId: "C-PAID", remaining: 20_000 }],
+    settledWithdrawal: withdrawal({ amount: 0, debtApplied: 30_000, status: "paid" }),
+    entries: [entry({ status: "paid" })],
+  });
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /Đã dùng 30\.000đ số dư khả dụng để trừ nợ hoàn trả/);
+  assert.match(text, /Hiện bạn đang nợ 20\.000đ/);
 });
 
 // BUG THAT thu HAI cung kieu (2026-10-08, phat hien khi xem trang that): tien DANG GIU la tien user
@@ -308,72 +382,6 @@ test("so con thieu TRU CA tien dang giam, khong noi thua", () => {
     entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
   });
   assert.match(html, /Tích luỹ thêm 17\.000/);
-});
-
-// ---------------------------------------------------------------------------
-// BUG THAT thu BA cung ho "goi y rut tien khong tinh het nguon tien" (2026-10-08,
-// phat hien khi tu dong vai nguoi dung di het cac case voi so lieu that cua
-// Pham Minh Khue 02): ca 3 nhanh deu cong input.availableBalance (DA BI FLOOR ve
-// 0 boi Math.max(0, gross-debt)) thay vi hieu so THO - khi no > gross, cong thuc
-// mat han phan "con thieu bao nhieu de bu het no".
-// ---------------------------------------------------------------------------
-
-// So lieu THAT cua Khue 02: gross 57.024d, no 85.536d, nguong 20.000d. Cong thuc
-// cu noi "Tich luy them 20.000d" - sai, vi co them dung 20.000d gross thi Kha
-// dung van la max(0, 77.024-85.536) = 0d. So dung la 48.512d (= bu 28.512d
-// con thieu so voi no, CONG them 20.000d nguong).
-test("no > gross: so con thieu PHAI bu ca phan vuot cua no, khong chi ngưỡng", () => {
-  const html = render({
-    availableBalance: 0, // max(0, 57_024 - 85_536)
-    grossAvailableBalance: 57_024,
-    debtRemaining: 85_536,
-    entries: [entry({ status: "confirmed" })],
-  });
-  assert.match(html, /Tích luỹ thêm 48\.512đ/);
-  assert.doesNotMatch(html, /Tích luỹ thêm 20\.000đ/, "day la so SAI da gap that tren production");
-});
-
-// Nhanh "dang bi giam" cung dinh cung bug: gross 10.000 - no 50.000 = -40.000 (am).
-// Du held 30.000 co ve du (0+30.000=30.000>=20.000 theo cong thuc CU), nhung thuc
-// te sau khi don giam mo khoa, gross moi = 40.000, Kha dung moi = max(0,40.000-50.000)
-// = 0d - VAN KHONG DU. Cong thuc cu se noi SAI "khong can mua them gi".
-test("no > gross: nhanh 'dang bi giam' khong duoc hua suong khi held cong vao van chua du", () => {
-  const html = render({
-    availableBalance: 0, // max(0, 10_000 - 50_000)
-    grossAvailableBalance: 10_000,
-    debtRemaining: 50_000,
-    heldBalance: 30_000,
-    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
-    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
-  });
-  assert.doesNotMatch(
-    html,
-    /không cần mua thêm gì/,
-    "gross 10k + held 30k - no 50k = 0d, VAN chua du - khong duoc hua la du roi"
-  );
-  // 20.000 (nguong) - (10.000 + 30.000 - 50.000) = 20.000 - (-10.000) = 30.000
-  assert.match(html, /Tích luỹ thêm 30\.000đ/);
-});
-
-// Nhanh "cho Shopee xac nhan" cung dinh cung bug: gross 5.000 - no 30.000 = -25.000.
-// Pending 40.000 co ve du theo cong thuc CU (0+40.000=40.000>=20.000), nhung thuc te
-// sau khi pending duoc duyet, gross moi = 45.000, Kha dung moi = max(0,45.000-30.000)
-// = 15.000d - VAN CHUA DU 20.000d nguong. Cong thuc cu se hua SAI "duyet xong la rut
-// duoc ngay".
-test("no > gross: nhanh 'cho Shopee xac nhan' khong duoc hua suong khi pending cong vao van chua du", () => {
-  const html = render({
-    availableBalance: 0, // max(0, 5_000 - 30_000)
-    grossAvailableBalance: 5_000,
-    debtRemaining: 30_000,
-    entries: [entry({ status: "pending", userShareAmount: 40_000 })],
-  });
-  assert.doesNotMatch(
-    html,
-    /là bạn rút được ngay/,
-    "gross 5k + pending 40k - no 30k = 15k, VAN chua du 20k nguong"
-  );
-  // 20.000 - (5.000 + 40.000 - 30.000) = 20.000 - 15.000 = 5.000
-  assert.match(html, /Tích luỹ thêm 5\.000đ/);
 });
 
 // Khong no (debtRemaining=0): cong thuc moi phai TRUNG het voi hanh vi cu, khong
