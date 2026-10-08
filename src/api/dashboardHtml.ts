@@ -1,6 +1,7 @@
 import { getMerchantConfig } from "../core/merchants.js";
 import type { CommissionEntry, Platform, WithdrawalRequest } from "../core/types.js";
 import { VIETNAM_BANKS } from "../core/vietnamBanks.js";
+import { formatVnDateDdMm } from "../core/vietnamDate.js";
 import { confirmOnSubmit, copyButton, escapeHtml, formatDateTime, formatVnd, statusBadge } from "./htmlHelpers.js";
 
 /**
@@ -174,6 +175,9 @@ function pageShell(title: string, body: string): string {
   .stat.warning { --tone: var(--warning); }
   .stat.info { --tone: var(--info); }
   .stat.success { --tone: var(--success); }
+  .stat.danger { --tone: var(--danger); }
+  /* Dong phu duoi con so - giai thich ngay mo khoa / li do bi tru, chu nho va mo hon gia tri. */
+  .stat .hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3125rem; line-height: 1.45; }
   .stat.accent {
     border: 1.5px solid color-mix(in oklch, var(--accent) 85%, white);
     box-shadow: 0 0 0 1px oklch(0.76 0.16 310 / 0.25), 0 0 22px oklch(0.7 0.2 310 / 0.45), inset 0 0 18px oklch(0.7 0.2 310 / 0.18);
@@ -188,6 +192,7 @@ function pageShell(title: string, body: string): string {
   .merchant svg { width: 14px; height: 14px; flex-shrink: 0; }
   .order-card-product { color: var(--text); font-size: 0.9375rem; font-weight: 500; line-height: 1.45; margin: 0 0 1.125rem; }
   .cancel-reason { color: var(--danger); font-size: 0.8125rem; margin-top: 0.875rem; }
+  .debt-note { color: var(--warning); font-size: 0.875rem; margin: 0 0 1rem; line-height: 1.5; }
   /* 4 cot tren man rong, 2 cot duoi 560px. Duong ke mo GIUA cac cot (khong bao quanh) de doc
      ngang "Gia tri don | Hoa hong" nhu 1 cap doi chieu - padding-left chi cho o khong dung dau hang. */
   .order-stats { display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 0.875rem; }
@@ -329,9 +334,33 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   http: "HTTP",
 };
 
+/**
+ * Dong giai thich duoi so "Dang giu": ngay mo khoa cua TUNG don, khong gop thanh 1 ngay chung - moi
+ * don co moc giao hang rieng nen gop lai la noi sai voi don mo som.
+ */
+function heldUnlockHint(heldEntries: CommissionEntry[]): string {
+  const days = heldEntries
+    .map((e) => e.availableFrom)
+    .filter((d): d is string => d !== null)
+    // T12:00:00Z de khong bi lech ngay khi format lai theo gio VN (+07)
+    .map((d) => formatVnDateDdMm(new Date(`${d}T12:00:00Z`)));
+  if (days.length === 0) return "";
+  const unique = [...new Set(days)];
+  return unique.length === 1 ? `mở khoá ${unique[0]}` : `mở khoá: ${unique.join(" · ")}`;
+}
+
 export function renderDashboardPage(input: {
   entries: CommissionEntry[];
+  /** DA tru no hoan tra, floor 0 - chinh so user rut duoc. */
   availableBalance: number;
+  /** Truoc khi tru no - de giai thich con so da bi tru trong form rut (2026-10-08). */
+  grossAvailableBalance: number;
+  /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
+  heldBalance: number;
+  /** Tung don dang bi giam - moi don hien ngay mo khoa cua CHINH no. */
+  heldEntries: CommissionEntry[];
+  /** No hoan tra con phai tru. */
+  debtRemaining: number;
   pendingBalance: number;
   paidTotal: number;
   pendingWithdrawal: WithdrawalRequest | null;
@@ -411,10 +440,17 @@ export function renderDashboardPage(input: {
     .filter((e) => e.status === "pending")
     .reduce((sum, e) => sum + e.userShareAmount, 0);
 
+  // Phai noi ro TRUOC KHI user bam gui, neu khong ho gui yeu cau roi moi biet nhan it hon so da thay.
+  const debtDeductionNote =
+    input.debtRemaining > 0
+      ? `<p class="debt-note">Số dư ${formatVnd(input.grossAvailableBalance)} trừ ${formatVnd(input.debtRemaining)} đã hoàn trả — bạn sẽ nhận <strong>${formatVnd(input.availableBalance)}</strong>.</p>`
+      : "";
+
   const withdrawBlock = input.pendingWithdrawal
     ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}). Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
     : input.availableBalance >= input.thresholdVnd
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(`Xác nhận gửi yêu cầu rút toàn bộ ${formatVnd(input.availableBalance)}?`)}>
+  ${debtDeductionNote}
   <div class="form-field">
     <label for="bankName">Ngân hàng / Ví điện tử</label>
     <select id="bankName" name="bankName" required>
@@ -465,12 +501,32 @@ export function renderDashboardPage(input: {
     ? `<p class="warning-note">⚠️ Đơn đang "Chờ xác nhận" có thể bị huỷ nếu không đạt yêu cầu đối soát của sàn.</p>`
     : "";
 
+  // THU TU va CACH GOI TEN la rang buoc, khong phai tham my: availableBalance DA la so net (da tru
+  // no), nen neu dat dong no DUOI no va goi la "Dang tru lai" thi user doc ra "32.000d nay con bi tru
+  // 40.000d nua" - hieu sai theo huong TE HON thuc te. Vi vay dong no nam TREN Kha dung, mang dau tru,
+  // ten o the DA HOAN THANH, va Kha dung co chu thich "da tru o tren".
+  //
+  // Ca 2 dong CHI hien khi > 0: hien "0d" cho user chua bao gio bi giam/bi tru la tao lo lang ve mot
+  // luat khong ap dung cho ho.
+  const heldRow =
+    input.heldBalance > 0
+      ? `<div class="stat info"><div class="label">Đang giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldUnlockHint(input.heldEntries)}</div></div>`
+      : "";
+  const debtRow =
+    input.debtRemaining > 0
+      ? `<div class="stat danger"><div class="label">Đã trừ hoàn trả</div><div class="value">−${formatVnd(input.debtRemaining)}</div><div class="hint">đơn đã trả hàng, trừ dần vào các đơn tới</div></div>`
+      : "";
+  const availableHint =
+    input.debtRemaining > 0 ? `<div class="hint">đã trừ hoàn trả ở trên</div>` : "";
+
   const body = `<h1>💰 Hoa hồng của bạn</h1>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
 <div class="totals">
-  <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div></div>
   <div class="stat warning"><div class="label">Chờ xác nhận</div><div class="value">${formatVnd(pendingConfirmationTotal)}</div></div>
+  ${heldRow}
+  ${debtRow}
+  <div class="stat accent"><div class="label">Khả dụng</div><div class="value">${formatVnd(input.availableBalance)}</div>${availableHint}</div>
   <div class="stat info"><div class="label">Đang chờ rút</div><div class="value">${formatVnd(input.pendingBalance)}</div></div>
   <div class="stat success"><div class="label">Đã nhận</div><div class="value">${formatVnd(input.paidTotal)}</div></div>
 </div>

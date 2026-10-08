@@ -52,10 +52,18 @@ function entry(overrides: Partial<CommissionEntry>): CommissionEntry {
 function render(input: {
   availableBalance: number;
   entries: CommissionEntry[];
+  grossAvailableBalance?: number;
+  heldBalance?: number;
+  heldEntries?: CommissionEntry[];
+  debtRemaining?: number;
 }): string {
   return renderDashboardPage({
     entries: input.entries,
     availableBalance: input.availableBalance,
+    grossAvailableBalance: input.grossAvailableBalance ?? input.availableBalance,
+    heldBalance: input.heldBalance ?? 0,
+    heldEntries: input.heldEntries ?? [],
+    debtRemaining: input.debtRemaining ?? 0,
     pendingBalance: 0,
     paidTotal: 0,
     pendingWithdrawal: null,
@@ -127,4 +135,69 @@ test("dashboard: du kha dung -> van hien form rut tien nhu cu", () => {
 
   assert.ok(html.includes("Yêu cầu rút 25.000đ"));
   assert.ok(!html.includes("Tích luỹ thêm"));
+});
+
+// ---------------------------------------------------------------------------
+// Dong "Dang giu" va "Da tru hoan tra" (2026-10-08)
+// ---------------------------------------------------------------------------
+
+test("dashboard: khong co don bi giam / khong no -> KHONG hien 2 dong moi", () => {
+  const html = render({ availableBalance: 50_000, entries: [entry({ status: "confirmed" })] });
+  assert.doesNotMatch(html, /Đang giữ/, 'hien "0d" cho user chua bao gio bi giam la tao lo lang vo ich');
+  assert.doesNotMatch(html, /Đã trừ hoàn trả/);
+});
+
+test("dashboard: co don bi giam -> hien 'Dang giu' + ngay mo khoa cua don do", () => {
+  const html = render({
+    availableBalance: 0,
+    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    heldBalance: 150_000,
+    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+  });
+  assert.match(html, /Đang giữ/);
+  assert.match(html, /150\.000/);
+  assert.match(html, /mở khoá 15\/10/);
+});
+
+test("dashboard: nhieu don bi giam ngay khac nhau -> liet ke TUNG ngay, khong gop", () => {
+  const html = render({
+    availableBalance: 0,
+    entries: [],
+    heldBalance: 300_000,
+    heldEntries: [
+      entry({ status: "confirmed", availableFrom: "2026-10-12" }),
+      entry({ status: "confirmed", availableFrom: "2026-10-15" }),
+    ],
+  });
+  assert.match(html, /12\/10/);
+  assert.match(html, /15\/10/);
+});
+
+// THU TU la rang buoc: Kha dung DA la so net, nen dat dong no DUOI no va goi "Dang tru lai" se bi doc
+// thanh "so nay con bi tru nua" - hieu sai theo huong TE HON thuc te.
+test("dashboard: dong no nam TREN Kha dung va mang dau tru", () => {
+  const html = render({
+    availableBalance: 32_000,
+    grossAvailableBalance: 72_000,
+    debtRemaining: 40_000,
+    entries: [entry({ status: "confirmed" })],
+  });
+  const posDebt = html.indexOf("Đã trừ hoàn trả");
+  const posAvail = html.indexOf("Khả dụng");
+  assert.ok(posDebt > -1, "phai hien dong no");
+  assert.ok(posDebt < posAvail, "dong no phai nam TREN Kha dung");
+  assert.match(html, /−40\.000/, "phai mang dau tru");
+  assert.match(html, /đã trừ hoàn trả ở trên/, "Kha dung phai noi ro la so da tru");
+});
+
+test("form rut hien so bi tru TRUOC KHI user bam gui", () => {
+  const html = render({
+    availableBalance: 60_000,
+    grossAvailableBalance: 100_000,
+    debtRemaining: 40_000,
+    entries: [entry({ status: "confirmed" })],
+  });
+  assert.match(html, /100\.000/, "so du goc");
+  assert.match(html, /40\.000/, "so bi tru");
+  assert.match(html, /bạn sẽ nhận/);
 });
