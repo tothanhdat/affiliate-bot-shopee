@@ -22,6 +22,7 @@ import type {
   ImportActionType,
   FaqMuteReason,
   ImportHistoryEntry,
+  PayoutDebt,
   Platform,
   StatusTransition,
   WithdrawalRequest,
@@ -277,6 +278,29 @@ export class LedgerStore {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (platform, user_id)
       );
+
+      -- Bang MOI hoan toan (2026-10-08) nen khong can migration, cung ly do
+      -- user_commission_overrides/zalo_groups.
+      --
+      -- UNIQUE(merchant, order_id) la chot SONG CON, khong phai toi uu: bao cao Shopee liet ke LAI ca
+      -- lich su o moi lan import, nen don huy hom qua se lai hien "Da huy" hom nay - khong co no thi
+      -- no nhan doi moi ngay. Day dung cai bay ma order_status_events da phai dung INSERT OR IGNORE
+      -- de tranh.
+      CREATE TABLE IF NOT EXISTS payout_debts (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        merchant TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        remaining INTEGER NOT NULL,
+        note TEXT,
+        settled_at TEXT,
+        written_off_at TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_debts_order ON payout_debts(merchant, order_id);
+      CREATE INDEX IF NOT EXISTS idx_payout_debts_user ON payout_debts(platform, user_id);
 
       CREATE TABLE IF NOT EXISTS welcome_messages (
         platform TEXT NOT NULL,
@@ -1463,6 +1487,92 @@ export class LedgerStore {
    * await xen giua) - DatabaseSync dong bo + Node don luong nen khong co race condition o tang JS.
    * BEGIN/COMMIT o day la de an toan khi crash giua chung, khong phai de chong concurrency.
    */
+  /**
+   * Ghi 1 khoan no do khach tra hang SAU KHI tien da ra khoi tay. Tra null khi don nay DA co no.
+   *
+   * ON CONFLICT DO NOTHING la chot song con, khong phai toi uu: bao cao Shopee liet ke LAI ca lich su
+   * o moi lan import, nen don huy hom qua se lai hien "Da huy" hom nay - khong co no thi no nhan doi
+   * moi ngay. Day dung cai bay ma order_status_events da phai dung INSERT OR IGNORE de tranh.
+   */
+  recordPayoutDebt(input: {
+    platform: Platform;
+    userId: string;
+    merchant: MerchantId;
+    orderId: string;
+    amount: number;
+    note?: string;
+  }): PayoutDebt | null {
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `INSERT INTO payout_debts
+          (id, created_at, platform, user_id, merchant, order_id, amount, remaining, note, settled_at, written_off_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+         ON CONFLICT(merchant, order_id) DO NOTHING`
+      )
+      .run(
+        id,
+        createdAt,
+        input.platform,
+        input.userId,
+        input.merchant,
+        input.orderId,
+        input.amount,
+        input.amount,
+        input.note ?? null
+      );
+    if (result.changes === 0) return null;
+    return this.getDebtByOrder(input.merchant, input.orderId);
+  }
+
+  getDebtByOrder(merchant: MerchantId, orderId: string): PayoutDebt | null {
+    const row = this.db
+      .prepare(`SELECT * FROM payout_debts WHERE merchant = ? AND order_id = ?`)
+      .get(merchant, orderId);
+    return row ? rowToPayoutDebt(row) : null;
+  }
+
+  /**
+   * No con phai tru: chua settled VA chua bi admin xoa. Sap theo no CU truoc - do cung la thu tu tru
+   * no o markWithdrawalPaid().
+   */
+  listOutstandingDebts(platform: Platform, userId: string): PayoutDebt[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM payout_debts
+         WHERE platform = ? AND user_id = ? AND settled_at IS NULL AND written_off_at IS NULL
+         ORDER BY created_at ASC, rowid ASC`
+      )
+      .all(platform, userId);
+    return rows.map(rowToPayoutDebt);
+  }
+
+  getOutstandingDebtTotal(platform: Platform, userId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(remaining), 0) AS total FROM payout_debts
+         WHERE platform = ? AND user_id = ? AND settled_at IS NULL AND written_off_at IS NULL`
+      )
+      .get(platform, userId) as { total: number };
+    return row.total;
+  }
+
+  /** Admin xoa no. GIU dong lai (chi dien written_off_at) de con doi soat duoc. */
+  writeOffDebt(id: string): void {
+    this.db
+      .prepare(`UPDATE payout_debts SET written_off_at = ? WHERE id = ? AND written_off_at IS NULL`)
+      .run(new Date().toISOString(), id);
+  }
+
+  /**
+   * Xoa HAN dong no. Chi dung khi don hoa ra khong he mat tien (admin huy yeu cau rut truoc khi
+   * chuyen khoan) - khac writeOffDebt() la "mat tien thuc nhung thoi khong doi".
+   */
+  deleteDebtByOrder(merchant: MerchantId, orderId: string): void {
+    this.db.prepare(`DELETE FROM payout_debts WHERE merchant = ? AND order_id = ?`).run(merchant, orderId);
+  }
+
   requestWithdrawal(
     platform: Platform,
     userId: string,
@@ -2003,6 +2113,23 @@ function effectivePercents(existing: CommissionEntry, fallback: RatePercents): R
     taxPercent: existing.taxPercent ?? fallback.taxPercent,
     platformFeePercent: existing.platformFeePercent ?? fallback.platformFeePercent,
     userSharePercent: existing.userSharePercent ?? fallback.userSharePercent,
+  };
+}
+
+function rowToPayoutDebt(row: unknown): PayoutDebt {
+  const r = row as Record<string, unknown>;
+  return {
+    id: r.id as string,
+    createdAt: r.created_at as string,
+    platform: r.platform as Platform,
+    userId: r.user_id as string,
+    merchant: r.merchant as MerchantId,
+    orderId: r.order_id as string,
+    amount: r.amount as number,
+    remaining: r.remaining as number,
+    note: (r.note as string | null) ?? null,
+    settledAt: (r.settled_at as string | null) ?? null,
+    writtenOffAt: (r.written_off_at as string | null) ?? null,
   };
 }
 

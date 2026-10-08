@@ -180,6 +180,36 @@ export interface WithdrawalRequest {
   bankAccountHolder: string;
 }
 
+/**
+ * 1 khoan tien da tra cho user roi Shopee thu lai vi khach tra hang (2026-10-08). Tru DAN vao Kha
+ * dung tuong lai, KHONG bao gio ep user chuyen tien ra.
+ *
+ * Chi sinh khi tien DA ra khoi tay (entry 'paid', hoac entry dang nam trong 1 yeu cau rut cho duyet
+ * - luc do admin co the da chuyen khoan ma chua bam "da tra"). Don bi huy ma tien con trong tay thi
+ * duoc reverse thang, khong sinh no - xem bang quyet dinh trong shopeeReportImport.ts.
+ *
+ * `remaining` CHI giam o markWithdrawalPaid() - nho vay cancelWithdrawal() khong phai hoan no lai.
+ */
+export interface PayoutDebt {
+  id: string;
+  createdAt: string;
+  platform: Platform;
+  userId: string;
+  merchant: MerchantId;
+  orderId: string;
+  /** So tien user da nhan cua don bi huy (= user_share_amount cua entry). */
+  amount: number;
+  /** Con phai tru. Ve 0 thi settledAt duoc dien. */
+  remaining: number;
+  note: string | null;
+  settledAt: string | null;
+  /**
+   * Admin xoa no (user bo di, no treo vinh vien lam meo moi con so tong). Dong van duoc GIU LAI de
+   * con doi soat - khac deleteDebtByOrder() la xoa han vi hoa ra khong he mat tien.
+   */
+  writtenOffAt: string | null;
+}
+
 export interface DashboardToken {
   token: string;
   platform: Platform;
