@@ -309,3 +309,79 @@ test("so con thieu TRU CA tien dang giam, khong noi thua", () => {
   });
   assert.match(html, /Tích luỹ thêm 17\.000/);
 });
+
+// ---------------------------------------------------------------------------
+// BUG THAT thu BA cung ho "goi y rut tien khong tinh het nguon tien" (2026-10-08,
+// phat hien khi tu dong vai nguoi dung di het cac case voi so lieu that cua
+// Pham Minh Khue 02): ca 3 nhanh deu cong input.availableBalance (DA BI FLOOR ve
+// 0 boi Math.max(0, gross-debt)) thay vi hieu so THO - khi no > gross, cong thuc
+// mat han phan "con thieu bao nhieu de bu het no".
+// ---------------------------------------------------------------------------
+
+// So lieu THAT cua Khue 02: gross 57.024d, no 85.536d, nguong 20.000d. Cong thuc
+// cu noi "Tich luy them 20.000d" - sai, vi co them dung 20.000d gross thi Kha
+// dung van la max(0, 77.024-85.536) = 0d. So dung la 48.512d (= bu 28.512d
+// con thieu so voi no, CONG them 20.000d nguong).
+test("no > gross: so con thieu PHAI bu ca phan vuot cua no, khong chi ngưỡng", () => {
+  const html = render({
+    availableBalance: 0, // max(0, 57_024 - 85_536)
+    grossAvailableBalance: 57_024,
+    debtRemaining: 85_536,
+    entries: [entry({ status: "confirmed" })],
+  });
+  assert.match(html, /Tích luỹ thêm 48\.512đ/);
+  assert.doesNotMatch(html, /Tích luỹ thêm 20\.000đ/, "day la so SAI da gap that tren production");
+});
+
+// Nhanh "dang bi giam" cung dinh cung bug: gross 10.000 - no 50.000 = -40.000 (am).
+// Du held 30.000 co ve du (0+30.000=30.000>=20.000 theo cong thuc CU), nhung thuc
+// te sau khi don giam mo khoa, gross moi = 40.000, Kha dung moi = max(0,40.000-50.000)
+// = 0d - VAN KHONG DU. Cong thuc cu se noi SAI "khong can mua them gi".
+test("no > gross: nhanh 'dang bi giam' khong duoc hua suong khi held cong vao van chua du", () => {
+  const html = render({
+    availableBalance: 0, // max(0, 10_000 - 50_000)
+    grossAvailableBalance: 10_000,
+    debtRemaining: 50_000,
+    heldBalance: 30_000,
+    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+  });
+  assert.doesNotMatch(
+    html,
+    /không cần mua thêm gì/,
+    "gross 10k + held 30k - no 50k = 0d, VAN chua du - khong duoc hua la du roi"
+  );
+  // 20.000 (nguong) - (10.000 + 30.000 - 50.000) = 20.000 - (-10.000) = 30.000
+  assert.match(html, /Tích luỹ thêm 30\.000đ/);
+});
+
+// Nhanh "cho Shopee xac nhan" cung dinh cung bug: gross 5.000 - no 30.000 = -25.000.
+// Pending 40.000 co ve du theo cong thuc CU (0+40.000=40.000>=20.000), nhung thuc te
+// sau khi pending duoc duyet, gross moi = 45.000, Kha dung moi = max(0,45.000-30.000)
+// = 15.000d - VAN CHUA DU 20.000d nguong. Cong thuc cu se hua SAI "duyet xong la rut
+// duoc ngay".
+test("no > gross: nhanh 'cho Shopee xac nhan' khong duoc hua suong khi pending cong vao van chua du", () => {
+  const html = render({
+    availableBalance: 0, // max(0, 5_000 - 30_000)
+    grossAvailableBalance: 5_000,
+    debtRemaining: 30_000,
+    entries: [entry({ status: "pending", userShareAmount: 40_000 })],
+  });
+  assert.doesNotMatch(
+    html,
+    /là bạn rút được ngay/,
+    "gross 5k + pending 40k - no 30k = 15k, VAN chua du 20k nguong"
+  );
+  // 20.000 - (5.000 + 40.000 - 30.000) = 20.000 - 15.000 = 5.000
+  assert.match(html, /Tích luỹ thêm 5\.000đ/);
+});
+
+// Khong no (debtRemaining=0): cong thuc moi phai TRUNG het voi hanh vi cu, khong
+// duoc lam vo cac case KHONG co no da dung tu truoc.
+test("khong no: cong thuc moi khong lam doi hanh vi cac case cu", () => {
+  const html = render({
+    availableBalance: 15_000,
+    entries: [entry({ status: "pending", userShareAmount: 3_000 })],
+  });
+  assert.match(html, /Tích luỹ thêm 2\.000đ/); // 20.000 - 15.000 - 3.000
+});

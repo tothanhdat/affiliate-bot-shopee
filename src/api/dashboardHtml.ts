@@ -443,6 +443,12 @@ export function renderDashboardPage(input: {
     .filter((e) => e.status === "pending")
     .reduce((sum, e) => sum + e.userShareAmount, 0);
 
+  // Hieu so THO gross - no (KHONG floor ve 0 nhu availableBalance) - dung chung cho ca 3 nhanh
+  // "goi y rut tien" ben duoi. Khi no > gross, so nay AM; cong them heldBalance/pendingConfirmationTotal
+  // van cho ra dung so "con thieu bao nhieu tinh ca phan no chua bu het", thay vi mat han phan no
+  // mot khi availableBalance (da floor) ve 0 (xem bug that o duoi).
+  const grossMinusDebt = input.grossAvailableBalance - input.debtRemaining;
+
   // Phai noi ro TRUOC KHI user bam gui, neu khong ho gui yeu cau roi moi biet nhan it hon so da thay.
   const debtDeductionNote =
     input.debtRemaining > 0
@@ -486,7 +492,19 @@ export function renderDashboardPage(input: {
         // khong con phai mua them gi ca. Vi vay phai xet CA BA tui tien, va noi dung ly do dang cho:
         //   - bi giam     -> cho toi NGAY MO KHOA
         //   - cho xac nhan -> cho Shopee duyet
-        input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
+        // (2026-10-08, BUG THAT thu BA cung ho - phat hien khi tu dong vai nguoi dung di het cac
+        // case). Ca 3 nhanh TRUOC day deu cong input.availableBalance (da bi floor ve 0 boi
+        // Math.max(0, gross-debt)) thay vi dung HIEU SO THO gross-debt. Khi no > gross, availableBalance
+        // luon la 0 nen cong thuc mat han phan "con thieu bao nhieu de bu het no" - vi du that: Khue 02
+        // co gross 57.024d, no 85.536d, nguong 20.000d -> cong thuc cu noi "Tich luy them 20.000d nua",
+        // nhung du co them dung 20.000d gross thi Kha dung van la max(0, 77.024-85.536) = 0d, LOI HUA
+        // SAI mat 28.512d. So dung phai la ngay het THEM 48.512d (= bu 28.512d con thieu so voi no,
+        // CONG them 20.000d nguong).
+        //
+        // Sua bang 1 bien HIEU SO THO duy nhat (KHONG floor) de ca 3 nhanh dung chung 1 nguon su that -
+        // khi debtRemaining = 0 thi bien nay trung het voi cong thuc cu (gross === availableBalance luc
+        // khong no), nen khong doi hanh vi cua moi case KHONG co no da dung tu truoc.
+        grossMinusDebt + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
         ? notice(
             // (2026-10-08, yeu cau truc tiep cua user) KHONG con cau "xem ngay mo khoa o dau" -
             // ngay mo khoa da hien san duoi badge cua TUNG don trong phan chi tiet ben duoi, khong
@@ -494,13 +512,13 @@ export function renderDashboardPage(input: {
             `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày. Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
             "i"
           )
-        : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
+        : grossMinusDebt + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
         ? notice(
             `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng" (tối thiểu ${formatVnd(input.thresholdVnd)}) là bạn rút được ngay.`,
             "i"
           )
         : notice(
-            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - input.availableBalance - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
+            `Tích luỹ thêm ${formatVnd(input.thresholdVnd - grossMinusDebt - pendingConfirmationTotal - input.heldBalance)} nữa để đủ điều kiện rút tiền (tối thiểu ${formatVnd(input.thresholdVnd)}).`
           );
 
   const platformLabel = PLATFORM_LABELS[input.platform];
