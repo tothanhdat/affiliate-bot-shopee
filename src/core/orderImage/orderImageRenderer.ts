@@ -71,6 +71,11 @@ const CARD_GAP = CARD.xs[1] - CARD.xs[0] - CARD.w;
 const OVERFLOW_Y = 410;
 const BAR = { x: 277, y: 434, w: 470, h: 56 };
 const BAL = { y: 500, h: 36 };
+/**
+ * Dong "Trong do X mo khoa tu dd/mm" (2026-10-08) - nam DUOI pill so du, chi ve khi lo co don bi giam.
+ * BAL ket thuc o y=536 trong he thiet ke 1024x572, nen y=540 vua con cho ma khong cham day anh.
+ */
+const HELD = { y: 540, h: 26 };
 const BAG_IN_BAR = { w: 25, h: 34 };
 const BAG_IN_BALANCE = { w: 17, h: 23 };
 
@@ -156,6 +161,44 @@ function cardNode(name: string, amountText: string, index: number, left: number)
           marginTop: u(7),
         },
         amountText
+      ),
+    ]
+  );
+}
+
+/**
+ * Dong giai thich phan tien trong lo dang bi giam. Co NEN RIENG chu khong de chu tran tren nen cam -
+ * da gap that voi pill so du: chu mau sang tren nen cam sang gan nhu khong doc duoc. Nen nay la de
+ * DOC DUOC, khong phai trang tri.
+ */
+function heldNode(heldLine: string): SatoriNode {
+  return h(
+    {
+      position: "absolute",
+      left: 0,
+      top: u(HELD.y),
+      width: ORDER_IMAGE_WIDTH,
+      height: u(HELD.h),
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    [
+      h(
+        {
+          display: "flex",
+          alignItems: "center",
+          height: u(HELD.h),
+          padding: `0 ${u(16)}px`,
+          borderRadius: u(HELD.h / 2),
+          backgroundColor: "#fdfaf2",
+          border: `${Math.max(1, u(1))}px solid #f2d9ae`,
+          fontFamily: "M",
+          fontWeight: 700,
+          fontSize: u(15),
+          color: "#7a5a2e",
+        },
+        heldLine
       ),
     ]
   );
@@ -264,6 +307,9 @@ function buildTree(view: OrderImageView): SatoriNode {
 
     balanceNode(view),
   ];
+
+  // Lo khong co don bi giam -> khong ve gi, anh y nhu ban cu.
+  if (view.heldLine) children.push(heldNode(view.heldLine));
 
   if (view.extraCount > 0) {
     children.push(

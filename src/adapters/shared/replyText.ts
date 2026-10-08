@@ -163,7 +163,7 @@ export function formatDashboardLinkReply(template: string, dashboardUrl: string,
  * nhan) fallback ve "Đơn <orderId>" de khong hien "null" tho trong tin nhan.
  */
 /** Default cho setting "orders_confirmed_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
-export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
+export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}{{heldLine}}\n\nXem chi tiết: {{dashboardUrl}}`;
 
 /**
  * Caption di kem ANH bao don ve (2026-10-05). Khac ORDERS_CONFIRMED_TEMPLATE_DEFAULT o cho anh
@@ -173,14 +173,30 @@ export const ORDERS_CONFIRMED_TEMPLATE_DEFAULT = `{{summaryLine}}\n\nXem chi ti�
 export const ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT =
   `Xem chi tiết từng đơn ở dashboard của bạn nha: {{dashboardUrl}}`;
 
-export function formatOrdersConfirmedCaption(template: string, dashboardUrl: string): string {
-  return renderTemplate(template, { dashboardUrl });
+/**
+ * Cau giai thich phan tien trong lo dang bi giam (2026-10-08). MOT SLOT, hai trang thai loai tru
+ * nhau: co don bi giam -> cau nay; khong co -> chuoi RONG, tin nhan y nhu cu.
+ *
+ * Can thiet vi tin nhan in tong cua lo CANH so du kha dung: don bi giam vao tong nhung khong vao so
+ * du -> user doi chieu thay 2 so khong khop (giong het bay tren ANH bao don ve).
+ */
+function heldLineText(held: { amountVnd: number; unlockDayText: string } | null): string {
+  return held ? `\n(Trong đó ${formatVnd(held.amountVnd)} mở khoá từ ${held.unlockDayText})` : "";
+}
+
+export function formatOrdersConfirmedCaption(
+  template: string,
+  dashboardUrl: string,
+  held: { amountVnd: number; unlockDayText: string } | null = null
+): string {
+  return renderTemplate(template, { dashboardUrl, heldLine: heldLineText(held) });
 }
 
 export function formatOrdersConfirmedReply(
   template: string,
   items: ConfirmedOrderItem[],
-  dashboardUrl: string
+  dashboardUrl: string,
+  held: { amountVnd: number; unlockDayText: string } | null = null
 ): string {
   const total = items.reduce((sum, item) => sum + item.userShareAmount, 0);
   const label = (item: ConfirmedOrderItem) => (item.productName ? item.productName : `Đơn ${item.orderId}`);
@@ -192,7 +208,7 @@ export function formatOrdersConfirmedReply(
         `${items.map((item) => `${label(item)}: ${formatVnd(item.userShareAmount)}`).join(" / ")}\n` +
         `Tổng cộng: ${formatVnd(total)} 💰`;
 
-  return renderTemplate(template, { summaryLine, dashboardUrl });
+  return renderTemplate(template, { summaryLine, dashboardUrl, heldLine: heldLineText(held) });
 }
 
 /**

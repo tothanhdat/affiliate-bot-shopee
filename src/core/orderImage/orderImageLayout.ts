@@ -12,6 +12,13 @@ export interface OrderImageInput {
   /** So du kha dung, PHAI doc SAU khi da ghi nhan cac don moi vao ledger. */
   availableVnd: number;
   withdrawalThresholdVnd: number;
+  /**
+   * Phan tien TRONG LO NAY dang bi giam (2026-10-08, xem payoutHold.ts). 0 = lo khong co don nao bi
+   * giam -> anh y nhu cu, khong doi mot pixel.
+   */
+  heldVnd?: number;
+  /** Ngay mo khoa SOM NHAT trong lo, dang "dd/mm". null khi khong co don bi giam. */
+  heldUnlockDayText?: string | null;
 }
 
 export interface OrderImageCard {
@@ -30,6 +37,14 @@ export interface OrderImageView {
   canWithdraw: boolean;
   /** null khi da rut duoc - hai trang thai nay LOAI TRU nhau tren anh. */
   missingText: string | null;
+  /**
+   * Dong "Trong do X mo khoa tu dd/mm" - null khi lo khong co don bi giam.
+   *
+   * Vi sao PHAI co dong nay: anh in "Tong cong" cua lo CANH "So du kha dung". Don bi giam vao Tong
+   * cong nhung KHONG vao So du kha dung -> user soi dung mot tam anh thay hai so khong khop. Y het
+   * bay thu-tu-doc-so-du da ghi trong CLAUDE.md, chi khac nguyen nhan.
+   */
+  heldLine: string | null;
 }
 
 /**
@@ -63,5 +78,9 @@ export function buildOrderImageView(input: OrderImageInput): OrderImageView {
     availableText: formatVnd(availableVnd),
     canWithdraw,
     missingText: canWithdraw ? null : formatVnd(missingVnd),
+    heldLine:
+      (input.heldVnd ?? 0) > 0 && input.heldUnlockDayText
+        ? `Trong đó ${formatVnd(input.heldVnd ?? 0)} mở khoá từ ${input.heldUnlockDayText}`
+        : null,
   };
 }

@@ -81,3 +81,57 @@ test("khong lam thay doi mang items cua caller", () => {
     ["A", "B"]
   );
 });
+
+// ---------------------------------------------------------------------------
+// Dong "Trong do X mo khoa tu dd/mm" (2026-10-08)
+//
+// Anh in Tong cong cua lo CANH So du kha dung. Don bi giam vao Tong cong nhung KHONG vao So du kha
+// dung -> user soi dung mot tam anh thay 2 so khong khop.
+// ---------------------------------------------------------------------------
+
+test("lo KHONG co don bi giam -> heldLine null (anh y nhu cu)", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    availableVnd: 10_000,
+    withdrawalThresholdVnd: 20_000,
+  });
+  assert.equal(view.heldLine, null);
+});
+
+test("heldVnd = 0 -> van la null, khong hien 'Trong do 0d'", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    availableVnd: 10_000,
+    withdrawalThresholdVnd: 20_000,
+    heldVnd: 0,
+    heldUnlockDayText: "15/10",
+  });
+  assert.equal(view.heldLine, null);
+});
+
+test("lo co don bi giam -> heldLine noi ro so tien va ngay mo khoa", () => {
+  const view = buildOrderImageView({
+    items: [
+      { orderId: "BIG", productName: "May anh", userShareAmount: 150_000 },
+      { orderId: "SMALL", productName: "Ao thun", userShareAmount: 16_000 },
+    ],
+    availableVnd: 16_000,
+    withdrawalThresholdVnd: 20_000,
+    heldVnd: 150_000,
+    heldUnlockDayText: "15/10",
+  });
+  assert.equal(view.heldLine, "Trong đó 150.000đ mở khoá từ 15/10");
+  assert.equal(view.totalText, "166.000đ", "TONG van tinh tren TAT CA don");
+  assert.equal(view.availableText, "16.000đ", "so du KHONG gom don bi giam");
+});
+
+test("thieu ngay mo khoa -> khong bia dong giam", () => {
+  const view = buildOrderImageView({
+    items: [{ orderId: "A", productName: "San pham", userShareAmount: 150_000 }],
+    availableVnd: 0,
+    withdrawalThresholdVnd: 20_000,
+    heldVnd: 150_000,
+    heldUnlockDayText: null,
+  });
+  assert.equal(view.heldLine, null);
+});

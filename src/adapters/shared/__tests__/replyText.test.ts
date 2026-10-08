@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   renderTemplate,
+  formatOrdersConfirmedCaption,
+  ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
   formatWelcomeReply,
   formatSuccessReply,
   formatWithdrawalRequestedReply,
@@ -307,4 +309,40 @@ test("formatSuccessReply: khong biet (null, false) -> van la cau hen nhu cu", ()
 
   assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
   assert.doesNotMatch(result, /chưa bật hoa hồng/);
+});
+
+// MOT SLOT, hai trang thai loai tru nhau - giong {{commissionLine}}. Khong bao gio hien ca hai.
+test("formatOrdersConfirmedReply: khong co don bi giam -> {{heldLine}} thanh chuoi rong", () => {
+  const text = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [{ orderId: "A", productName: "San pham", userShareAmount: 10_000 }],
+    "https://bot.example.com/d/tok"
+  );
+  assert.doesNotMatch(text, /\{\{heldLine\}\}/, "placeholder phai duoc render, khong lot nguyen van");
+  assert.doesNotMatch(text, /mở khoá/);
+});
+
+test("formatOrdersConfirmedReply: co don bi giam -> them cau giai thich", () => {
+  const text = formatOrdersConfirmedReply(
+    ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
+    [
+      { orderId: "BIG", productName: "May anh", userShareAmount: 150_000 },
+      { orderId: "SMALL", productName: "Ao thun", userShareAmount: 16_000 },
+    ],
+    "https://bot.example.com/d/tok",
+    { amountVnd: 150_000, unlockDayText: "15/10" }
+  );
+  assert.match(text, /Trong đó 150\.000đ mở khoá từ 15\/10/);
+  assert.match(text, /Tổng cộng: 166\.000đ/, "tong van tinh tren TAT CA don");
+});
+
+test("formatOrdersConfirmedCaption: cung mot slot 2 trang thai", () => {
+  const plain = formatOrdersConfirmedCaption(ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT, "https://x/d/t");
+  assert.doesNotMatch(plain, /mở khoá/);
+  const withHeld = formatOrdersConfirmedCaption(
+    `{{dashboardUrl}}{{heldLine}}`,
+    "https://x/d/t",
+    { amountVnd: 150_000, unlockDayText: "15/10" }
+  );
+  assert.match(withHeld, /mở khoá từ 15\/10/);
 });

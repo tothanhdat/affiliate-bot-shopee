@@ -49,3 +49,22 @@ test("render loi thi van tra text du phong chu khong nem loi", async () => {
   assert.equal(n.text, "TEXT DU PHONG");
   assert.equal(n.image, undefined);
 });
+
+test("buildOrdersConfirmedNotification truyen heldVnd/heldUnlockDayText xuong view", async () => {
+  let seen: { heldLine: string | null } | null = null;
+  await buildOrdersConfirmedNotification({
+    items: [{ orderId: "A", productName: "May anh", userShareAmount: 150_000 }],
+    availableVnd: 0,
+    withdrawalThresholdVnd: 20_000,
+    heldVnd: 150_000,
+    heldUnlockDayText: "15/10",
+    fallbackText: "text",
+    captionText: "caption",
+    imageEnabled: true,
+    renderImpl: async (view) => {
+      seen = { heldLine: view.heldLine };
+      return { data: Buffer.from("x"), width: 10, height: 10 };
+    },
+  });
+  assert.equal(seen!.heldLine, "Trong đó 150.000đ mở khoá từ 15/10");
+});

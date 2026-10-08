@@ -14,6 +14,10 @@ export interface OrdersConfirmedNotificationParams {
   /** PHAI doc SAU khi da ghi nhan cac don moi vao ledger, khong thi anh bao thieu dung don vua ghi. */
   availableVnd: number;
   withdrawalThresholdVnd: number;
+  /** Phan tien TRONG LO NAY dang bi giam (2026-10-08) - 0 thi anh y nhu cu. */
+  heldVnd?: number;
+  /** Ngay mo khoa SOM NHAT trong lo, dang "dd/mm". */
+  heldUnlockDayText?: string | null;
   /** Tin van ban day du - dung khi khong gui duoc anh. */
   fallbackText: string;
   /** Caption ngan di kem anh. */
@@ -38,6 +42,8 @@ export async function buildOrdersConfirmedNotification(
     items: params.items,
     availableVnd: params.availableVnd,
     withdrawalThresholdVnd: params.withdrawalThresholdVnd,
+    heldVnd: params.heldVnd,
+    heldUnlockDayText: params.heldUnlockDayText,
   });
 
   let rendered: RenderedOrderImage | null = null;

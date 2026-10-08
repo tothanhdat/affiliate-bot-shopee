@@ -54,7 +54,7 @@ import {
 } from "../adapters/shared/replyText.js";
 import { SETTINGS_REGISTRY } from "../config/settingsRegistry.js";
 import { normalizeNewlines } from "../core/textNormalize.js";
-import { todayVnIso, yesterdayVnDdMm } from "../core/vietnamDate.js";
+import { formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../core/vietnamDate.js";
 import { formatVnd } from "../core/money.js";
 
 const VALID_PLATFORMS: Platform[] = ["telegram", "zalo", "http"];
@@ -535,6 +535,28 @@ export function createServer(
    * Tu 2026-10-08 withdrawal_requests co trang thai thu 3 'cancelled'; truoc do bang chi di MOT CHIEU
    * requested -> paid.
    */
+  /**
+   * Phan tien TRONG MOT LO don vua ghi dang bi giam (2026-10-08) + ngay mo khoa SOM NHAT cua lo.
+   *
+   * Can cho ca anh lan text bao "don ve": tin nhan in TONG cua lo canh SO DU KHA DUNG, ma don bi giam
+   * vao tong nhung khong vao so du -> user doi chieu trong cung mot tin thay 2 so khong khop.
+   */
+  function heldInBatch(
+    platform: Platform,
+    userId: string,
+    orderIds: Set<string>
+  ): { amountVnd: number; unlockDayText: string } | null {
+    const held = ledgerStore
+      .getHeldEntries(platform, userId)
+      .filter((e) => orderIds.has(e.orderId) && e.availableFrom !== null);
+    if (held.length === 0) return null;
+    const amountVnd = held.reduce((sum, e) => sum + e.userShareAmount, 0);
+    // getHeldEntries sap theo available_from ASC nen phan tu dau la ngay mo khoa SOM NHAT.
+    // T12:00:00Z de khong bi lech ngay khi format lai theo gio VN (+07).
+    const unlockDayText = formatVnDateDdMm(new Date(`${held[0].availableFrom}T12:00:00Z`));
+    return { amountVnd, unlockDayText };
+  }
+
   app.post("/admin/withdrawals/:id/cancel", requireAdminAuth, (req: Request, res: Response) => {
     try {
       const reason =
@@ -898,12 +920,15 @@ export function createServer(
           { orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount },
         ];
         // So du doc SAU khi don da ghi vao ledger - doc truoc thi anh bao thieu dung don vua ghi.
+        const held = heldInBatch(entry.platform, entry.userId, new Set([entry.orderId]));
         buildOrdersConfirmedNotification({
           items: confirmedItems,
           availableVnd: ledgerStore.getAvailableBalance(entry.platform, entry.userId),
           withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl),
+          heldVnd: held?.amountVnd ?? 0,
+          heldUnlockDayText: held?.unlockDayText ?? null,
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl, held),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held),
           imageEnabled: orderImageEnabled,
         })
           .then((notification) => notifyUser(entry.platform, entry.userId, notification))
@@ -996,12 +1021,19 @@ export function createServer(
         );
         // So du doc SAU khi importShopeeReport da ghi xong - doc truoc thi anh bao thieu dung
         // cac don vua import.
+        const held = heldInBatch(
+          summary.platform,
+          summary.userId,
+          new Set(summary.items.map((i) => i.orderId))
+        );
         buildOrdersConfirmedNotification({
           items: summary.items,
           availableVnd: ledgerStore.getAvailableBalance(summary.platform, summary.userId),
           withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl),
+          heldVnd: held?.amountVnd ?? 0,
+          heldUnlockDayText: held?.unlockDayText ?? null,
+          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl, held),
+          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held),
           imageEnabled: orderImageEnabled,
         })
           .then((notification) => notifyUser(summary.platform, summary.userId, notification))
