@@ -16,6 +16,8 @@ import {
   ORDERS_CONFIRMED_TEMPLATE_DEFAULT,
   ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
   WITHDRAWAL_REQUESTED_TEMPLATE_DEFAULT,
+  PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
+  WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT,
   WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
   GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT,
 } from "../adapters/shared/replyText.js";
@@ -146,6 +148,40 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: WITHDRAWAL_PAID_TEMPLATE_DEFAULT,
     helpText: "Placeholder hợp lệ: {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.payoutHoldThresholdVnd,
+    label: "Ngưỡng giam đơn to (đ)",
+    type: "number",
+    default: String(env.payoutHold.thresholdVnd),
+    min: 0,
+    helpText:
+      "Đơn có tiền hoàn của user từ mức này trở lên sẽ bị giam một thời gian trước khi cho rút, để kịp phát hiện khách trả hàng. Đặt 0 để tắt hẳn việc giam. Không có placeholder động.",
+  },
+  {
+    key: SETTINGS_KEYS.payoutHoldDays,
+    label: "Số ngày giam đơn to",
+    type: "number",
+    default: String(env.payoutHold.holdDays),
+    min: 0,
+    max: 60,
+    helpText:
+      "Đếm từ ngày Shopee ghi đơn là Hoàn thành (= ngày giao hàng), đúng mốc Shopee đếm 15 ngày được trả hàng. Ngày mở khoá được CHỐT lúc đơn chuyển Khả dụng — đổi số này không dịch ngày của đơn đã chốt trước đó. Không có placeholder động.",
+  },
+  {
+    key: SETTINGS_KEYS.payoutDebtNoticeTemplate,
+    label: "Tin nhắn khi đơn đã trả tiền bị trả hàng",
+    type: "textarea",
+    default: PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
+    helpText:
+      "Gửi 1 lần cho mỗi đơn, khi báo cáo Shopee ghi đơn đã huỷ mà tiền đã chuyển cho user rồi. Khoản đó được trừ dần vào các đơn sau. Placeholder hợp lệ: {{orderId}}, {{amount}}, {{dashboardUrl}}.",
+  },
+  {
+    key: SETTINGS_KEYS.withdrawalCancelledTemplate,
+    label: "Tin nhắn khi huỷ yêu cầu rút",
+    type: "textarea",
+    default: WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT,
+    helpText: "Placeholder hợp lệ: {{amount}}, {{reason}}, {{dashboardUrl}}.",
   },
   {
     key: SETTINGS_KEYS.groupReportUpdatedTemplate,

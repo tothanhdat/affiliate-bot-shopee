@@ -238,6 +238,51 @@ export function formatWithdrawalPaidReply(template: string, dashboardUrl: string
   return renderTemplate(template, { dashboardUrl });
 }
 
+/**
+ * Default cho setting "payout_debt_notice_template" (2026-10-08).
+ *
+ * Cau "khong phai chuyen tien lai" la BAT BUOC chu khong phai cho lich su: nhan tin "ban dang no
+ * 40.000d" ma khong co cau do thi user tuong phai tra tien ra ngoai.
+ */
+export const PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT =
+  `Đơn {{orderId}} đã được trả hàng nên Shopee thu lại hoa hồng của đơn này.
+{{amount}} sẽ được trừ dần vào các đơn tới của bạn — bạn không phải chuyển tiền lại cho em nhé.
+Xem chi tiết: {{dashboardUrl}}`;
+
+/**
+ * Default cho setting "withdrawal_cancelled_template" (2026-10-08).
+ *
+ * Cau "tien van nam nguyen trong so du" la BAT BUOC: cancelWithdrawal() tha entry ve 'confirmed' nen
+ * cau do dung, va khong noi ra thi user doc "yeu cau bi huy" thanh "mat tien".
+ */
+export const WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT =
+  `Yêu cầu rút {{amount}} của bạn đã được huỷ, lí do: {{reason}}
+Tiền vẫn nằm nguyên trong số dư của bạn, bạn gửi lại yêu cầu rút được nhé: {{dashboardUrl}}`;
+
+/** DM khi 1 don da tra tien bi khach tra hang -> sinh no hoan tra (xem payout_debts). */
+export function formatPayoutDebtNotice(
+  template: string,
+  params: { orderId: string; amount: number; dashboardUrl: string }
+): string {
+  return renderTemplate(template, {
+    orderId: params.orderId,
+    amount: formatVnd(params.amount),
+    dashboardUrl: params.dashboardUrl,
+  });
+}
+
+/** DM khi admin huy 1 yeu cau rut dang cho (POST /admin/withdrawals/:id/cancel). */
+export function formatWithdrawalCancelledReply(
+  template: string,
+  params: { amount: number; reason: string; dashboardUrl: string }
+): string {
+  return renderTemplate(template, {
+    amount: formatVnd(params.amount),
+    reason: params.reason,
+    dashboardUrl: params.dashboardUrl,
+  });
+}
+
 export function formatWelcomeReply(
   template: string,
   userSharePercent: number,

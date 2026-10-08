@@ -2213,7 +2213,12 @@ function settingsTabOf(key: string): "faq" | "commission" | "messages" {
   ) {
     return "faq";
   }
-  if (key === SETTINGS_KEYS.userSharePercent || key === SETTINGS_KEYS.withdrawalThresholdVnd) {
+  if (
+    key === SETTINGS_KEYS.userSharePercent ||
+    key === SETTINGS_KEYS.withdrawalThresholdVnd ||
+    key === SETTINGS_KEYS.payoutHoldThresholdVnd ||
+    key === SETTINGS_KEYS.payoutHoldDays
+  ) {
     return "commission";
   }
   return "messages";

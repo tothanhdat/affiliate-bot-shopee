@@ -8,6 +8,10 @@ import { createServer } from "../server.js";
 import { AdminSessionStore } from "../../core/adminAuth.js";
 import type { NotifyUser } from "../../core/notification.js";
 import { LedgerStore } from "../../core/ledgerStore.js";
+import {
+  PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
+  WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT,
+} from "../../adapters/shared/replyText.js";
 import { LogStore } from "../../core/logStore.js";
 import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
@@ -1382,4 +1386,49 @@ test("/admin/users hien cot % hoa hong rieng + nut cau hinh", async () => {
   } finally {
     cleanup();
   }
+});
+
+test("GET /admin/settings hien 4 setting cua giam don to + no hoan tra", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, { headers: { cookie: cookie! } });
+    const html = await res.text();
+
+    assert.match(html, /payout_hold_threshold_vnd/);
+    assert.match(html, /payout_hold_days/);
+    assert.match(html, /payout_debt_notice_template/);
+    assert.match(html, /withdrawal_cancelled_template/);
+  } finally {
+    cleanup();
+  }
+});
+
+// Chip "bam de chen bien" tu sinh bang cach quet {{...}} trong helpText (xem extractPlaceholders) -
+// viet sai cu phap "Placeholder hop le: ..." la mat chip ma khong co loi nao bao.
+test("GET /admin/settings sinh chip placeholder cho 2 template moi", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings`, { headers: { cookie: cookie! } });
+    const html = await res.text();
+
+    for (const ph of ["{{orderId}}", "{{amount}}", "{{reason}}", "{{dashboardUrl}}"]) {
+      assert.ok(html.includes(ph), `thieu chip ${ph}`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+// Cau nay la rang buoc ve NIEM TIN, khong phai van phong: nhan tin "ban dang no 40.000d" ma khong noi
+// ro thi user tuong phai chuyen tien lai ra ngoai.
+test("template no hoan tra PHAI co cau 'khong phai chuyen tien lai'", () => {
+  assert.match(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, /không phải chuyển tiền lại/);
+});
+
+// cancelWithdrawal tha entry ve 'confirmed' nen tien that su con nguyen - khong noi ra thi user doc
+// "yeu cau bi huy" thanh "mat tien".
+test("template huy yeu cau rut PHAI noi tien van con trong so du", () => {
+  assert.match(WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT, /vẫn nằm nguyên trong số dư/);
 });

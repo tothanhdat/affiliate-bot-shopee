@@ -10,6 +10,10 @@ export const SETTINGS_KEYS = {
   payoutHoldThresholdVnd: "payout_hold_threshold_vnd",
   /** So ngay giam, dem tu ngay Shopee ghi don "Hoan thanh" (= ngay giao hang). */
   payoutHoldDays: "payout_hold_days",
+  /** DM khi phat sinh no hoan tra (khach tra hang SAU KHI tien da ra khoi tay, 2026-10-08). */
+  payoutDebtNoticeTemplate: "payout_debt_notice_template",
+  /** DM khi admin huy 1 yeu cau rut dang cho (2026-10-08). */
+  withdrawalCancelledTemplate: "withdrawal_cancelled_template",
   usageText: "usage_text",
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",

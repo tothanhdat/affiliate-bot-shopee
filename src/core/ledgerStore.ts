@@ -1981,6 +1981,14 @@ export class LedgerStore {
     return this.getSettingInt(SETTINGS_KEYS.payoutHoldDays, defaultValue);
   }
 
+  getPayoutDebtNoticeTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.payoutDebtNoticeTemplate, defaultValue);
+  }
+
+  getWithdrawalCancelledTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.withdrawalCancelledTemplate, defaultValue);
+  }
+
   getUsageText(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.usageText, defaultValue);
   }
