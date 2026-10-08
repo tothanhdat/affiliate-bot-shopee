@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LedgerStore } from "../ledgerStore.js";
-import { InsufficientBalanceError } from "../errors.js";
+import { InsufficientBalanceError, WithdrawalNotCancellableError } from "../errors.js";
 
 function store() {
   return new LedgerStore(":memory:");
@@ -196,4 +196,100 @@ test("no da bi admin XOA khong tru vao Kha dung nua", () => {
   assert.equal(s.getAvailableBalance("zalo", "user-a"), 0);
   s.writeOffDebt(debt!.id);
   assert.equal(s.getAvailableBalance("zalo", "user-a"), 10_000);
+});
+
+// ---------------------------------------------------------------------------
+// Huy yeu cau rut (Task 7)
+// ---------------------------------------------------------------------------
+
+test("cancelWithdrawal: tha entry ve confirmed/chua rut, KHONG cong vao tien da chi tra", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  const cancelled = s.cancelWithdrawal(w.id, "don bi tra hang");
+  assert.equal(cancelled.status, "cancelled");
+  assert.ok(cancelled.cancelledAt);
+  assert.equal(cancelled.cancelReason, "don bi tra hang", "li do phai duoc LUU, admin xem tab Da huy can biet");
+  // Doc lai tu DB chu khong tin object tra ve
+  assert.equal(s.listCancelledWithdrawals()[0].cancelReason, "don bi tra hang");
+
+  assert.equal(s.getAvailableBalance("zalo", "user-a"), 100_000, "tien ve lai Kha dung");
+  assert.equal(s.getPendingWithdrawal("zalo", "user-a"), null, "khong con yeu cau dang cho");
+  assert.equal(s.listPaidWithdrawals().length, 0, "yeu cau da huy KHONG phai yeu cau da tra");
+
+  const entry = s.listCommissionEntries({ userId: "user-a" })[0];
+  assert.equal(entry.status, "confirmed");
+  assert.equal(entry.withdrawalId, null);
+});
+
+test("cancelWithdrawal: KHONG hoan no vi chua tung bi tru", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  s.recordPayoutDebt({ ...DEBT, orderId: "old-order", amount: 40_000 });
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  s.cancelWithdrawal(w.id, "test");
+  assert.equal(s.getOutstandingDebtTotal("zalo", "user-a"), 40_000, "no van dung 40k, khong nhan doi");
+});
+
+test("cancelWithdrawal: khong huy duoc yeu cau da tra", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.markWithdrawalPaid(w.id, null);
+  assert.throws(() => s.cancelWithdrawal(w.id, "test"), WithdrawalNotCancellableError);
+});
+
+test("cancelWithdrawal: huy 2 lan -> lan 2 bi tu choi", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.cancelWithdrawal(w.id, "test");
+  assert.throws(() => s.cancelWithdrawal(w.id, "test"), WithdrawalNotCancellableError);
+});
+
+test("sau khi huy, user gui lai yeu cau rut duoc", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const first = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.cancelWithdrawal(first.id, "test");
+  const second = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  assert.equal(second.amount, 100_000);
+});
+
+test("listEntriesByWithdrawal: chup duoc danh sach entry TRUOC khi huy", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 60_000);
+  recordConfirmed(s, "order-2", 40_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  const before = s.listEntriesByWithdrawal(w.id);
+  assert.deepEqual(before.map((e) => e.orderId).sort(), ["order-1", "order-2"]);
+
+  // Sau khi huy thi withdrawal_id da bi xoa -> khong con tra ve gi. Day la ly do route cancel PHAI
+  // chup danh sach truoc khi goi cancelWithdrawal().
+  s.cancelWithdrawal(w.id, "test");
+  assert.equal(s.listEntriesByWithdrawal(w.id).length, 0);
+});
+
+test("listCancelledWithdrawals tra yeu cau da huy, moi nhat truoc", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.cancelWithdrawal(w.id, "test");
+  const list = s.listCancelledWithdrawals();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, w.id);
+  assert.equal(list[0].status, "cancelled");
+});
+
+test("yeu cau da huy KHONG tinh vao getOutstandingTotals", () => {
+  const s = store();
+  recordConfirmed(s, "order-1", 100_000);
+  const w = s.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  s.cancelWithdrawal(w.id, "test");
+  const totals = s.getOutstandingTotals();
+  assert.equal(totals.pendingWithdrawalCount, 0);
+  assert.equal(totals.pendingWithdrawalAmount, 0);
 });

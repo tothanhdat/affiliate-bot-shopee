@@ -11,6 +11,7 @@ import {
   InsufficientBalanceError,
   MissingBankInfoError,
   WithdrawalAlreadyPendingError,
+  WithdrawalNotCancellableError,
 } from "./errors.js";
 import type { MerchantId } from "./merchants.js";
 import { SETTINGS_KEYS } from "./settingsKeys.js";
@@ -246,7 +247,8 @@ export class LedgerStore {
         bank_account_number TEXT NOT NULL DEFAULT '',
         bank_account_holder TEXT NOT NULL DEFAULT '',
         debt_applied INTEGER NOT NULL DEFAULT 0,
-        cancelled_at TEXT
+        cancelled_at TEXT,
+        cancel_reason TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_user ON withdrawal_requests(platform, user_id);
       CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_status ON withdrawal_requests(status);
@@ -634,6 +636,9 @@ export class LedgerStore {
     }
     if (!hasColumn("cancelled_at")) {
       this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN cancelled_at TEXT");
+    }
+    if (!hasColumn("cancel_reason")) {
+      this.db.exec("ALTER TABLE withdrawal_requests ADD COLUMN cancel_reason TEXT");
     }
   }
 
@@ -1643,8 +1648,8 @@ export class LedgerStore {
       this.db
         .prepare(
           `INSERT INTO withdrawal_requests
-            (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder, debt_applied, cancelled_at)
-           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?, ?, NULL)`
+            (id, created_at, paid_at, platform, user_id, amount, status, proof_image_path, bank_name, bank_account_number, bank_account_holder, debt_applied, cancelled_at, cancel_reason)
+           VALUES (?, ?, NULL, ?, ?, ?, 'requested', NULL, ?, ?, ?, ?, NULL, NULL)`
         )
         .run(id, createdAt, platform, userId, balance, bankName, bankAccountNumber, bankAccountHolder, debtApplied);
 
@@ -1679,6 +1684,7 @@ export class LedgerStore {
       bankAccountHolder,
       debtApplied,
       cancelledAt: null,
+      cancelReason: null,
     };
   }
 
@@ -1759,6 +1765,65 @@ export class LedgerStore {
     }
 
     return { ...existing, status: "paid", paidAt, proofImagePath: storedProof };
+  }
+
+  /**
+   * Danh sach entry dang nam trong 1 yeu cau rut. Route huy yeu cau PHAI goi ham nay TRUOC khi goi
+   * cancelWithdrawal() - ham do xoa withdrawal_id nen sau do khong con cach nao biet entry nao thuoc
+   * yeu cau vua huy.
+   */
+  listEntriesByWithdrawal(withdrawalId: string): CommissionEntry[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM commission_entries WHERE withdrawal_id = ? ORDER BY created_at ASC, rowid ASC`)
+      .all(withdrawalId);
+    return rows.map(rowToCommissionEntry);
+  }
+
+  /**
+   * Admin huy 1 yeu cau rut dang cho (2026-10-08) - dung khi bao cao Shopee ghi don trong yeu cau nay
+   * da bi tra hang va admin CHUA chuyen khoan.
+   *
+   * KHONG hoan payout_debts: no chi bi tru o markWithdrawalPaid nen chua tung bi tru o day.
+   *
+   * Entry duoc tha ra bang cach bo withdrawal_id - status van la 'confirmed' (chua bao gio doi thanh
+   * 'paid' vi yeu cau chua duoc tra), nen tien tu dong ve lai Kha dung.
+   */
+  cancelWithdrawal(id: string, reason: string): WithdrawalRequest {
+    const row = this.db.prepare(`SELECT * FROM withdrawal_requests WHERE id = ?`).get(id);
+    if (!row) {
+      throw new Error(`Khong tim thay yeu cau rut tien voi id "${id}"`);
+    }
+    const existing = rowToWithdrawalRequest(row);
+    if (existing.status !== "requested") {
+      throw new WithdrawalNotCancellableError();
+    }
+
+    const cancelledAt = new Date().toISOString();
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `UPDATE withdrawal_requests SET status = 'cancelled', cancelled_at = ?, cancel_reason = ? WHERE id = ?`
+        )
+        .run(cancelledAt, reason, id);
+      this.db.prepare(`UPDATE commission_entries SET withdrawal_id = NULL WHERE withdrawal_id = ?`).run(id);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+
+    return { ...existing, status: "cancelled", cancelledAt, cancelReason: reason };
+  }
+
+  listCancelledWithdrawals(limit = 50): WithdrawalRequest[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM withdrawal_requests WHERE status = 'cancelled'
+         ORDER BY cancelled_at DESC, rowid DESC LIMIT ?`
+      )
+      .all(limit);
+    return rows.map(rowToWithdrawalRequest);
   }
 
   /**
@@ -2248,6 +2313,7 @@ function rowToWithdrawalRequest(row: unknown): WithdrawalRequest {
     bankAccountHolder: (r.bank_account_holder as string | null) ?? "",
     debtApplied: (r.debt_applied as number | null) ?? 0,
     cancelledAt: (r.cancelled_at as string | null) ?? null,
+    cancelReason: (r.cancel_reason as string | null) ?? null,
   };
 }
 

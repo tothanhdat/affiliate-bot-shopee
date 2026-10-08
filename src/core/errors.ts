@@ -18,7 +18,8 @@ export type ErrorCode =
   | "IMPLAUSIBLE_COMMISSION_AMOUNT"
   | "MISSING_WITHDRAWAL_PROOF"
   | "MISSING_BANK_INFO"
-  | "ENTRY_NOT_PENDING";
+  | "ENTRY_NOT_PENDING"
+  | "WITHDRAWAL_NOT_CANCELLABLE";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -159,6 +160,20 @@ export class ProductNotAffiliateEligibleError extends AppError {
       "Sản phẩm này shop chưa bật hoàn tiền nên em không tạo được link nha 😅 Bạn thử sản phẩm khác giúp em."
     );
     this.message = `Product not affiliate eligible: ${detail}`;
+  }
+}
+
+/**
+ * Admin bam "Huy yeu cau" tren 1 yeu cau khong con o trang thai 'requested' (da tra, hoac da huy roi)
+ * - 2026-10-08. Huy mot yeu cau DA TRA se tha entry ve "confirmed" trong khi tien that da ra khoi
+ * ngan hang, tuc tao ra tien khong co that.
+ */
+export class WithdrawalNotCancellableError extends AppError {
+  constructor() {
+    super(
+      "WITHDRAWAL_NOT_CANCELLABLE",
+      "Chỉ huỷ được yêu cầu rút đang chờ thanh toán."
+    );
   }
 }
 

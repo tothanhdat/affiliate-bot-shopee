@@ -158,7 +158,11 @@ export interface CommissionEntry {
   proofImagePath: string | null;
 }
 
-export type WithdrawalStatus = "requested" | "paid";
+/**
+ * "cancelled" them 2026-10-08: truoc do bang chi di MOT CHIEU requested -> paid. Yeu cau da huy
+ * KHONG duoc cong vao bat ky tong tien nao (tien chua ra khoi ngan hang).
+ */
+export type WithdrawalStatus = "requested" | "paid" | "cancelled";
 
 export interface WithdrawalRequest {
   id: string;
@@ -186,6 +190,11 @@ export interface WithdrawalRequest {
   debtApplied: number;
   /** Moc admin huy yeu cau (2026-10-08). Yeu cau da huy KHONG tinh vao bat ky tong tien nao. */
   cancelledAt: string | null;
+  /**
+   * Li do admin huy - hien tren tab "Da huy" cua /admin/withdrawals. Luu vao DB chu khong chi truyen
+   * qua DM: khong luu thi vai thang sau khong ai biet vi sao yeu cau do bi huy, va khong backfill duoc.
+   */
+  cancelReason: string | null;
 }
 
 /**
