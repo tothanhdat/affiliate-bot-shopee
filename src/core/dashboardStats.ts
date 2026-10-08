@@ -17,7 +17,7 @@ import type { CommissionStatus, Platform } from "./types.js";
 
 const VN_TIME_ZONE = "Asia/Ho_Chi_Minh";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const TOP_USERS_LIMIT = 10;
+const TOP_USERS_LIMIT = 7;
 
 export type DashboardRange = "today" | "7d" | "month" | "lastMonth";
 

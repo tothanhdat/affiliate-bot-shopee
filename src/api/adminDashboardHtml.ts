@@ -156,7 +156,6 @@ ${renderKpiGrid(stats)}
   <div class="card chart-card">
     <div class="chart-head">
       <h2>Đơn hàng mới mỗi ngày</h2>
-      <p class="chart-sub">Lịch sử import báo cáo Shopee theo ngày. <strong>Đơn mới</strong>: đơn lần đầu xuất hiện trong hệ thống. <strong>Chuyển Khả dụng</strong>: đơn từ Chờ xác nhận sang Khả dụng, gồm cả đơn hoả tốc vừa xuất hiện đã Khả dụng. <strong>Đã huỷ</strong>: chỉ tính vào ngày đầu tiên ghi nhận huỷ. Một đơn hoả tốc có mặt ở cả 2 cột nên 3 cột không cộng thành tổng. Ngày không import thì để trống.</p>
     </div>
     <div class="chart-box chart-box-tall"><canvas id="chart-orders"></canvas></div>
     ${renderDayTable(
@@ -173,7 +172,6 @@ ${renderKpiGrid(stats)}
   <div class="card chart-card">
     <div class="chart-head">
       <h2>Lượt tạo link theo ngày</h2>
-      <p class="chart-sub">Đo bot có đang được dùng hay không — độc lập với việc đã import báo cáo hoa hồng hay chưa. Đặt cạnh biểu đồ đơn hàng để đối chiếu: nhiều lượt tạo link mà ít đơn nghĩa là khách bấm link nhưng không chốt mua.</p>
     </div>
     <div class="chart-box chart-box-tall"><canvas id="chart-links"></canvas></div>
     ${renderDayTable(
@@ -212,7 +210,7 @@ ${renderKpiGrid(stats)}
 
   <div class="card chart-card">
     <div class="chart-head">
-      <h2>Top ${stats.charts.topUsers.length > 0 ? stats.charts.topUsers.length : 10} user theo hoa hồng</h2>
+      <h2>Top ${stats.charts.topUsers.length > 0 ? stats.charts.topUsers.length : 7} user theo hoa hồng</h2>
       <p class="chart-sub">Hoa hồng gốc sinh ra trong kỳ, đã bỏ đơn huỷ. Rê chuột vào cột để xem đầy đủ tên, nền tảng và ID.</p>
     </div>
     <div class="chart-box" style="height: ${topUsersChartHeight(stats.charts.topUsers.length)}px">${
@@ -270,9 +268,14 @@ function renderKpiGrid(stats: DashboardStats): string {
       hint: "Toàn thời gian · tiền đã xác nhận, user chưa rút",
       tone: money.owedToUsers > 0 ? "warning" : undefined,
     },
-    // 9 the = 3 hang x 3, MOI HANG DUNG 1 NHOM (luoi KPI la 3 cot co dinh, xem dashboardStyles). Bo
-    // "Đã chi trả", "Tỉ lệ lỗi", "Đơn huỷ" (2026-10-07, yeu cau user: qua nhieu the, roi) nen phai
-    // xep lai nhom: "Chờ duyệt rút" sang hang don hang, "User mới" sang hang hoat dong bot.
+    // 9 the = 3 hang x 3 (luoi KPI la 3 cot co dinh, xem dashboardStyles). Bo "Đã chi trả", "Tỉ lệ
+    // lỗi", "Đơn huỷ" (2026-10-07, yeu cau user: qua nhieu the, roi) nen phai xep lai nhom: "Chờ
+    // duyệt rút" sang hang don hang, "User mới" sang hang hoat dong bot.
+    // (2026-10-08, yeu cau truc tiep cua user) Doi vi tri "Chờ duyệt rút" <-> "Lượt tạo link" -
+    // tu do hang 2 va hang 3 KHONG con dung 1 nhom duy nhat nua (hang 2 co 1 the "Hoạt động bot",
+    // hang 3 co 1 the "Đơn hàng & rút tiền"). Chip nhom tren tung the van dung VI no doc theo
+    // field "group" rieng cua chinh the do, khong theo vi tri hang - nen khong sai, chi khong con
+    // gon theo hang nhu truoc.
     {
       group: "Đơn hàng & rút tiền",
       label: "Đơn mới",
@@ -284,6 +287,12 @@ function renderKpiGrid(stats: DashboardStats): string {
       label: "Đơn chờ xác nhận",
       value: formatCount(orders.pendingCount),
       hint: `${formatVnd(orders.pendingAmount)} tiền treo, chưa chắc chắn`,
+    },
+    {
+      group: "Hoạt động bot",
+      label: "Lượt tạo link",
+      value: formatCount(activity.linkCount),
+      hint: `${formatCount(activity.successCount)} thành công · ${periodNote}`,
     },
     {
       group: "Đơn hàng & rút tiền",
@@ -305,12 +314,6 @@ function renderKpiGrid(stats: DashboardStats): string {
         withdrawals.pendingCount > 0
           ? { href: "/admin/withdrawals", label: "Xử lý ngay →" }
           : undefined,
-    },
-    {
-      group: "Hoạt động bot",
-      label: "Lượt tạo link",
-      value: formatCount(activity.linkCount),
-      hint: `${formatCount(activity.successCount)} thành công · ${periodNote}`,
     },
     {
       group: "Hoạt động bot",
