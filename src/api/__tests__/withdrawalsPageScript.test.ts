@@ -103,3 +103,75 @@ test("trang thai rong: khong con yeu cau nao thi van hien bang lich su", () => {
   assert.match(html, /Không có yêu cầu nào đang chờ/);
   assert.doesNotMatch(html, /<form id="pay-/);
 });
+
+// ---------------------------------------------------------------------------
+// Canh bao don bi tra hang + nut Huy yeu cau (2026-10-08)
+// ---------------------------------------------------------------------------
+
+test("khong co don bi tra hang -> KHONG hien banner, KHONG hien nut Huy", () => {
+  const html = renderWithdrawalsPage([wd({ id: "abc" })], [], new Map());
+  assert.doesNotMatch(html, /vừa bị trả hàng/);
+  assert.doesNotMatch(html, /Huỷ yêu cầu/);
+});
+
+test("co don bi tra hang -> banner noi ro SO DUNG + ma don", () => {
+  const html = renderWithdrawalsPage(
+    [wd({ id: "abc", amount: 100_000 })],
+    [],
+    new Map(),
+    null,
+    new Map([["abc", [{ orderId: "260925VX0R3SQ9", amount: 40_000 }]]])
+  );
+  assert.match(html, /vừa bị trả hàng/);
+  assert.match(html, /−40\.000/);
+  assert.match(html, /60\.000/, "so dung sau khi tru");
+  assert.match(html, /260925VX0R3SQ9/);
+});
+
+// Cung rang buoc da co cho nut "Danh dau da tra": trinh duyet day mot <form> la con truc tiep cua
+// <tr> ra khoi bang luc phan tich HTML, mat ca action.
+test("nut Huy dung form=... va <form> cancel nam NGOAI <table>", () => {
+  const html = renderWithdrawalsPage(
+    [wd({ id: "abc" })],
+    [],
+    new Map(),
+    null,
+    new Map([["abc", [{ orderId: "X1", amount: 40_000 }]]])
+  );
+  assert.match(html, /<button type="submit" form="cancel-abc"/);
+
+  const form = html.match(/<form id="cancel-abc"[^>]*>/)?.[0];
+  assert.ok(form, "phai co the <form> huy");
+  assert.match(form, /action="\/admin\/withdrawals\/abc\/cancel"/);
+  assert.match(form, /onsubmit="return confirm\(/, "hanh dong tien BAT BUOC co buoc xac nhan");
+
+  const tableEnd = html.indexOf("</table>");
+  assert.ok(html.indexOf('<form id="cancel-abc"') > tableEnd, "<form> huy phai nam SAU </table>");
+});
+
+// Script tim kiem an moi <tr> khong khop data-search. Hang canh bao thieu thuoc tinh do se bien mat
+// ngay khi admin go tim, du hang chinh van hien.
+test("hang canh bao mang CUNG data-search voi hang chinh", () => {
+  const html = renderWithdrawalsPage(
+    [wd({ id: "abc", userId: "u-001", bankAccountNumber: "0123456789" })],
+    [],
+    new Map(),
+    null,
+    new Map([["abc", [{ orderId: "X1", amount: 40_000 }]]])
+  );
+  const warnRow = html.match(/<tr class="bg-rose-50\/60" data-search="([^"]*)"/)?.[1];
+  assert.ok(warnRow, "hang canh bao phai co data-search");
+  assert.ok(warnRow.includes("0123456789"), "phai tim duoc hang canh bao bang cung tu khoa");
+});
+
+test("tab 'Da huy' chi hien khi co yeu cau da huy", () => {
+  const none = renderWithdrawalsPage([wd({ id: "abc" })], [], new Map());
+  assert.doesNotMatch(none, /Đã huỷ/);
+
+  const some = renderWithdrawalsPage([], [], new Map(), null, new Map(), [
+    wd({ id: "c1", status: "cancelled", cancelledAt: "2026-10-08T05:00:00.000Z", cancelReason: "Đơn bị trả lại" }),
+  ]);
+  assert.match(some, /Đã huỷ/);
+  assert.match(some, /Đơn bị trả lại/);
+  assert.match(some, /line-through/, "tien cua yeu cau da huy phai gach ngang - khong ai nhan so do");
+});

@@ -478,11 +478,7 @@ export function createServer(
 
   app.get("/admin/withdrawals", requireAdminAuth, (req: Request, res: Response) => {
     res.type("html").send(
-      renderWithdrawalsPage(
-        ledgerStore.listPendingWithdrawals(),
-        ledgerStore.listPaidWithdrawals(),
-        ledgerStore.getDisplayNamesMap()
-      )
+      withdrawalsPage()
     );
   });
 
@@ -517,12 +513,7 @@ export function createServer(
           .status(422)
           .type("html")
           .send(
-            renderWithdrawalsPage(
-              ledgerStore.listPendingWithdrawals(),
-              ledgerStore.listPaidWithdrawals(),
-              ledgerStore.getDisplayNamesMap(),
-              message
-            )
+            withdrawalsPage(message)
           );
       }
     }
@@ -555,6 +546,32 @@ export function createServer(
     // T12:00:00Z de khong bi lech ngay khi format lai theo gio VN (+07).
     const unlockDayText = formatVnDateDdMm(new Date(`${held[0].availableFrom}T12:00:00Z`));
     return { amountVnd, unlockDayText };
+  }
+
+  /**
+   * Trang /admin/withdrawals - gom lai 1 cho vi co 3 noi render no (GET, 2 nhanh loi 422), de 3 noi
+   * khong lech nhau ve du lieu canh bao / tab "Da huy".
+   */
+  function withdrawalsPage(errorMessage?: string | null): string {
+    const pending = ledgerStore.listPendingWithdrawals();
+    // Don trong yeu cau dang cho ma DA co dong no = don vua bi tra hang, tien chua di -> admin con kip huy.
+    const debtWarnings = new Map<string, Array<{ orderId: string; amount: number }>>();
+    for (const w of pending) {
+      const warned = ledgerStore
+        .listEntriesByWithdrawal(w.id)
+        .map((e) => ledgerStore.getDebtByOrder(e.merchant, e.orderId))
+        .filter((d): d is NonNullable<typeof d> => d !== null && d.settledAt === null && d.writtenOffAt === null)
+        .map((d) => ({ orderId: d.orderId, amount: d.amount }));
+      if (warned.length > 0) debtWarnings.set(w.id, warned);
+    }
+    return renderWithdrawalsPage(
+      pending,
+      ledgerStore.listPaidWithdrawals(),
+      ledgerStore.getDisplayNamesMap(),
+      errorMessage,
+      debtWarnings,
+      ledgerStore.listCancelledWithdrawals()
+    );
   }
 
   app.post("/admin/withdrawals/:id/cancel", requireAdminAuth, (req: Request, res: Response) => {
@@ -596,12 +613,7 @@ export function createServer(
         .status(422)
         .type("html")
         .send(
-          renderWithdrawalsPage(
-            ledgerStore.listPendingWithdrawals(),
-            ledgerStore.listPaidWithdrawals(),
-            ledgerStore.getDisplayNamesMap(),
-            message
-          )
+          withdrawalsPage(message)
         );
     }
   });

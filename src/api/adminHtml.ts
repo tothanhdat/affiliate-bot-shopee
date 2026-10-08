@@ -648,7 +648,13 @@ export function renderWithdrawalsPage(
   pending: WithdrawalRequest[],
   paidHistory: WithdrawalRequest[],
   displayNames: Map<string, string>,
-  errorMessage?: string | null
+  errorMessage?: string | null,
+  /**
+   * Don trong tung yeu cau vua bi bao cao Shopee ghi la tra hang (2026-10-08), khoa theo withdrawal
+   * id. Tien CHUA di nen admin con kip huy yeu cau de khoi mat - xem nut "Huy yeu cau".
+   */
+  debtWarnings: Map<string, Array<{ orderId: string; amount: number }>> = new Map(),
+  cancelledHistory: WithdrawalRequest[] = []
 ): string {
   const errorBlock = errorMessage
     ? `<div class="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">${escapeHtml(
@@ -751,6 +757,41 @@ export function renderWithdrawalsPage(
       // mot <form> khong the boc 2 <td> roi nhau, ma thiet ke nay dat o chon file va nut gui o 2 cot
       // khac nhau. Day la cach hop le duy nhat de giu nguyen bo cuc.
       const formId = `pay-${w.id}`;
+
+      // Canh bao don vua bi tra hang: tien CHUA ra khoi ngan hang nen admin con kip huy. No DA duoc
+      // ghi roi (mac dinh an toan) nen bo qua canh bao nay thi so van khop - day chi la co hoi lam
+      // tot hon. Hang canh bao la 1 <tr> RIENG colspan het bang: nhet vao mot <td> se lam cot do
+      // gian rong ra va vo bo cuc 6 cot.
+      const warned = debtWarnings.get(w.id) ?? [];
+      const warnedTotal = warned.reduce((sum, d) => sum + d.amount, 0);
+      // Phai mang CUNG data-search voi hang chinh: script tim kiem an moi <tr> khong khop, khong co
+      // thuoc tinh nay thi hang canh bao bien mat ngay khi admin go tim du hang chinh van hien.
+      const rowSearch = escapeHtml(
+        `${displayNames.get(nameKey(w.platform, w.userId)) ?? ""} ${w.userId} ${w.bankAccountNumber} ${
+          w.bankAccountHolder
+        } ${w.bankName}`.toLowerCase()
+      );
+      const warningRow =
+        warned.length === 0
+          ? ""
+          : `
+<tr class="bg-rose-50/60" data-search="${rowSearch}">
+  <td colspan="6" class="px-6 py-3">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-snug text-rose-800">
+      <span class="font-bold">⚠ ${warned.length} đơn trong yêu cầu này vừa bị trả hàng (−${formatVnd(
+        warnedTotal
+      )})</span>
+      <span>— số đúng là <strong class="tabular-nums">${formatVnd(
+        Math.max(0, w.amount - warnedTotal)
+      )}</strong>.</span>
+      <span>Nếu CHƯA chuyển khoản, bấm "Huỷ yêu cầu" để khỏi mất tiền. Đã chuyển rồi thì cứ đánh dấu đã trả, khoản này sẽ trừ dần vào các đơn sau.</span>
+      <span class="font-mono text-[10px] text-rose-600">${warned
+        .map((d) => escapeHtml(d.orderId))
+        .join(" · ")}</span>
+    </div>
+  </td>
+</tr>`;
+
       return `<tr class="transition hover:bg-slate-50/80" data-search="${escapeHtml(
         `${displayNames.get(nameKey(w.platform, w.userId)) ?? ""} ${w.userId} ${w.bankAccountNumber} ${
           w.bankAccountHolder
@@ -782,8 +823,15 @@ export function renderWithdrawalsPage(
     <button type="submit" form="${formId}" class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
       ${icon("check", "h-3.5 w-3.5")} Đánh dấu đã trả
     </button>
+    ${
+      warned.length > 0
+        ? `<button type="submit" form="cancel-${w.id}" class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50">
+      ${icon("x-circle", "h-3.5 w-3.5")} Huỷ yêu cầu
+    </button>`
+        : ""
+    }
   </td>
-</tr>`;
+</tr>${warningRow}`;
     })
     .join("\n");
 
@@ -793,9 +841,17 @@ export function renderWithdrawalsPage(
     .map((w) => {
       const who = displayNames.get(nameKey(w.platform, w.userId)) ?? `${w.platform}/${w.userId}`;
       const confirmMsg = `Xác nhận ĐÃ CHUYỂN KHOẢN ${formatVnd(w.amount)} cho ${who}? Hành động này không thể hoàn tác.`;
+      const warned = debtWarnings.get(w.id) ?? [];
+      const cancelForm =
+        warned.length === 0
+          ? ""
+          : `
+<form id="cancel-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/cancel" ${confirmOnSubmit(
+              `Huỷ yêu cầu rút ${formatVnd(w.amount)} của ${who}? Tiền sẽ trở lại số dư khả dụng của họ.`
+            )} hidden><input type="hidden" name="reason" value="Đơn trong yêu cầu đã bị trả hàng"></form>`;
       return `<form id="pay-${w.id}" method="POST" action="/admin/withdrawals/${w.id}/mark-paid" enctype="multipart/form-data" ${confirmOnSubmit(
         confirmMsg
-      )} hidden></form>`;
+      )} hidden></form>${cancelForm}`;
     })
     .join("\n");
 
@@ -878,6 +934,46 @@ ${payForms}`
   <p class="m-0 text-xs text-slate-500">Sau khi bạn chuyển khoản và bấm "Đánh dấu đã trả", giao dịch sẽ nằm ở đây.</p>
 </div>`;
 
+  // Tab thu 3 CHI hien khi that su co yeu cau da huy (2026-10-08): day la truong hop hiem, bay mot tab
+  // rong tren moi lan vao trang la them nhieu cho mat.
+  const cancelledRows = cancelledHistory
+    .map(
+      (w) => `<tr class="transition hover:bg-slate-50/80" data-search="${escapeHtml(
+        `${displayNames.get(nameKey(w.platform, w.userId)) ?? ""} ${w.userId} ${w.bankAccountNumber} ${
+          w.bankAccountHolder
+        } ${w.bankName}`.toLowerCase()
+      )}">
+  <td class="px-6 py-4 align-top">
+    ${whenCell(w.cancelledAt)}
+    <div class="mt-1">${platformChip(w.platform)}</div>
+  </td>
+  <td class="px-6 py-4 align-top">${whoCell(w)}</td>
+  <td class="px-6 py-4 text-right align-top">
+    <!-- Gach ngang + lam mo: so that de doi soat, nhung de kieu thuong thi hang nay doc ra thanh
+         "da tra cho khach" - tien nay khong ai nhan ca. Cung quy tac voi don reversed o /admin/orders. -->
+    <div class="text-base font-bold tabular-nums text-slate-400 line-through">${formatVnd(w.amount)}</div>
+  </td>
+  <td class="px-6 py-4 align-top text-xs text-slate-500">${
+    w.cancelReason ? escapeHtml(w.cancelReason) : `<span class="text-slate-400">—</span>`
+  }</td>
+</tr>`
+    )
+    .join("\n");
+
+  const cancelledPanel = `<div class="table-scroll">
+  <table class="w-full border-collapse whitespace-nowrap text-xs">
+    <thead class="border-b border-slate-200 bg-slate-50">
+      <tr>
+        <th class="${thClass}">Thời gian huỷ &amp; kênh</th>
+        <th class="${thClass}">Người nhận</th>
+        <th class="${thClass} !text-right">Số tiền (đã huỷ)</th>
+        <th class="${thClass}">Lí do</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">${cancelledRows}</tbody>
+  </table>
+</div>`;
+
   const tabBtn = (target: string, active: boolean, iconName: keyof typeof ICON_PATHS, label: string, count: number, countTone: string) =>
     `<button type="button" role="tab" aria-selected="${active}" aria-controls="panel-${target}" data-tab="${target}"
       class="-mb-px flex items-center gap-2 border-b-2 py-4 text-xs transition ${
@@ -944,6 +1040,11 @@ ${kpiRow}
     <div class="flex gap-6" role="tablist">
       ${tabBtn("pending", true, "clock", "Yêu cầu đang chờ", pending.length, "bg-amber-100 text-amber-700")}
       ${tabBtn("history", false, "history", "Lịch sử đã trả gần đây", paidHistory.length, "bg-slate-100 text-slate-600")}
+      ${
+        cancelledHistory.length > 0
+          ? tabBtn("cancelled", false, "x-circle", "Đã huỷ", cancelledHistory.length, "bg-rose-100 text-rose-700")
+          : ""
+      }
     </div>
     <div class="relative w-full py-2 sm:w-56 sm:py-0">
       ${icon("search", "pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400")}
@@ -953,6 +1054,11 @@ ${kpiRow}
   </div>
   <div data-panel="pending" id="panel-pending" role="tabpanel">${pendingPanel}</div>
   <div data-panel="history" id="panel-history" role="tabpanel" hidden>${historyPanel}</div>
+  ${
+    cancelledHistory.length > 0
+      ? `<div data-panel="cancelled" id="panel-cancelled" role="tabpanel" hidden>${cancelledPanel}</div>`
+      : ""
+  }
 </div>
 ${pageScript}`;
 
