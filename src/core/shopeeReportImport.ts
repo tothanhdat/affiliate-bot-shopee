@@ -97,16 +97,19 @@ function classifyRowStatus(raw: string): RowStatus {
 }
 
 /**
- * Ngay DAT don that tu cot "Thời Gian Đặt Hàng" (dinh dang "YYYY-MM-DD HH:mm:ss", gio VN) -> chi
+ * Doc 1 cot ngay cua bao cao Shopee (dinh dang "YYYY-MM-DD HH:mm:ss", gio VN) -> chi
  * giu phan ngay. Tra null khi thieu/sai dinh dang: day la cot THONG KE, khong duoc quyen lam hong
  * viec ghi nhan hoa hong (bang tien). KHONG doan dinh dang khac ("30/09/2026" co the la dd/mm hoac
  * mm/dd tuy locale may xuat file - doan sai se lech ngay am tham ca thang).
  *
- * Luu y ten cot: Shopee viet hoa "G"/"H" giua cau o rieng cot nay ("Thời Gian Đặt Hàng") trong khi
+ * Ham nay phuc vu CA 2 cot ngay dang doc: "Thời Gian Đặt Hàng" (-> order_date) va "Thời gian hoàn
+ * thành" (-> completed_at, 2026-10-08). Do la ly do ten ham khong con la ...OrderDate.
+ *
+ * Luu y ten cot: Shopee viet hoa "G"/"H" giua cau o rieng cot ngay dat ("Thời Gian Đặt Hàng") trong khi
  * 2 cot ngay ke ben viet thuong ("Thời gian hoàn thành", "Thời gian Click") - da doi chieu file
  * that, dung "sua lai cho dong nhat".
  */
-export function parseShopeeOrderDate(raw: string | undefined): string | null {
+export function parseShopeeReportDay(raw: string | undefined): string | null {
   const text = raw?.trim();
   if (!text) return null;
 
@@ -129,6 +132,12 @@ interface ShopeeReportRow {
   orderId: string;
   /** "YYYY-MM-DD" gio VN, null khi bao cao khong co cot ngay hoac gia tri hong. */
   orderDate: string | null;
+  /**
+   * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang, tu cot "Thời gian hoàn thành" (2026-10-08).
+   * CHI dong "Hoàn thành" moi co gia tri nay - dong pending va dong huy deu de trong (da doi chieu
+   * file bao cao that: 26 dong hoan thanh co, 8 dong pending va 12 dong huy khong co).
+   */
+  completedAt: string | null;
   productName: string;
   orderAmount: number;
   commissionAmount: number;
@@ -145,7 +154,8 @@ function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
 
     return {
       orderId: row["ID đơn hàng"]?.trim() ?? "",
-      orderDate: parseShopeeOrderDate(row["Thời Gian Đặt Hàng"]),
+      orderDate: parseShopeeReportDay(row["Thời Gian Đặt Hàng"]),
+      completedAt: parseShopeeReportDay(row["Thời gian hoàn thành"]),
       productName: row["Tên Item"]?.trim() ?? "",
       orderAmount: Number(row["Giá trị đơn hàng (₫)"]),
       commissionAmount: Number(row["Tổng hoa hồng sản phẩm(₫)"]),
@@ -172,6 +182,12 @@ interface MergedOrder {
   orderId: string;
   /** Ngay dat SOM NHAT trong cac dong cua don - don gop nhieu san pham co the lech gio nhau. */
   orderDate: string | null;
+  /**
+   * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang, tu cot "Thời gian hoàn thành" (2026-10-08).
+   * CHI dong "Hoàn thành" moi co gia tri nay - dong pending va dong huy deu de trong (da doi chieu
+   * file bao cao that: 26 dong hoan thanh co, 8 dong pending va 12 dong huy khong co).
+   */
+  completedAt: string | null;
   subId: string | null;
   productName: string;
   orderAmount: number;
@@ -220,6 +236,16 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
     .sort()[0] ?? null;
 
   const active = counted.filter((c) => c.status !== "reversed");
+
+  // Ngay giao hang cua ca don = MUON NHAT trong cac dong KHONG bi huy. Nguoc voi orderDate (lay som
+  // nhat) va co chu dich: cua so tra hang cua ca don chi dong khi mon giao CUOI CUNG da het han tra.
+  // Dong bi huy luon trong cot nay nen khong anh huong, nhung loc ra cho ro y.
+  const completedAt =
+    active
+      .map((c) => c.row.completedAt)
+      .filter((d): d is string => d !== null)
+      .sort()
+      .at(-1) ?? null;
   const status: MergedOrder["status"] =
     active.length === 0 ? "reversed" : active.some((c) => c.status === "pending") ? "pending" : "confirmed";
 
@@ -240,7 +266,18 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
 
   return {
     kind: "ok",
-    order: { orderId, orderDate, subId, productName, orderAmount, commissionAmount, status, rawStatusLabel, warnings },
+    order: {
+      orderId,
+      orderDate,
+      completedAt,
+      subId,
+      productName,
+      orderAmount,
+      commissionAmount,
+      status,
+      rawStatusLabel,
+      warnings,
+    },
   };
 }
 
@@ -364,6 +401,7 @@ export function importShopeeReport(
               userSharePercent,
             },
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+            completedAt: order.completedAt,
             holdConfig: recordOrderConfig.holdConfig,
           });
           result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
@@ -383,6 +421,7 @@ export function importShopeeReport(
             platformFeePercent: recordOrderConfig.platformFeePercent,
             userSharePercent,
             maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+            completedAt: order.completedAt,
             holdConfig: recordOrderConfig.holdConfig,
             note: "Nhap tu bao cao Shopee (file CSV admin upload)",
           });
@@ -482,6 +521,7 @@ export function importShopeeReport(
         platformFeePercent: recordOrderConfig.platformFeePercent,
         userSharePercent,
         maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
+        completedAt: order.completedAt,
         holdConfig: recordOrderConfig.holdConfig,
         orderDate: order.orderDate,
         status: "pending",

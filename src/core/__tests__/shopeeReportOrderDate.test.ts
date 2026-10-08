@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LedgerStore } from "../ledgerStore.js";
 import { LogStore } from "../logStore.js";
-import { importShopeeReport, parseShopeeOrderDate } from "../shopeeReportImport.js";
+import { importShopeeReport, parseShopeeReportDay } from "../shopeeReportImport.js";
 
 /**
  * Ngay dat don THAT lay tu cot "Thời Gian Đặt Hàng" cua bao cao Shopee (2026-10-01) - truoc do
@@ -25,6 +25,7 @@ const ORDER_CONFIG = {
 const HEADER = [
   "ID đơn hàng",
   "Thời Gian Đặt Hàng",
+  "Thời gian hoàn thành",
   "Tên Item",
   "Giá trị đơn hàng (₫)",
   "Tổng hoa hồng sản phẩm(₫)",
@@ -39,6 +40,8 @@ const HEADER = [
 interface RowInput {
   orderId: string;
   orderTime: string;
+  /** Cot "Thời gian hoàn thành" - de trong giong bao cao that cho dong pending/huy. */
+  completedTime?: string;
   orderAmount: number;
   commissionAmount: number;
   status: string;
@@ -52,6 +55,7 @@ function buildCsv(rows: RowInput[]): string {
       [
         r.orderId,
         r.orderTime,
+        r.completedTime ?? "",
         '"San pham test"',
         String(r.orderAmount),
         String(r.commissionAmount),
@@ -81,26 +85,26 @@ function seedRequestLog(logStore: LogStore, subId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// parseShopeeOrderDate
+// parseShopeeReportDay
 // ---------------------------------------------------------------------------
 
-test("parseShopeeOrderDate: dinh dang that cua Shopee -> 'YYYY-MM-DD'", () => {
-  assert.equal(parseShopeeOrderDate("2026-09-30 13:07:34"), "2026-09-30");
-  assert.equal(parseShopeeOrderDate("2026-09-30 00:05:04"), "2026-09-30");
-  assert.equal(parseShopeeOrderDate("  2026-10-01 23:59:59  "), "2026-10-01");
+test("parseShopeeReportDay: dinh dang that cua Shopee -> 'YYYY-MM-DD'", () => {
+  assert.equal(parseShopeeReportDay("2026-09-30 13:07:34"), "2026-09-30");
+  assert.equal(parseShopeeReportDay("2026-09-30 00:05:04"), "2026-09-30");
+  assert.equal(parseShopeeReportDay("  2026-10-01 23:59:59  "), "2026-10-01");
 });
 
-test("parseShopeeOrderDate: chi co ngay, khong co gio -> van doc duoc", () => {
-  assert.equal(parseShopeeOrderDate("2026-09-30"), "2026-09-30");
+test("parseShopeeReportDay: chi co ngay, khong co gio -> van doc duoc", () => {
+  assert.equal(parseShopeeReportDay("2026-09-30"), "2026-09-30");
 });
 
-test("parseShopeeOrderDate: gia tri thieu/la -> null, KHONG doan", () => {
-  assert.equal(parseShopeeOrderDate(""), null);
-  assert.equal(parseShopeeOrderDate(undefined), null);
-  assert.equal(parseShopeeOrderDate("   "), null);
-  assert.equal(parseShopeeOrderDate("30/09/2026"), null); // dinh dang khac -> khong doan dd/mm hay mm/dd
-  assert.equal(parseShopeeOrderDate("hom qua"), null);
-  assert.equal(parseShopeeOrderDate("2026-13-45 10:00:00"), null); // thang 13/ngay 45 khong ton tai
+test("parseShopeeReportDay: gia tri thieu/la -> null, KHONG doan", () => {
+  assert.equal(parseShopeeReportDay(""), null);
+  assert.equal(parseShopeeReportDay(undefined), null);
+  assert.equal(parseShopeeReportDay("   "), null);
+  assert.equal(parseShopeeReportDay("30/09/2026"), null); // dinh dang khac -> khong doan dd/mm hay mm/dd
+  assert.equal(parseShopeeReportDay("hom qua"), null);
+  assert.equal(parseShopeeReportDay("2026-13-45 10:00:00"), null); // thang 13/ngay 45 khong ton tai
 });
 
 // ---------------------------------------------------------------------------
@@ -226,4 +230,105 @@ test("importShopeeReport: entry pending ghi TRUOC khi co cot ngay duoc bu order_
 
   logStore.close();
   ledgerStore.close();
+});
+
+// ---------------------------------------------------------------------------
+// importShopeeReport ghi completed_at tu cot "Thời gian hoàn thành" (2026-10-08)
+// ---------------------------------------------------------------------------
+
+test("importShopeeReport: ghi completed_at tu cot 'Thời gian hoàn thành'", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  seedRequestLog(logStore, "k-user-a-aaa-111");
+
+  importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv([
+      {
+        orderId: "DONE1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-02 18:30:00",
+        orderAmount: 500_000,
+        commissionAmount: 50_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+    ]));
+
+  const entry = ledgerStore.listCommissionEntries({ userId: "user-a" })[0];
+  assert.equal(entry.completedAt, "2026-10-02");
+  assert.equal(entry.orderDate, "2026-09-30", "order_date van doc dung cot cua no");
+});
+
+test("importShopeeReport: don pending de trong cot hoan thanh -> completed_at null", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  seedRequestLog(logStore, "k-user-a-aaa-111");
+
+  importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv([
+      {
+        orderId: "PEND1",
+        orderTime: "2026-09-30 10:00:00",
+        orderAmount: 500_000,
+        commissionAmount: 50_000,
+        status: "Đang chờ xử lý",
+        subId: "k-user-a-aaa-111",
+      },
+    ]));
+
+  const entry = ledgerStore.listCommissionEntries({ userId: "user-a" })[0];
+  assert.equal(entry.completedAt, null);
+});
+
+// Nguoc voi orderDate (lay SOM nhat): cua so tra hang cua ca don chi dong khi mon giao CUOI CUNG da
+// het han tra.
+test("importShopeeReport: don gop nhieu dong -> completed_at lay ngay MUON NHAT", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  seedRequestLog(logStore, "k-user-a-aaa-111");
+
+  importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv([
+      {
+        orderId: "MULTI1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-02 18:30:00",
+        orderAmount: 300_000,
+        commissionAmount: 30_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+      {
+        orderId: "MULTI1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-05 09:00:00",
+        orderAmount: 200_000,
+        commissionAmount: 20_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+    ]));
+
+  const entry = ledgerStore.listCommissionEntries({ userId: "user-a" })[0];
+  assert.equal(entry.completedAt, "2026-10-05");
+});
+
+// Cot thong ke khong duoc quyen chan viec ghi nhan TIEN.
+test("importShopeeReport: cot hoan thanh sai dinh dang -> completed_at null nhung don VAN duoc ghi", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  seedRequestLog(logStore, "k-user-a-aaa-111");
+
+  const result = importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv([
+      {
+        orderId: "BADDATE1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "05/10/2026 09:00",
+        orderAmount: 500_000,
+        commissionAmount: 50_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+    ]));
+
+  assert.equal(result.confirmedNew, 1, "don van duoc ghi nhan");
+  const entry = ledgerStore.listCommissionEntries({ userId: "user-a" })[0];
+  assert.equal(entry.completedAt, null);
 });
