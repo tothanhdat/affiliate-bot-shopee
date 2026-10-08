@@ -1296,6 +1296,7 @@ EOF
   - `WithdrawalRequest.cancelledAt: string | null`
   - `cancelWithdrawal(id: string, reason: string): WithdrawalRequest`
   - `listCancelledWithdrawals(limit?: number): WithdrawalRequest[]`
+  - `listEntriesByWithdrawal(withdrawalId: string): CommissionEntry[]` — route cancel (Task 12) phải chụp danh sách entry **trước** khi huỷ, vì `cancelWithdrawal` xoá `withdrawal_id`
   - `class WithdrawalNotCancellableError extends AppError`
 
 - [ ] **Step 1: Write the failing test**
@@ -1597,6 +1598,16 @@ Trong `listUsers()`, thêm 2 subquery vào `SELECT` (giữ `FROM commission_entr
 ```
 
 Và cột `available` hiện có phải loại đơn bị giam (thêm `AND (ce.available_from IS NULL OR ce.available_from <= :today)`) rồi trừ `debt_remaining` ở JS với `Math.max(0, ...)` — **không** trừ trong SQL, để quy tắc floor chỉ tồn tại ở một chỗ. Tương tự, `pending`/`paid` của `listUsers` đổi sang subquery trên `withdrawal_requests` cho khớp `getUserSummary`.
+
+**Hệ quả phải xử cùng lúc: `ORDER BY available DESC` của SQL giờ sai.** Nó sắp theo số **gross** trong khi `availableBalance` trả về là số đã trừ nợ, mà `/admin/users` mặc định hiển thị "khả dụng giảm dần" (xem `CLAUDE.md`) — user có nợ sẽ đứng sai vị trí. Sort lại ở JS **sau** khi đã trừ:
+
+```ts
+    return rows
+      .map((r) => ({ /* ...map, availableBalance: Math.max(0, r.available - r.debt_remaining) */ }))
+      // Sap lai o JS vi ORDER BY cua SQL chi biet so gross - sap theo so DA TRU NO moi khop con so
+      // hien tren trang. Tiebreak theo userId de thu tu on dinh giua cac lan goi.
+      .sort((a, b) => b.availableBalance - a.availableBalance || a.userId.localeCompare(b.userId));
+```
 
 `node:sqlite` dùng tham số theo vị trí `?` — thay `:today` bằng `?` và truyền `todayVnIso()` đúng số lần xuất hiện.
 
@@ -2182,17 +2193,18 @@ Expected: FAIL — 404 cho cả 2 route.
         typeof req.body?.reason === "string" && req.body.reason.trim()
           ? req.body.reason.trim()
           : "Đơn hàng bị trả lại";
+      // Phai chup danh sach entry TRUOC khi huy: cancelWithdrawal() set withdrawal_id = NULL nen sau
+      // do khong con cach nao biet entry nao thuoc yeu cau vua huy. Loc bang status === "confirmed"
+      // tren TOAN BO entry cua user thi hien tai vo tinh dung (moi user chi co 1 yeu cau 'requested',
+      // entry 'paid' bi status chan) - nhung do la dung-do-may, khong phai dung-do-thiet-ke.
+      const entriesInWithdrawal = ledgerStore.listEntriesByWithdrawal(req.params.id);
       const cancelled = ledgerStore.cancelWithdrawal(req.params.id, reason);
 
       // Don bi tra hang nam trong yeu cau nay: gio tien CHUA di nen khong con la no - reverse entry
       // va xoa HAN dong no (khac writeOffDebt la "mat tien that nhung thoi khong doi").
-      for (const entry of ledgerStore.listCommissionEntries({
-        platform: cancelled.platform,
-        userId: cancelled.userId,
-      })) {
+      for (const entry of entriesInWithdrawal) {
         const debt = ledgerStore.getDebtByOrder(entry.merchant, entry.orderId);
         if (!debt || debt.settledAt || debt.writtenOffAt) continue;
-        if (entry.status !== "confirmed") continue;
         ledgerStore.reverseCommissionEntry(entry.id, `Huy yeu cau rut: ${reason}`);
         ledgerStore.deleteDebtByOrder(entry.merchant, entry.orderId);
       }
@@ -2440,6 +2452,20 @@ Expected: FAIL — `heldLine` undefined.
 ```
 
 `ordersConfirmedNotification.ts`: nhận `heldAmount`/`heldUnlockDay`, truyền xuống layout. Renderer vẽ `heldLine` dưới dòng `Tổng cộng` khi khác `null` — **chữ phải có nền riêng** (chữ sáng đặt trần trên nền cam thì chìm, đã gặp thật; xem `CLAUDE.md`).
+
+**Bước xác minh bắt buộc, không được bỏ:** `CLAUDE.md` ghi 4 cái bẫy đã gặp thật ở renderer này (`lineClamp` chỉ ăn khi `display:"block"` — để `"flex"` thì satori **im lặng** bỏ qua; chữ sáng đặt trần trên nền cam thì chìm; `backgroundClip:"text"` của satori không cắt sạch theo nét chữ; đo cỡ chữ bằng mắt trên ảnh đã ghép là sai). Test không bắt được cái nào trong 4 cái đó. Sau khi code xong, **render ảnh thật ra file và xem bằng mắt**:
+
+```bash
+npx tsx -e "
+import { renderOrderImage } from './src/core/orderImage/orderImageRenderer.js';
+import { writeFileSync } from 'node:fs';
+// Dung dung view model co heldLine - xem orderImageLayout.test.ts de lay hinh dang input.
+const buf = await renderOrderImage(/* view model co heldLine */);
+writeFileSync('/private/tmp/claude-501/-Users-ryan-Documents-Claude-Projects-Affiliate-Bot-Shopee/05316d76-8813-4c1b-b504-bd77cf5e9dcb/scratchpad/order-held.jpg', buf);
+"
+```
+
+rồi đọc file đó bằng tool Read (nó hiển thị ảnh). Kiểm 3 điều: dòng mở khoá **đọc được** (không chìm vào nền cam), **không đẩy** số tiền hay thẻ đơn nào ra khỏi khung, và lô **không** có đơn bị giam thì ảnh **giống y** bản cũ.
 
 `replyText.ts`: `formatOrdersConfirmedReply` và caption nhận thêm placeholder `{{heldLine}}`, render thành câu trên hoặc chuỗi rỗng — theo đúng pattern một-slot-nhiều-trạng-thái của `{{commissionLine}}`, **không bao giờ hiện cả hai**.
 
