@@ -151,30 +151,62 @@ test("dashboard: khong co don bi giam / khong no -> KHONG hien 2 dong moi", () =
   assert.doesNotMatch(html, /Đã trừ hoàn trả/);
 });
 
-test("dashboard: co don bi giam -> hien 'Dang tam giu' + ngay mo khoa cua don do", () => {
+test("dashboard: co don bi giam -> the 'Đang tạm giữ' hien SO TIEN, KHONG hien ngay", () => {
   const html = render({
     availableBalance: 0,
-    entries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    entries: [entry({ orderId: "HELD-1", status: "confirmed", availableFrom: "2026-10-15" })],
     heldBalance: 150_000,
-    heldEntries: [entry({ status: "confirmed", availableFrom: "2026-10-15" })],
+    heldEntries: [entry({ orderId: "HELD-1", status: "confirmed", availableFrom: "2026-10-15" })],
   });
   assert.match(html, /Đang tạm giữ/);
   assert.match(html, /150\.000/);
-  assert.match(html, /mở khoá 15\/10/);
+
+  // (2026-10-08, yeu cau truc tiep cua user) Ngay mo khoa KHONG con hien tren THE tong hop nua - chi
+  // con dung 1 noi duy nhat: ngay duoi badge cua TUNG don (xem test ben duoi). Cat rieng doan HTML
+  // cua the "Đang tạm giữ" (tu "Đang tạm giữ" den het </div> dau tien sau do) de chan dung vi tri,
+  // tranh an nham vao ngay "15/10" dang nam o cho khac (vd order-card).
+  const statCardStart = html.indexOf('<div class="label">Đang tạm giữ</div>');
+  const statCardEnd = html.indexOf("</div></div>", statCardStart);
+  const statCardHtml = html.slice(statCardStart, statCardEnd);
+  assert.doesNotMatch(statCardHtml, /\d{2}\/\d{2}/, "the tong hop khong duoc chua ngay thang nao nua");
+  assert.match(statCardHtml, /xem ngày mở khoá/, "thay vao do la cau TRO TOI chi tiet don ben duoi");
 });
 
-test("dashboard: nhieu don bi giam ngay khac nhau -> liet ke TUNG ngay, khong gop", () => {
+// Day la vi tri DUY NHAT con hien ngay mo khoa: duoi badge "Đang tạm giữ" cua CHINH don do trong
+// phan chi tiet tung don - khong con gop/liet ke o the tong hop nua (yeu cau truc tiep cua user).
+test("dashboard: ngay mo khoa hien O TUNG DON, dung don dung ngay - khong bi lan voi don khac", () => {
   const html = render({
     availableBalance: 0,
-    entries: [],
+    entries: [
+      entry({ orderId: "ORDER-A", productName: "San pham A", status: "confirmed", availableFrom: "2026-10-12" }),
+      entry({ orderId: "ORDER-B", productName: "San pham B", status: "confirmed", availableFrom: "2026-10-15" }),
+    ],
     heldBalance: 300_000,
     heldEntries: [
-      entry({ status: "confirmed", availableFrom: "2026-10-12" }),
-      entry({ status: "confirmed", availableFrom: "2026-10-15" }),
+      entry({ orderId: "ORDER-A", status: "confirmed", availableFrom: "2026-10-12" }),
+      entry({ orderId: "ORDER-B", status: "confirmed", availableFrom: "2026-10-15" }),
     ],
   });
-  assert.match(html, /12\/10/);
-  assert.match(html, /15\/10/);
+
+  const cards = html.split("order-card\">").slice(1); // bo phan truoc card dau tien
+  const cardA = cards.find((c) => c.includes("ORDER-A"))!;
+  const cardB = cards.find((c) => c.includes("ORDER-B"))!;
+
+  assert.match(cardA, /mở khoá 12\/10/, "don A phai hien DUNG ngay cua no, khong phai cua don B");
+  assert.doesNotMatch(cardA, /15\/10/);
+  assert.match(cardB, /mở khoá 15\/10/, "don B phai hien DUNG ngay cua no, khong phai cua don A");
+  assert.doesNotMatch(cardB, /12\/10/);
+});
+
+// Don KHONG bi giam (hoac da qua ngay mo khoa) thi badge la "Khả dụng" - khong duoc bia them dong
+// "mo khoa" nao ca, du don do co san o UserLedgerSummary.heldEntries do mot loi logic nao khac.
+test("dashboard: don KHONG dang bi giam -> khong co dong 'mo khoa' duoi badge cua no", () => {
+  const html = render({
+    availableBalance: 50_000,
+    entries: [entry({ orderId: "FREE-1", status: "confirmed", availableFrom: null })],
+  });
+  const card = html.slice(html.indexOf('order-card">'));
+  assert.doesNotMatch(card, /mở khoá/);
 });
 
 // (2026-10-08, feedback that cua user) No KHONG duoc la 1 the trong hang "tien ban co" - dat chung

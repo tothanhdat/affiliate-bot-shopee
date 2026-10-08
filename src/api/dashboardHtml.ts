@@ -187,6 +187,9 @@ function pageShell(title: string, body: string): string {
   .order-card { border-radius: 20px; padding: 1.25rem 1.375rem 1.375rem; }
   .order-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.875rem; flex-wrap: wrap; }
   .order-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; color: var(--text-dim); font-size: 0.8125rem; margin-top: 0.375rem; }
+  /* Badge + ngay mo khoa xep doc, canh phai - doi xung voi khoi order-id/order-meta ben trai. */
+  .badge-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3125rem; }
+  .unlock-date { font-size: 0.75rem; color: var(--text-dim); white-space: nowrap; }
   .merchant { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-muted); font-weight: 600; }
   .merchant-shopee { color: var(--shopee); }
   .merchant svg { width: 14px; height: 14px; flex-shrink: 0; }
@@ -335,18 +338,18 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 };
 
 /**
- * Dong giai thich duoi so "Dang giu": ngay mo khoa cua TUNG don, khong gop thanh 1 ngay chung - moi
- * don co moc giao hang rieng nen gop lai la noi sai voi don mo som.
+ * Cau TRO TOI chi tiet don (2026-10-08, doi theo yeu cau truc tiep cua user) - KHONG con liet ke
+ * ngay mo khoa o day nua. Truoc do ham nay gop het ngay mo khoa cua moi don bi giam thanh 1 chuoi
+ * ("mở khoá: 12/10 · 15/10") roi nhet vao the tong hop VA vao cau thong bao - 2 noi cung lap lai
+ * cung mot thong tin, va don co moc giao hang RIENG nen goi chung thanh 1 cho de doc nham. Ngay mo
+ * khoa gio CHI hien dung 1 noi: ngay duoi badge "Đang tạm giữ" cua TUNG don (xem vong lap ve entries
+ * ben duoi) - mot nguon su that duy nhat, khong con 2 cho phai dong bo voi nhau.
  */
-function heldUnlockHint(heldEntries: CommissionEntry[]): string {
-  const days = heldEntries
-    .map((e) => e.availableFrom)
-    .filter((d): d is string => d !== null)
-    // T12:00:00Z de khong bi lech ngay khi format lai theo gio VN (+07)
-    .map((d) => formatVnDateDdMm(new Date(`${d}T12:00:00Z`)));
-  if (days.length === 0) return "";
-  const unique = [...new Set(days)];
-  return unique.length === 1 ? `mở khoá ${unique[0]}` : `mở khoá: ${unique.join(" · ")}`;
+function heldDetailPointer(heldEntries: CommissionEntry[]): string {
+  if (heldEntries.length === 0) return "";
+  return heldEntries.length === 1
+    ? "xem ngày mở khoá ở đơn bên dưới"
+    : `xem ngày mở khoá của từng đơn (${heldEntries.length} đơn) bên dưới`;
 }
 
 export function renderDashboardPage(input: {
@@ -397,7 +400,14 @@ export function renderDashboardPage(input: {
       <div class="order-id"><span class="order-id-label">Mã đơn:</span> ${escapeHtml(e.orderId)} ${copyButton(e.orderId)}</div>
       <div class="order-meta"><span>${formatDateTime(e.createdAt)}</span>${merchantTag(e.merchant)}</div>
     </div>
-    <span class="badge badge-${badge.tone}">${badge.label}</span>
+    <div class="badge-wrap">
+      <span class="badge badge-${badge.tone}">${badge.label}</span>
+      ${
+        badge.label === "Đang tạm giữ" && e.availableFrom
+          ? `<div class="unlock-date">mở khoá ${formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))}</div>`
+          : ""
+      }
+    </div>
   </div>
   ${product ? `<div class="order-card-product">${product}</div>` : ""}
   <div class="order-stats">
@@ -487,7 +497,7 @@ export function renderDashboardPage(input: {
         //   - cho xac nhan -> cho Shopee duyet
         input.availableBalance + input.heldBalance >= input.thresholdVnd && input.heldBalance > 0
         ? notice(
-            `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày (${heldUnlockHint(input.heldEntries)}). Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
+            `Bạn đang có ${formatVnd(input.heldBalance)} được giữ thêm vài ngày (${heldDetailPointer(input.heldEntries)}). Tới ngày đó là bạn rút được, không cần mua thêm gì.`,
             "i"
           )
         : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= input.thresholdVnd
@@ -523,7 +533,7 @@ export function renderDashboardPage(input: {
   // luat khong ap dung cho ho.
   const heldRow =
     input.heldBalance > 0
-      ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldUnlockHint(input.heldEntries)}</div></div>`
+      ? `<div class="stat info"><div class="label">Đang tạm giữ</div><div class="value">${formatVnd(input.heldBalance)}</div><div class="hint">${heldDetailPointer(input.heldEntries)}</div></div>`
       : "";
   // No KHONG phai 1 the trong hang nay: hang nay la "tien ban co", con no la mot khoan BI TRU -
   // dat chung vao nhau thi user doc ra nhu mot loai so du nua (feedback that cua user 2026-10-08).
