@@ -792,6 +792,12 @@ export function createServer(
       const requestOrderConfig = {
         ...orderConfig,
         userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+        // Doc LUC XU LI chu khong dung gia tri env dong bang luc khoi dong: admin doi nguong/so ngay
+        // giam o /admin/settings phai co hieu luc ngay, khong can restart.
+        holdConfig: {
+          thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
+          holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
+        },
       };
       const entry = recordSingleOrder(logStore, ledgerStore, requestOrderConfig, {
         subId,
@@ -893,6 +899,12 @@ export function createServer(
       const requestOrderConfig = {
         ...orderConfig,
         userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+        // Doc LUC XU LI chu khong dung gia tri env dong bang luc khoi dong: admin doi nguong/so ngay
+        // giam o /admin/settings phai co hieu luc ngay, khong can restart.
+        holdConfig: {
+          thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
+          holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
+        },
       };
       const result = importShopeeReport(
         logStore,

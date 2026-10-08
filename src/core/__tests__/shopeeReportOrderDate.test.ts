@@ -332,3 +332,188 @@ test("importShopeeReport: cot hoan thanh sai dinh dang -> completed_at null nhun
   const entry = ledgerStore.listCommissionEntries({ userId: "user-a" })[0];
   assert.equal(entry.completedAt, null);
 });
+
+// ---------------------------------------------------------------------------
+// Bang quyet dinh nhanh "Da huy" (2026-10-08, Task 11)
+//
+// Truoc day CHI ca 'pending' duoc xu li; 4 ca con lai roi het vao 1 dong warning, nen entry confirmed
+// CHUA rut cung khong bi reverse - tien LAY LAI DUOC ma van mat.
+// ---------------------------------------------------------------------------
+
+const BANK = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
+const HOLD_ON_CONFIG = { ...ORDER_CONFIG, holdConfig: { thresholdVnd: 100_000, holdDays: 7 } };
+
+function setupImport() {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  seedRequestLog(logStore, "k-user-a-aaa-111");
+  return { logStore, ledgerStore };
+}
+
+function importDone(logStore: LogStore, ledgerStore: LedgerStore, config = ORDER_CONFIG, commission = 50_000) {
+  return importShopeeReport(
+    logStore,
+    ledgerStore,
+    { recordOrderConfig: config },
+    buildCsv([
+      {
+        orderId: "X1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-02 18:30:00",
+        orderAmount: commission * 10,
+        commissionAmount: commission,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+    ])
+  );
+}
+
+function importCancelled(logStore: LogStore, ledgerStore: LedgerStore, config = ORDER_CONFIG) {
+  return importShopeeReport(
+    logStore,
+    ledgerStore,
+    { recordOrderConfig: config },
+    buildCsv([
+      {
+        orderId: "X1",
+        orderTime: "2026-09-30 10:00:00",
+        orderAmount: 0,
+        commissionAmount: 0,
+        status: "Đã hủy",
+        subId: "k-user-a-aaa-111",
+      },
+    ])
+  );
+}
+
+test("'Da huy' + entry confirmed CHUA rut -> reverse, KHONG sinh no (thu hoi tron)", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  const result = importCancelled(logStore, ledgerStore);
+
+  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "reversed");
+  assert.equal(result.reversedCount, 1);
+  assert.equal(result.debtCreatedCount, 0, "tien con trong tay thi KHONG phai no");
+  assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), 0);
+  assert.deepEqual(result.statusTransitions, [{ orderId: "X1", from: "confirmed", to: "reversed" }]);
+});
+
+test("'Da huy' + entry confirmed DANG BI GIAM -> van reverse, khong no", () => {
+  const { logStore, ledgerStore } = setupImport();
+  // commission 300k, nguong 100k -> bi giam
+  importDone(logStore, ledgerStore, HOLD_ON_CONFIG, 300_000);
+  const held = ledgerStore.getEntryByOrderId("shopee", "X1");
+  assert.ok(held?.availableFrom, "dung la don dang bi giam");
+
+  const result = importCancelled(logStore, ledgerStore, HOLD_ON_CONFIG);
+  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "reversed");
+  assert.equal(result.debtCreatedCount, 0);
+});
+
+test("'Da huy' + entry da 'paid' -> sinh no, status VAN la 'paid'", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  const w = ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  ledgerStore.markWithdrawalPaid(w.id, null);
+
+  const result = importCancelled(logStore, ledgerStore);
+
+  const entry = ledgerStore.getEntryByOrderId("shopee", "X1");
+  assert.equal(entry?.status, "paid", "KHONG doi status: tien da ra khoi tay that, user co sao ke");
+  assert.equal(result.debtCreatedCount, 1);
+  assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), entry!.userShareAmount);
+  assert.deepEqual(result.debtsByUser, [
+    { platform: "zalo", userId: "user-a", orderId: "X1", amount: entry!.userShareAmount },
+  ]);
+});
+
+test("'Da huy' + entry trong yeu cau rut 'requested' -> sinh no + canh bao admin", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+
+  const result = importCancelled(logStore, ledgerStore);
+
+  assert.equal(result.debtCreatedCount, 1);
+  assert.equal(ledgerStore.getEntryByOrderId("shopee", "X1")?.status, "confirmed", "chua doi status");
+  assert.ok(
+    result.errors.some((e) => e.includes("X1") && /huy yeu cau/i.test(e)),
+    `can canh bao admin co the huy yeu cau rut, nhan duoc: ${JSON.stringify(result.errors)}`
+  );
+});
+
+test("import LAI cung bao cao huy 2 lan -> no KHONG nhan doi", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  const w = ledgerStore.requestWithdrawal("zalo", "user-a", 20_000, BANK);
+  ledgerStore.markWithdrawalPaid(w.id, null);
+
+  importCancelled(logStore, ledgerStore);
+  const total = ledgerStore.getOutstandingDebtTotal("zalo", "user-a");
+  const second = importCancelled(logStore, ledgerStore);
+
+  assert.equal(second.debtCreatedCount, 0, "lan 2 khong ghi no moi");
+  assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), total);
+});
+
+test("'Da huy' + entry da 'reversed' -> bo qua im lang, khong canh bao", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore);
+  importCancelled(logStore, ledgerStore);
+  const second = importCancelled(logStore, ledgerStore);
+
+  assert.equal(second.reversedCount, 0);
+  assert.equal(second.debtCreatedCount, 0);
+  assert.deepEqual(second.errors, [], "don da huy roi thi khong con gi de canh bao");
+});
+
+test("heldCount dem so don MOI bi giam", () => {
+  const { logStore, ledgerStore } = setupImport();
+  const result = importShopeeReport(
+    logStore,
+    ledgerStore,
+    { recordOrderConfig: HOLD_ON_CONFIG },
+    buildCsv([
+      {
+        orderId: "BIG1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-02 18:30:00",
+        orderAmount: 3_000_000,
+        commissionAmount: 300_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+      {
+        orderId: "SMALL1",
+        orderTime: "2026-09-30 10:00:00",
+        completedTime: "2026-10-02 18:30:00",
+        orderAmount: 100_000,
+        commissionAmount: 10_000,
+        status: "Hoàn thành",
+        subId: "k-user-a-aaa-111",
+      },
+    ])
+  );
+
+  assert.equal(result.confirmedNew, 2);
+  assert.equal(result.heldCount, 1, "chi don to bi giam");
+});
+
+// Chot "available_from DA CHOT": doi setting roi import lai bao cao KHONG duoc dich ngay mo khoa cua
+// don da confirmed - don do di vao nhanh confirmedDuplicate, khong goi lai confirmPendingEntry.
+test("import lai sau khi doi setting hold KHONG dich ngay mo khoa da chot", () => {
+  const { logStore, ledgerStore } = setupImport();
+  importDone(logStore, ledgerStore, HOLD_ON_CONFIG, 300_000);
+  const before = ledgerStore.getEntryByOrderId("shopee", "X1")!.availableFrom;
+  assert.ok(before);
+
+  // Admin nang hold tu 7 len 30 ngay roi import lai dung bao cao do
+  importDone(logStore, ledgerStore, { ...ORDER_CONFIG, holdConfig: { thresholdVnd: 100_000, holdDays: 30 } }, 300_000);
+
+  assert.equal(
+    ledgerStore.getEntryByOrderId("shopee", "X1")!.availableFrom,
+    before,
+    "ngay mo khoa phai GIU NGUYEN - khong keo dai thoi gian giam cua don user da mua"
+  );
+});

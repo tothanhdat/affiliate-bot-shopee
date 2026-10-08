@@ -3,7 +3,7 @@ import { AppError, DuplicateConversionError } from "./errors.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
-import type { StatusTransition } from "./types.js";
+import type { Platform, StatusTransition } from "./types.js";
 import { formatVnDateIso, todayVnIso } from "./vietnamDate.js";
 
 /**
@@ -57,6 +57,15 @@ export interface ShopeeReportImportResult {
   newOrderIds: string[];
   /** Don doi trang thai THAT SU (vd pending->confirmed) - KHONG gom pendingUpdated (van la "pending", chi refresh so lieu). */
   statusTransitions: StatusTransition[];
+  /** Don MOI bi giam vi user_share >= nguong (2026-10-08) - xem payoutHold.ts. */
+  heldCount: number;
+  /**
+   * Don phat sinh NO hoan tra trong lan import nay: bao cao ghi da huy nhung tien DA ra khoi tay
+   * (entry 'paid', hoac entry dang nam trong 1 yeu cau rut cho duyet).
+   */
+  debtCreatedCount: number;
+  /** Chi tiet no vua sinh - route web dung de DM user. */
+  debtsByUser: Array<{ platform: Platform; userId: string; orderId: string; amount: number }>;
 }
 
 const STATUS_COMPLETED = "Hoàn thành";
@@ -212,6 +221,11 @@ type MergeOutcome = { kind: "unknown-status"; rawStatus: string } | { kind: "ok"
  *    tat ca "Hoan thanh" -> confirmed (nguyen tac "chua chac chan het thi van pending").
  *  - Ten san pham = ten dong hoa hong CAO NHAT, them hau to "(+N san pham khac)" neu con nhieu dong.
  */
+/** Ghi chu dinh kem khi huy/ghi no 1 don - dung chung cho ca 3 nhanh de admin doc log thong nhat. */
+function reverseReason(rawStatusLabel: string): string {
+  return `Bao cao Shopee ghi trang thai san pham lien ket = "${rawStatusLabel}"`;
+}
+
 function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome {
   const classified = rows.map((row) => ({ row, status: classifyRowStatus(row.linkedProductStatus) }));
 
@@ -305,6 +319,9 @@ export function importShopeeReport(
     confirmedByUser: [],
     newOrderIds: [],
     statusTransitions: [],
+    heldCount: 0,
+    debtCreatedCount: 0,
+    debtsByUser: [],
   };
 
   const confirmedRows: OrderRowResult[] = [];
@@ -430,6 +447,7 @@ export function importShopeeReport(
           ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         }
         result.confirmedNew += 1;
+        if (entry.availableFrom !== null) result.heldCount += 1;
         confirmedRows.push({
           line: 0,
           subId,
@@ -459,14 +477,62 @@ export function importShopeeReport(
         ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
         continue;
       }
-      if (existing.status !== "pending") {
-        if (existing.status === "confirmed" || existing.status === "paid") {
-          result.errors.push(
-            `[${orderId}] Bao cao Shopee ghi "${order.rawStatusLabel}" nhung entry noi bo dang "${existing.status}" - KHONG tu huy (coi la final), can admin tu kiem tra (dung reverse-entry CLI neu that su can huy).`
-          );
+      // BA ca khac nhau HAN nhau ve TIEN, khong duoc gop (xem spec muc 4):
+      //  - confirmed + chua nam trong yeu cau rut: tien con trong tay -> thu hoi TRON, khong no.
+      //    Ke ca don dang bi giam: hold da lam dung viec cua no.
+      //  - confirmed + da nam trong yeu cau rut 'requested': tien chua di nhung admin CO THE da chuyen
+      //    khoan ma chua bam "da tra" -> ghi no NGAY (mac dinh an toan, so van khop du admin bo qua)
+      //    va canh bao de admin con co hoi huy yeu cau neu chua chuyen.
+      //  - paid: tien da di that -> ghi no + DM user.
+      if (existing.status === "reversed") continue;
+
+      if (existing.status === "confirmed" && existing.withdrawalId === null) {
+        try {
+          // allowNonPending: entry dang 'confirmed' nen reverseCommissionEntry mac dinh tu choi. An
+          // toan o day vi da kiem withdrawalId === null ngay tren - tien chac chan con trong tay.
+          ledgerStore.reverseCommissionEntry(existing.id, reverseReason(order.rawStatusLabel), {
+            allowNonPending: true,
+          });
+          result.reversedCount += 1;
+          result.statusTransitions.push({ orderId, from: "confirmed", to: "reversed" });
+          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
+        } catch (err) {
+          const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
+          result.errors.push(`[${orderId}] ${msg}`);
         }
         continue;
       }
+
+      if (existing.status === "confirmed" || existing.status === "paid") {
+        const debt = ledgerStore.recordPayoutDebt({
+          platform: existing.platform,
+          userId: existing.userId,
+          merchant: existing.merchant,
+          orderId,
+          amount: existing.userShareAmount,
+          note: reverseReason(order.rawStatusLabel),
+        });
+        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
+        if (debt) {
+          result.debtCreatedCount += 1;
+          result.debtsByUser.push({
+            platform: existing.platform,
+            userId: existing.userId,
+            orderId,
+            amount: existing.userShareAmount,
+          });
+          if (existing.status === "confirmed") {
+            // Tien CHUA di - admin con kip huy yeu cau rut de khoi mat. Canh bao nay la co hoi lam tot
+            // hon, KHONG phai dieu kien de dung: no da duoc ghi nen so van khop du admin bo qua.
+            result.errors.push(
+              `[${orderId}] Don bi tra hang nhung dang nam trong 1 yeu cau rut CHUA thanh toan - da ghi no. Neu CHUA chuyen khoan, vao /admin/withdrawals huy yeu cau do de khoi mat tien.`
+            );
+          }
+        }
+        continue;
+      }
+
+      if (existing.status !== "pending") continue;
       try {
         ledgerStore.reverseCommissionEntry(
           existing.id,

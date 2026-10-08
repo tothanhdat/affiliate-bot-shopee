@@ -229,7 +229,10 @@ test("importShopeeReport: don 'pending' da co san, lan sau bao cao 'Khong hop le
   }
 });
 
-test("importShopeeReport: don da 'confirmed' truoc do, bao cao lai 'Khong hop le' -> KHONG tu huy, ghi canh bao", () => {
+// 2026-10-08: hanh vi DAO LAI. Truoc day don 'confirmed' bi bao cao ghi huy thi KHONG duoc reverse,
+// chi day 1 dong warning - nen tien LAY LAI DUOC ma van nam trong Kha dung cua user va rut duoc binh
+// thuong. Gio tien con trong tay (chua nam trong yeu cau rut nao) thi thu hoi TRON, khong sinh no.
+test("importShopeeReport: don 'confirmed' chua rut, bao cao lai 'Khong hop le' -> reverse, thu hoi tron", () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   try {
@@ -266,13 +269,14 @@ test("importShopeeReport: don da 'confirmed' truoc do, bao cao lai 'Khong hop le
       ])
     );
 
-    assert.equal(result.reversedCount, 0);
-    assert.equal(result.errors.length, 1);
-    assert.match(result.errors[0], /confirmed/);
-    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000); // khong doi
+    assert.equal(result.reversedCount, 1);
+    assert.deepEqual(result.errors, [], "tien con trong tay thi khong co gi phai canh bao admin");
+    assert.equal(result.debtCreatedCount, 0, "thu hoi tron thi KHONG phai no");
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0, "tien bi thu hoi khoi Kha dung");
+    assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), 0);
 
     const entries = ledgerStore.getUserSummary("zalo", "user-a").entries;
-    assert.equal(entries[0].status, "confirmed");
+    assert.equal(entries[0].status, "reversed");
   } finally {
     logStore.close();
     ledgerStore.close();
@@ -607,7 +611,10 @@ test("importShopeeReport: don 'Da huy' chua tung duoc ghi nhan -> bo qua im lang
   }
 });
 
-test("importShopeeReport: don da 'confirmed' truoc do, bao cao lai 'Da huy' -> KHONG tu huy, ghi canh bao", () => {
+// 2026-10-08: hanh vi DAO LAI. Truoc day don 'confirmed' bi bao cao ghi huy thi KHONG duoc reverse,
+// chi day 1 dong warning - nen tien LAY LAI DUOC ma van nam trong Kha dung cua user va rut duoc binh
+// thuong. Gio tien con trong tay (chua nam trong yeu cau rut nao) thi thu hoi TRON, khong sinh no.
+test("importShopeeReport: don 'confirmed' chua rut, bao cao lai 'Da huy' -> reverse, thu hoi tron", () => {
   const logStore = new LogStore(":memory:");
   const ledgerStore = new LedgerStore(":memory:");
   try {
@@ -628,10 +635,11 @@ test("importShopeeReport: don da 'confirmed' truoc do, bao cao lai 'Da huy' -> K
       buildCsv([{ orderId: "SP025", orderAmount: 100_000, commissionAmount: 0, status: "Đã hủy", subIdParts }])
     );
 
-    assert.equal(result.reversedCount, 0);
-    assert.equal(result.errors.length, 1);
-    assert.match(result.errors[0], /confirmed/);
-    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 8_000); // khong doi
+    assert.equal(result.reversedCount, 1);
+    assert.deepEqual(result.errors, [], "tien con trong tay thi khong co gi phai canh bao admin");
+    assert.equal(result.debtCreatedCount, 0, "thu hoi tron thi KHONG phai no");
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0, "tien bi thu hoi khoi Kha dung");
+    assert.equal(ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), 0);
   } finally {
     logStore.close();
     ledgerStore.close();
