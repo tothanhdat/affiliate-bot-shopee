@@ -1432,3 +1432,158 @@ test("template no hoan tra PHAI co cau 'khong phai chuyen tien lai'", () => {
 test("template huy yeu cau rut PHAI noi tien van con trong so du", () => {
   assert.match(WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT, /vẫn nằm nguyên trong số dư/);
 });
+
+// ---------------------------------------------------------------------------
+// Huy yeu cau rut + xoa no (2026-10-08)
+// ---------------------------------------------------------------------------
+
+function seedConfirmedOrder(ledgerStore: LedgerStore, orderId: string, commissionAmount: number) {
+  return ledgerStore.recordConversion({
+    subId: `telegram-user-a-${orderId}-x`,
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: commissionAmount * 10,
+    commissionAmount,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 100,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+  });
+}
+
+test("POST /admin/withdrawals/:id/cancel: tien ve lai Kha dung, DM user", async () => {
+  const { ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedConfirmedOrder(ledgerStore, "CANCEL1", 100_000);
+    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0, "tien dang bi giu");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "reason=don+bi+tra+hang",
+      redirect: "manual",
+    });
+
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 100_000, "tien ve lai Kha dung");
+    assert.equal(ledgerStore.getPendingWithdrawal("telegram", "user-a"), null);
+    assert.equal(ledgerStore.listCancelledWithdrawals()[0].cancelReason, "don bi tra hang");
+
+    assert.equal(notifyUserCalls.length, 1);
+    assert.match(notifyUserCalls[0].message, /đã được huỷ/);
+    assert.match(notifyUserCalls[0].message, /vẫn nằm nguyên trong số dư/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/withdrawals/:id/cancel tren yeu cau DA TRA -> 422, khong doi gi", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedConfirmedOrder(ledgerStore, "CANCEL2", 100_000);
+    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
+    ledgerStore.markWithdrawalPaid(w.id, null);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "",
+      redirect: "manual",
+    });
+
+    assert.equal(res.status, 422);
+    assert.equal(ledgerStore.listPaidWithdrawals().length, 1, "van la yeu cau da tra");
+    assert.equal(ledgerStore.listCancelledWithdrawals().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+// Huy yeu cau rut khi don trong do vua bi tra hang: tien CHUA di nen khong con la no - entry phai bi
+// reverse va dong no bi xoa HAN.
+test("POST cancel: don vua bi tra hang trong yeu cau -> reverse entry + xoa han dong no", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const entry = seedConfirmedOrder(ledgerStore, "CANCEL3", 100_000);
+    const w = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
+    // Mo phong import ghi no cho don dang nam trong yeu cau rut cho duyet
+    ledgerStore.recordPayoutDebt({
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "CANCEL3",
+      amount: entry.userShareAmount,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/withdrawals/${w.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "",
+      redirect: "manual",
+    });
+
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "CANCEL3")?.status, "reversed");
+    assert.equal(ledgerStore.getDebtByOrder("shopee", "CANCEL3"), null, "no bi xoa HAN, khong phai write-off");
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0, "don bi huy nen khong con tien");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST write-off: xoa no, Kha dung tang lai", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedConfirmedOrder(ledgerStore, "WO1", 10_000);
+    const debt = ledgerStore.recordPayoutDebt({
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "OLD-ORDER",
+      amount: 4_000,
+    });
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 6_000);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/users/telegram/user-a/debts/${debt!.id}/write-off`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      redirect: "manual",
+    });
+
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 10_000);
+    assert.ok(ledgerStore.getDebtByOrder("shopee", "OLD-ORDER")?.writtenOffAt, "dong van con de doi soat");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST write-off voi platform khong hop le -> 404", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const debt = ledgerStore.recordPayoutDebt({
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "OLD-ORDER",
+      amount: 4_000,
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/users/facebook/user-a/debts/${debt!.id}/write-off`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      redirect: "manual",
+    });
+    assert.equal(res.status, 404);
+    assert.equal(ledgerStore.getDebtByOrder("shopee", "OLD-ORDER")?.writtenOffAt, null);
+  } finally {
+    cleanup();
+  }
+});
