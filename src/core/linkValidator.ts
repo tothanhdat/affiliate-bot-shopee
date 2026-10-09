@@ -138,7 +138,7 @@ export async function parseProductLink(rawUrl: string): Promise<ParsedProductLin
     throw new UnsupportedMerchantLinkError();
   }
 
-  if (merchant.shortHosts.has(url.hostname.toLowerCase())) {
+  if (merchant.resolveShortLinks !== false && merchant.shortHosts.has(url.hostname.toLowerCase())) {
     const resolvedUrl = await resolveRedirect(rawUrl);
     let resolved: URL;
     try {

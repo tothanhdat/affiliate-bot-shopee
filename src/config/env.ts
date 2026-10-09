@@ -147,6 +147,26 @@ export const env = {
   },
 
   /**
+   * TikTok Shop qua RioHub (2026-10-09). Mac dinh TAT - giong FAQ_PROVIDER=off va
+   * COMMISSION_LOOKUP_ENABLED=false: deploy code moi ma chua cau hinh thi hanh vi bot KHONG DOI
+   * (link TikTok van nhan RetiredMerchantLinkError nhu truoc).
+   * `enabled` la co THO; viec tu tat khi thieu key nam o providers/index.ts.
+   */
+  tiktok: {
+    enabled: optionalBool("TIKTOK_ENABLED", false),
+    apiKey: optional("RIOHUB_API_KEY", ""),
+    creatorUsername: optional("RIOHUB_CREATOR_USERNAME", ""),
+    /** Ngan cach dau phay, dung thu tu thu. Rong -> RIOHUB_DEFAULT_BASE_URLS. */
+    baseUrls: optional("RIOHUB_BASE_URLS", "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== ""),
+    timeoutMs: optionalInt("RIOHUB_TIMEOUT_MS", 10_000),
+    /** Nhan `channel` de tach link bot tao khoi link chu bot tu tao tren app RioHub. */
+    linkChannel: optional("RIOHUB_LINK_CHANNEL", "bot"),
+  },
+
+  /**
    * Anh bao "don ve" (2026-10-05). Mac dinh BAT. Render loi thi da tu dong lui ve gui text roi,
    * co nay danh cho truong hop muon tat han ma khong phai rollback (vi du anh hien sai sau khi
    * doi template nen). Xem src/core/orderImage/.

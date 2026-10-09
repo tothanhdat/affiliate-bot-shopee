@@ -1,3 +1,5 @@
+import { env } from "../config/env.js";
+
 export type MerchantId = "shopee" | "lazada" | "tiktokshop";
 
 export interface MerchantConfig {
@@ -6,17 +8,62 @@ export interface MerchantConfig {
   hostPattern: RegExp;
   /** Domain rut gon can theo redirect de lay URL that (vi du s.shopee.vn). */
   shortHosts: Set<string>;
+  /**
+   * Co theo redirect cua shortHosts khong (mac dinh TRUE).
+   *
+   * `shortHosts` ganh HAI vai tro: nhan dien merchant theo host, VA kich hoat resolve redirect.
+   * TikTok can vai tro thu nhat (khong co thi extractProductUrls khong nhat link vt.tiktok.com ra,
+   * bot IM LANG) nhung KHONG can vai tro thu hai (RioHub tu resolve, da verify 2026-10-09).
+   * Xoa shortHosts di de tat resolve la sai - no tat luon kha nang nhan dien.
+   */
+  resolveShortLinks?: boolean;
 }
 
-/** San DANG duoc ho tro - THEM MERCHANT MOI TAI DAY. */
-export const MERCHANTS: readonly MerchantConfig[] = [
-  {
-    id: "shopee",
-    displayName: "Shopee",
-    hostPattern: /(^|\.)shopee\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i,
-    shortHosts: new Set(["s.shopee.vn", "shp.ee", "vn.shp.ee"]),
-  },
-];
+const SHOPEE: MerchantConfig = {
+  id: "shopee",
+  displayName: "Shopee",
+  hostPattern: /(^|\.)shopee\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i,
+  shortHosts: new Set(["s.shopee.vn", "shp.ee", "vn.shp.ee"]),
+};
+
+const LAZADA: MerchantConfig = {
+  id: "lazada",
+  displayName: "Lazada",
+  hostPattern: /(^|\.)lazada\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i,
+  shortHosts: new Set(),
+};
+
+const TIKTOK_SHOP: MerchantConfig = {
+  id: "tiktokshop",
+  displayName: "TikTok Shop",
+  hostPattern: /(^|\.)tiktok\.com$/i,
+  shortHosts: new Set(["vt.tiktok.com"]),
+  resolveShortLinks: false,
+};
+
+export interface MerchantRegistryOptions {
+  /** TIKTOK_ENABLED. Xem src/config/env.ts. */
+  tiktokEnabled: boolean;
+}
+
+/**
+ * Registry THAT SU khac nhau giua cac instance: instance chua bat TikTok phai giu nguyen hanh vi
+ * cu (link TikTok -> RetiredMerchantLinkError), nen tiktokshop nam o danh sach nao la tuy cau hinh.
+ * Ham thuan de test doi duoc co ma khong phai mock env. THEM MERCHANT MOI TAI DAY.
+ */
+export function buildMerchantRegistry(options: MerchantRegistryOptions): {
+  active: readonly MerchantConfig[];
+  retired: readonly MerchantConfig[];
+} {
+  return options.tiktokEnabled
+    ? { active: [SHOPEE, TIKTOK_SHOP], retired: [LAZADA] }
+    : { active: [SHOPEE], retired: [LAZADA, TIKTOK_SHOP] };
+}
+
+const defaultRegistry = buildMerchantRegistry({ tiktokEnabled: env.tiktok.enabled });
+
+/** San DANG duoc ho tro - xem buildMerchantRegistry(). */
+export const MERCHANTS: readonly MerchantConfig[] = defaultRegistry.active;
 
 /**
  * San TUNG duoc ho tro, da ngung tu 2026-09-29 (Accesstrade/TikTok cap nhat trang thai don
@@ -29,20 +76,7 @@ export const MERCHANTS: readonly MerchantConfig[] = [
  *     merchant di thi link TikTok se khong duoc nhat ra khoi tin nhan -> bot IM LANG trong
  *     Zalo DM, user tuong bot hong.
  */
-export const RETIRED_MERCHANTS: readonly MerchantConfig[] = [
-  {
-    id: "lazada",
-    displayName: "Lazada",
-    hostPattern: /(^|\.)lazada\.(vn|com|co\.id|com\.my|com\.ph|co\.th|sg)$/i,
-    shortHosts: new Set(),
-  },
-  {
-    id: "tiktokshop",
-    displayName: "TikTok Shop",
-    hostPattern: /(^|\.)tiktok\.com$/i,
-    shortHosts: new Set(["vt.tiktok.com"]),
-  },
-];
+export const RETIRED_MERCHANTS: readonly MerchantConfig[] = defaultRegistry.retired;
 
 function matchesHost(merchant: MerchantConfig, host: string): boolean {
   return merchant.hostPattern.test(host) || merchant.shortHosts.has(host);

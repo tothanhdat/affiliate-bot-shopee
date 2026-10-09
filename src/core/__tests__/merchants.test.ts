@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MERCHANTS,
+  buildMerchantRegistry,
   RETIRED_MERCHANTS,
   detectMerchantByHost,
   detectRetiredMerchantByHost,
@@ -43,4 +44,40 @@ test("RETIRED_MERCHANTS: dung 2 san da ngung", () => {
     [...RETIRED_MERCHANTS].map((m) => m.id).sort(),
     ["lazada", "tiktokshop"]
   );
+});
+
+test("co TAT -> tiktokshop nam trong danh sach da ngung", () => {
+  const { active, retired } = buildMerchantRegistry({ tiktokEnabled: false });
+  assert.equal(active.find((m) => m.id === "tiktokshop"), undefined);
+  assert.ok(retired.find((m) => m.id === "tiktokshop"));
+});
+
+test("co BAT -> tiktokshop chuyen sang danh sach dang ho tro", () => {
+  const { active, retired } = buildMerchantRegistry({ tiktokEnabled: true });
+  assert.ok(active.find((m) => m.id === "tiktokshop"));
+  assert.equal(retired.find((m) => m.id === "tiktokshop"), undefined);
+});
+
+test("lazada LUON o danh sach da ngung, khong phu thuoc co tiktok", () => {
+  for (const tiktokEnabled of [true, false]) {
+    const { retired } = buildMerchantRegistry({ tiktokEnabled });
+    assert.ok(retired.find((m) => m.id === "lazada"));
+  }
+});
+
+test("tiktokshop KHONG resolve short link, shopee thi CO", () => {
+  const { active } = buildMerchantRegistry({ tiktokEnabled: true });
+  const tiktok = active.find((m) => m.id === "tiktokshop");
+  const shopee = active.find((m) => m.id === "shopee");
+  // RioHub tu theo redirect, bot khong can goi mang them.
+  assert.equal(tiktok?.resolveShortLinks, false);
+  // Shopee van phai resolve: an_redir can URL that.
+  assert.notEqual(shopee?.resolveShortLinks, false);
+});
+
+test("vt.tiktok.com VAN duoc nhan dien la tiktok du khong resolve", () => {
+  const { active } = buildMerchantRegistry({ tiktokEnabled: true });
+  const tiktok = active.find((m) => m.id === "tiktokshop");
+  // Bo shortHosts di thi extractProductUrls khong nhat link ra -> bot IM LANG.
+  assert.ok(tiktok?.shortHosts.has("vt.tiktok.com"));
 });
