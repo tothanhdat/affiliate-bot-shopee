@@ -135,8 +135,13 @@ export const env = {
     enabled: optionalBool("COMMISSION_LOOKUP_ENABLED", false),
     /** Lay tai addlivetag.com -> API Key -> Tao Key. BAT BUOC tu 01/10/2026 (khong co -> HTTP 401). */
     apiKey: optional("ADDLIVETAG_API_KEY", ""),
-    /** Tran thoi gian cho. De ngan co chu dich: day la tinh nang PHU, khong duoc lam cham viec tra link. */
-    timeoutMs: optionalInt("COMMISSION_LOOKUP_TIMEOUT_MS", 2000),
+    /**
+     * Tran thoi gian cho. 5000ms (tu 2000ms, 2026-10-10) - 2000ms qua ngan, nhieu lookup bi huy
+     * dung luc nhieu nguoi gui link gan nhu cung luc trong group (addlivetag cham lai duoi tai),
+     * lam mat so uoc tinh oan dù order van ghi nhan binh thuong. Van la tran NGAN cho tinh nang PHU,
+     * khong duoc lam cham viec tra link qua muc chiu duoc.
+     */
+    timeoutMs: optionalInt("COMMISSION_LOOKUP_TIMEOUT_MS", 5000),
     /**
      * CHI dien khi tier tai khoan khac mac dinh cua ben cung cap. Bo trong (mac dinh) thi ho tu
      * lay rate that - da doi chieu 2026-09-30 tren 3 san pham that, khop chinh xac portal.
