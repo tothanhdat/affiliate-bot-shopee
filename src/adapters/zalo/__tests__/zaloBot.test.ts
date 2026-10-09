@@ -43,6 +43,12 @@ function setup() {
   // Ten group gia lap tra ve boi getGroupInfo - test ghi vao day de kiem soat ket qua.
   const groupNames = new Map<string, string>([["group-1", "Group Hoàn Tiền"]]);
   let allGroupIds: string[] = [];
+  // Roster gia lap cua tung group: memberIds (danh sach DAY DU) va currentMems (ho so kem san ten +
+  // avatar, Zalo chi tra ve cho MOT PHAN thanh vien o group lon).
+  const groupMembers = new Map<string, { memberIds: string[]; currentMems: { id: string; dName: string; avatar: string }[] }>();
+  // Cac lo uid ma getGroupMembersInfo duoc goi voi - de khang dinh so lenh goi mang (chia lo <=50).
+  const membersInfoCalls: string[][] = [];
+  let membersInfoError: Error | null = null;
   const api = {
     sendMessage: async (payload: SentMessage["payload"], threadId: string, type: ThreadType) => {
       if (type === ThreadType.User) {
@@ -78,7 +84,27 @@ function setup() {
       return {
         removedsGroup: [],
         unchangedsGroup: [],
-        gridInfoMap: Object.fromEntries(ids.map((id) => [id, { name: groupNames.get(id) ?? "" }])),
+        gridInfoMap: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              name: groupNames.get(id) ?? "",
+              memberIds: groupMembers.get(id)?.memberIds,
+              currentMems: groupMembers.get(id)?.currentMems,
+            },
+          ])
+        ),
+      };
+    },
+    getGroupMembersInfo: async (memberId: string | string[]) => {
+      const ids = Array.isArray(memberId) ? memberId : [memberId];
+      membersInfoCalls.push(ids);
+      if (membersInfoError !== null) throw membersInfoError;
+      return {
+        profiles: Object.fromEntries(
+          ids.map((id) => [id, { displayName: `Ten ${id}`, avatar: `https://ava/${id}.jpg` }])
+        ),
+        unchangeds_profile: [],
       };
     },
     // connect() gan listener roi start() ngay - fake vua du de khong no, test khong dung toi event.
@@ -172,6 +198,16 @@ function setup() {
     groupNames,
     setAllGroupIds: (ids: string[]) => {
       allGroupIds = ids;
+    },
+    setGroupMembers: (
+      groupId: string,
+      members: { memberIds: string[]; currentMems?: { id: string; dName: string; avatar: string }[] }
+    ) => {
+      groupMembers.set(groupId, { memberIds: members.memberIds, currentMems: members.currentMems ?? [] });
+    },
+    membersInfoCalls,
+    setMembersInfoError: (err: Error | null) => {
+      membersInfoError = err;
     },
     syncKnownGroups,
     handleGroupEvent,
@@ -948,6 +984,244 @@ test("Zalo: link LOI trong group van ghi sourceContext = 'group'", async () => {
     const [row] = logStore.listCreatedLinks();
     assert.equal(row.outcome, "error");
     assert.equal(row.sourceContext, "group");
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Roster thanh vien group (2026-10-09, yeu cau truc tiep cua user): /admin/users phai hien CA user
+// chua tung dat don de cau hinh duoc % hoa hong rieng cho ho truoc lan mua dau. Danh sach thanh
+// vien nam SAN trong response getGroupInfo ma syncKnownGroups da goi - khong them lenh goi nao.
+// ---------------------------------------------------------------------------
+
+/** Giup doc ra danh sach user Zalo chua co don ma /admin/users se hien. */
+function knownUserIds(ledgerStore: LedgerStore): string[] {
+  return ledgerStore
+    .listUsers()
+    .map((u) => u.userId)
+    .sort();
+}
+
+test("Zalo roster: chi ghi thanh vien cua group DA tick thong bao", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1", "group-gia-dinh"]);
+    setGroupMembers("group-1", {
+      memberIds: ["khach-a"],
+      currentMems: [{ id: "khach-a", dName: "Khach A", avatar: "https://ava/a.jpg" }],
+    });
+    setGroupMembers("group-gia-dinh", {
+      memberIds: ["nguoi-than"],
+      currentMems: [{ id: "nguoi-than", dName: "Me", avatar: "https://ava/me.jpg" }],
+    });
+    // Lan dong bo dau tien: chua group nao duoc tick -> chua ghi thanh vien nao.
+    await syncKnownGroups();
+    assert.deepEqual(knownUserIds(ledgerStore), [], "group chua tick thi khong lay thanh vien");
+
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a"], "group ca nhan cua chu bot khong vao danh sach");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: khong ghi chinh uid cua bot thanh user", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {
+      memberIds: ["bot-uid", "khach-a"],
+      currentMems: [
+        { id: "bot-uid", dName: "Bot", avatar: "https://ava/bot.jpg" },
+        { id: "khach-a", dName: "Khach A", avatar: "https://ava/a.jpg" },
+      ],
+    });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: luu ten + avatar tu currentMems", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {
+      memberIds: ["khach-a"],
+      currentMems: [{ id: "khach-a", dName: "Khách A", avatar: "https://ava/a.jpg" }],
+    });
+
+    await syncKnownGroups();
+
+    const row = ledgerStore.listUsers().find((u) => u.userId === "khach-a");
+    assert.equal(row?.displayName, "Khách A");
+    assert.equal(row?.avatarUrl, "https://ava/a.jpg");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: uid khong co trong currentMems van vao danh sach, ten lay qua getGroupMembersInfo", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, membersInfoCalls, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {
+      memberIds: ["khach-a", "khach-b"],
+      currentMems: [{ id: "khach-a", dName: "Khach A", avatar: "https://ava/a.jpg" }],
+    });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a", "khach-b"]);
+    assert.deepEqual(membersInfoCalls, [["khach-b"]], "chi goi bu cho uid chua co ten");
+    const row = ledgerStore.listUsers().find((u) => u.userId === "khach-b");
+    assert.equal(row?.displayName, "Ten khach-b");
+    assert.equal(row?.avatarUrl, "https://ava/khach-b.jpg");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: moi uid da co ten -> KHONG goi getGroupMembersInfo", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, membersInfoCalls, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {
+      memberIds: ["khach-a"],
+      currentMems: [{ id: "khach-a", dName: "Khach A", avatar: "https://ava/a.jpg" }],
+    });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(membersInfoCalls, []);
+  } finally {
+    cleanup();
+  }
+});
+
+/** Group lon: Zalo co the khong tra currentMems. Chia lo <=50 uid/lenh goi de khong bi tu choi ca lo. */
+test("Zalo roster: chia lo toi da 50 uid moi lan goi getGroupMembersInfo", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, membersInfoCalls, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    const ids = Array.from({ length: 120 }, (_, i) => `khach-${i}`);
+    setGroupMembers("group-1", { memberIds: ids, currentMems: [] });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(
+      membersInfoCalls.map((batch) => batch.length),
+      [50, 50, 20]
+    );
+    assert.equal(ledgerStore.listUsers().length, 120);
+  } finally {
+    cleanup();
+  }
+});
+
+/** Ten chi la de admin de nhan dien - lay khong duoc thi van phai ghi nhan la user cua he thong. */
+test("Zalo roster: getGroupMembersInfo loi van ghi nhan user (chi thieu ten)", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, setMembersInfoError, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    // Phai co dong trong zalo_groups truoc khi tick: setZaloGroupNotifySelection chi UPDATE dong
+    // da ton tai (xem doc comment cua ham do), con upsert group that nam trong syncKnownGroups.
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", { memberIds: ["khach-a"], currentMems: [] });
+    setMembersInfoError(new Error("Zalo tu choi"));
+
+    await syncKnownGroups();
+
+    const row = ledgerStore.listUsers().find((u) => u.userId === "khach-a");
+    assert.ok(row, "van phai co dong cho user nay");
+    assert.equal(row.displayName, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: thanh vien moi join group da tick duoc ghi nhan ngay", async () => {
+  const { ledgerStore, handleGroupEvent, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+
+    await handleGroupEvent(makeJoinEvent([{ id: "khach-moi", dName: "Khách Mới" }]));
+
+    const row = ledgerStore.listUsers().find((u) => u.userId === "khach-moi");
+    assert.ok(row, "khong phai doi restart bot moi thay user vua join");
+    assert.equal(row.displayName, "Khách Mới");
+    assert.equal(row.ordersCount, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: join group CHUA tick thi khong ghi nhan", async () => {
+  const { ledgerStore, handleGroupEvent, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+
+    await handleGroupEvent(makeJoinEvent([{ id: "khach-moi", dName: "Khách Mới" }]));
+
+    assert.equal(ledgerStore.listUsers().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+// syncGroupMembers: duong do /admin/settings goi khi admin vua tick 1 group (2026-10-09).
+test("Zalo roster: syncGroupMembers lay thanh vien 1 group ngay, khong cho dang nhap lai", async () => {
+  const { ledgerStore, setGroupMembers, bot, setLoggedIn, groupInfoCalls, cleanup } = setup();
+  try {
+    setLoggedIn();
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {
+      memberIds: ["khach-a"],
+      currentMems: [{ id: "khach-a", dName: "Khách A", avatar: "https://ava/a.jpg" }],
+    });
+
+    await bot.syncGroupMembers("group-1");
+
+    assert.deepEqual(groupInfoCalls, ["group-1"], "chi goi cho dung group vua tick");
+    assert.equal(ledgerStore.listUsers().find((u) => u.userId === "khach-a")?.displayName, "Khách A");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: syncGroupMembers nem loi ro rang khi bot chua dang nhap", async () => {
+  const { bot, cleanup } = setup();
+  try {
+    await assert.rejects(() => bot.syncGroupMembers("group-1"), /chua dang nhap/i);
   } finally {
     cleanup();
   }

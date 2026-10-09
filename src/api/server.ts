@@ -159,7 +159,13 @@ export function createServer(
    * Co ORDER_IMAGE_ENABLED (2026-10-05). Tat thi 2 nhanh bao don confirmed quay ve gui tin van
    * ban thuan nhu truoc. Mac dinh true de cac cho goi cu (test) khong phai sua.
    */
-  orderImageEnabled = true
+  orderImageEnabled = true,
+  /**
+   * Lay danh sach thanh vien cua 1 group Zalo vua duoc admin tick (2026-10-09) - do index.ts truyen
+   * vao, tro vao ZaloGroupBot.syncGroupMembers(). undefined khi ZALO_GROUP_ENABLED=false: luc do
+   * khong co bot nao de hoi, roster se duoc dong bo o lan dang nhap ke tiep.
+   */
+  syncZaloGroupMembers?: (groupId: string) => Promise<void>
 ) {
   const app = express();
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
@@ -1206,7 +1212,21 @@ export function createServer(
     const raw = req.body?.groupIds;
     // express.urlencoded tra ve string khi chi tick 1 group, array khi tick nhieu, undefined khi khong tick gi.
     const groupIds = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : typeof raw === "string" ? [raw] : [];
+    // Group VUA duoc tick (chua bat truoc do) = admin vua khai "day la group khach hang" -> lay
+    // danh sach thanh vien ngay, de /admin/users co nguoi lien ma khong phai cho restart bot.
+    // Doc truoc khi ghi: sau setZaloGroupNotifySelection thi khong con biet group nao la MOI.
+    const alreadyEnabled = new Set(ledgerStore.listNotifyEnabledZaloGroups().map((group) => group.groupId));
+    const newlyEnabled = groupIds.filter((groupId) => !alreadyEnabled.has(groupId));
     ledgerStore.setZaloGroupNotifySelection(groupIds);
+    // Best-effort, KHONG await: bot chua dang nhap hoac Zalo loi khong duoc lam that bai viec luu
+    // lua chon cua admin (roster se duoc dong bo o lan dang nhap ke tiep).
+    if (syncZaloGroupMembers !== undefined) {
+      for (const groupId of newlyEnabled) {
+        syncZaloGroupMembers(groupId).catch((err: unknown) => {
+          console.warn(`[admin] khong dong bo duoc thanh vien group ${groupId}:`, (err as Error).message);
+        });
+      }
+    }
     res.redirect(303, "/admin/settings?groupsSaved=1");
   });
 

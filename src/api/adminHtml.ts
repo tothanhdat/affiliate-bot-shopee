@@ -1126,6 +1126,11 @@ export function renderUsersPage(
     platform: Platform;
     userId: string;
     displayName: string | null;
+    /**
+     * Avatar Zalo (2026-10-09). TUY CHON co chu dich: user Telegram va user bot chi biet qua tin
+     * nhan (event tin nhan khong mang avatar) khong co anh - UI tu lui ve o tron chu cai.
+     */
+    avatarUrl?: string | null;
     availableBalance: number;
     pendingBalance: number;
     paidTotal: number;
@@ -1159,7 +1164,7 @@ export function renderUsersPage(
       )}" data-orders="${u.ordersCount}" data-paid="${u.paidTotal}" data-index="${index}">
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-3">
-      ${userAvatar(u.displayName, u.userId)}
+      ${userAvatar(u.displayName, u.userId, u.avatarUrl)}
       <div class="min-w-0">
         ${name}
         <div class="mt-0.5 flex items-center gap-1 font-mono text-[11px] text-slate-400">
@@ -1213,11 +1218,16 @@ export function renderUsersPage(
   var rows = Array.prototype.slice.call(document.querySelectorAll("#users-table tbody tr"));
   var counter = document.getElementById("users-count");
   var emptyHint = document.getElementById("users-no-match");
+  var ordersFilter = document.getElementById("user-orders-filter");
   function refresh() {
     var q = input.value.trim().toLowerCase();
+    var group = ordersFilter ? ordersFilter.value : "";
     var shown = 0;
     rows.forEach(function (row) {
-      var match = q === "" || (row.dataset.search || "").indexOf(q) !== -1;
+      var hasOrders = Number(row.dataset.orders || 0) > 0;
+      var match =
+        (q === "" || (row.dataset.search || "").indexOf(q) !== -1) &&
+        (group === "" || (group === "with-orders" ? hasOrders : !hasOrders));
       row.hidden = !match;
       if (match) shown++;
     });
@@ -1236,6 +1246,7 @@ export function renderUsersPage(
     }).forEach(function (row) { tbody.appendChild(row); });
   }
   input.addEventListener("input", refresh);
+  if (ordersFilter) ordersFilter.addEventListener("change", refresh);
   if (sortSelect) sortSelect.addEventListener("change", applySort);
 })();
 </script>`;
@@ -1246,6 +1257,9 @@ export function renderUsersPage(
     kpiCard({
       label: "Tổng người dùng",
       value: String(list.length),
+      // Tu 2026-10-09 danh sach gom ca thanh vien group chua mua lan nao, nen con so tong KHONG con
+      // la "so khach da mua" - khong noi ro ra thi doc nham thanh doanh so.
+      note: `${list.filter((u) => u.ordersCount > 0).length} đã có đơn`,
       icon: "users",
       valueClass: "text-slate-800",
       iconClass: "bg-indigo-50 text-indigo-600",
@@ -1283,6 +1297,14 @@ export function renderUsersPage(
       <label class="sr-only" for="user-search">Tìm người dùng</label>
       <input type="search" id="user-search" autocomplete="off" placeholder="Tìm theo tên khách, User ID..." class="${FIELD_CLASS} pl-9">
     </div>
+    <div class="w-full sm:w-44">
+      <label class="sr-only" for="user-orders-filter">Hiển thị nhóm</label>
+      <select id="user-orders-filter" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">
+        <option value="">Tất cả</option>
+        <option value="with-orders">Đã có đơn</option>
+        <option value="no-orders">Chưa có đơn</option>
+      </select>
+    </div>
     <div class="w-full sm:w-56">
       <label class="sr-only" for="user-sort">Sắp xếp</label>
       <select id="user-sort" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">
@@ -1319,7 +1341,7 @@ export function renderUsersPage(
   </div>
   <div class="px-5 py-14 text-center" id="users-no-match" hidden>
     <div class="mb-1 text-sm font-semibold text-slate-700">Không có user nào khớp</div>
-    <p class="m-0 text-xs text-slate-500">Thử xoá bớt từ khoá hoặc chọn lại kênh.</p>
+    <p class="m-0 text-xs text-slate-500">Thử xoá bớt từ khoá hoặc chọn lại nhóm hiển thị.</p>
   </div>
 </div>`;
 
@@ -1329,8 +1351,8 @@ export function renderUsersPage(
       "users",
       "h-5 w-5"
     )}</div>
-    <div class="mb-1 text-sm font-semibold text-slate-700">Chưa có user nào có đơn hàng</div>
-    <p class="m-0 text-xs text-slate-500">User xuất hiện ở đây sau khi đơn đầu tiên của họ được ghi nhận.</p>
+    <div class="mb-1 text-sm font-semibold text-slate-700">Chưa có người dùng nào</div>
+    <p class="m-0 text-xs text-slate-500">Danh sách gồm thành viên các nhóm Zalo bạn đã tick ở <a class="font-medium text-indigo-600 underline" href="/admin/settings">Cài đặt</a>, cộng với mọi user đã từng có đơn. Chưa tick nhóm nào thì chưa có ai ở đây.</p>
   </div>
 </div>`;
 
@@ -1567,9 +1589,20 @@ const AVATAR_TONES = [
  * khong phai dau "?": dau hoi doc ra nhu mot trang thai loi, trong khi day chi la "bot chua tung
  * thay ten". Cot ben canh da ghi ro "Chưa đặt tên" nen khong co gi mo ho.
  */
-export function userAvatar(displayName: string | null, userId: string): string {
+export function userAvatar(displayName: string | null, userId: string, avatarUrl?: string | null): string {
   const base =
     "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ring-1";
+
+  // Avatar Zalo (2026-10-09). Ve bang background-image INLINE thay vi <img>: anh 404 thi con lai o
+  // tron mau (mau suy tu userId nen van phan biet duoc nguoi), khong ra icon anh hong, va khong can
+  // mot dong JS nao cho fallback. TUYET DOI khong dua URL vao utility `bg-[url(...)]` cua Tailwind -
+  // URL co khoang trang/ngoac se bi bo quet @source cat token va khong sinh ra CSS nao, khong co
+  // canh bao build (bay thu ba trong CLAUDE.md).
+  const safeAvatar = safeAvatarUrl(avatarUrl);
+  if (safeAvatar !== null) {
+    return `<span class="${base} border-0 bg-slate-100 bg-cover bg-center ring-slate-200" style="background-image:url('${safeAvatar}')" aria-hidden="true"></span>`;
+  }
+
   if (!displayName || displayName.trim() === "") {
     const fallback = escapeHtml((userId.trim().charAt(0) || "?").toLocaleUpperCase("vi"));
     return `<span class="${base} bg-slate-100 text-slate-500 ring-slate-200" aria-hidden="true">${fallback}</span>`;
@@ -1584,6 +1617,20 @@ export function userAvatar(displayName: string | null, userId: string): string {
   const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
 
   return `<span class="${base} ${tone}" aria-hidden="true">${initials}</span>`;
+}
+
+/**
+ * URL avatar chi duoc dung khi CHAC CHAN khong pha duoc thuoc tinh style= (2026-10-09). URL nay den
+ * tu Zalo (ben thu ba) va di vao `url('...')` trong CSS inline: mot URL chua `'` hoac `)` se dong
+ * som ham url() roi nhet them khai bao CSS bat ky vao trang admin. Khong escape cho an toan ma TU
+ * CHOI han: tra null -> UI lui ve o tron chu cai, mat avatar chu khong mat quyen kiem soat trang.
+ * Chi nhan https (avatar Zalo luon la https; http se bi trinh duyet chan vi mixed content).
+ */
+function safeAvatarUrl(avatarUrl: string | null | undefined): string | null {
+  const url = avatarUrl?.trim() ?? "";
+  if (!url.startsWith("https://")) return null;
+  if (/["'()\\\s]/.test(url)) return null;
+  return url;
 }
 
 /** Ten kenh viet hoa dung cach de hien cho nguoi doc - gia tri trong DB van la "zalo"/"telegram"/"http". */

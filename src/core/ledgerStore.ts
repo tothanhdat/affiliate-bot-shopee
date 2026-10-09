@@ -42,6 +42,7 @@ import type { UserCommissionOverride } from "./userCommissionOverride.js";
  */
 const DAY_EXPR = "COALESCE(order_date, date(created_at, '+7 hours'))";
 
+
 /**
  * Bo 3 ty le dung de chia hoa hong 1 don. Truyen vao updatePendingEntry/confirmPendingEntry duoi vai
  * FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don (xem
@@ -341,6 +342,22 @@ export class LedgerStore {
         last_seen_at TEXT NOT NULL
       );
 
+      -- Moi user Zalo bot TUNG thay trong 1 group (2026-10-09). Bang MOI nen khong can migration.
+      -- Nguon thu hai cua /admin/users: thieu no thi user chua tung dat don khong co dong nao tren
+      -- trang, tuc khong co cho nao bam vao de cau hinh % hoa hong rieng cho ho TRUOC lan mua dau.
+      -- Khoa gom group_id vi 1 user co the o nhieu group - roi 1 group van phai con neu con group kia.
+      -- CHI CONG DON, KHONG CO DUONG XOA (quyet dinh cua user 2026-10-09): nguoi roi group van gui
+      -- link qua DM cho bot duoc nen van la user cua he thong. Vi vay phep loc "chi group khach hang"
+      -- (zalo_groups.notify_enabled) nam o LUC DOC trong listUsers() chu khong phai luc ghi - bo tick
+      -- mot group tick nham la cach duy nhat an lai nhung nguoi chua co don cua group do.
+      CREATE TABLE IF NOT EXISTS zalo_known_users (
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY (group_id, user_id)
+      );
+
       CREATE TABLE IF NOT EXISTS faq_thread_mutes (
         platform TEXT NOT NULL,
         thread_id TEXT NOT NULL,
@@ -374,6 +391,25 @@ export class LedgerStore {
     this.migrateAddBankInfoColumns();
     // DB tao truoc 2026-10-08 (truoc khi co no hoan tra + huy yeu cau rut) se thieu 2 cot nay.
     this.migrateAddWithdrawalDebtColumns();
+    // DB tao truoc 2026-10-09 (truoc khi dong bo avatar Zalo) se thieu cot nay.
+    this.migrateAddUserAvatarColumn();
+  }
+
+
+  /**
+   * Avatar Zalo cua user (2026-10-09) - URL tren CDN cua Zalo, lay tu currentMems/getGroupMembersInfo
+   * luc dong bo roster group. Nam o user_profiles (khong phai zalo_known_users) vi day la thuoc tinh
+   * HO SO cua user y nhu display_name, de cung cho thi /admin/links, /admin/orders dung lai duoc ma
+   * khong phai cham vao bang group. Nullable, khong DEFAULT, khong backfill: user chi tung nhan tin
+   * (event tin nhan khong mang avatar) va user Telegram se de NULL -> UI lui ve o tron chu cai.
+   */
+  private migrateAddUserAvatarColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(user_profiles)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((col) => col.name === "avatar_url")) {
+      this.db.exec("ALTER TABLE user_profiles ADD COLUMN avatar_url TEXT");
+    }
   }
 
   /**
@@ -1081,18 +1117,45 @@ export class LedgerStore {
    * Ghi/cap nhat ten hien thi cua 1 user (lay tu ctx.from cua Telegram hoac message.data.dName cua
    * Zalo, goi moi khi bot nhan duoc tin nhan) - chi de admin de nhan dien, khong dung de tinh toan.
    * Bo qua neu displayName rong (khong ghi de ten da biet bang chuoi rong).
+   *
+   * avatarUrl (2026-10-09) la TUY CHON va rong/thieu KHONG ghi de avatar da biet - cung quy tac
+   * voi ten rong, nhung o day la dieu kien song con: MOI tin nhan Zalo deu goi ham nay ma event tin
+   * nhan KHONG mang avatar, ghi thang se lam moi cau khach nhan xoa sach avatar vua dong bo tu
+   * roster group. Chi co duong dong bo group (currentMems/getGroupMembersInfo) mang avatar that.
    */
-  upsertUserProfile(platform: Platform, userId: string, displayName: string): void {
+  upsertUserProfile(platform: Platform, userId: string, displayName: string, avatarUrl?: string): void {
     const trimmed = displayName.trim();
+    const avatar = avatarUrl?.trim() ?? "";
     if (trimmed === "") return;
 
     const updatedAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO user_profiles (platform, user_id, display_name, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(platform, user_id) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at`
+        `INSERT INTO user_profiles (platform, user_id, display_name, avatar_url, updated_at)
+         VALUES (?, ?, ?, NULLIF(?, ''), ?)
+         ON CONFLICT(platform, user_id) DO UPDATE SET
+           display_name = excluded.display_name,
+           avatar_url = COALESCE(excluded.avatar_url, user_profiles.avatar_url),
+           updated_at = excluded.updated_at`
       )
-      .run(platform, userId, trimmed, updatedAt);
+      .run(platform, userId, trimmed, avatar, updatedAt);
+  }
+
+  /**
+   * Ghi nhan 1 user Zalo bot vua thay trong 1 group (2026-10-09) - goi tu zalo/bot.ts luc dong bo
+   * roster group va khi co thanh vien moi join. Chi cong don, khong co duong xoa (xem doc comment
+   * cua bang zalo_known_users). Khong ghi gi ve ho so: ten/avatar di qua upsertUserProfile de chi
+   * co MOT nguon ten hien thi duy nhat.
+   */
+  upsertZaloKnownUser(groupId: string, userId: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO zalo_known_users (group_id, user_id, first_seen_at, last_seen_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(group_id, user_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`
+      )
+      .run(groupId, userId, now, now);
   }
 
   /**
@@ -1267,6 +1330,8 @@ export class LedgerStore {
     platform: Platform;
     userId: string;
     displayName: string | null;
+    /** Avatar Zalo (2026-10-09), null khi bot chua tung dong bo duoc - UI lui ve o tron chu cai. */
+    avatarUrl: string | null;
     /** Khop con so user thay tren dashboard - KHONG tru no (no nam rieng o debtRemaining). */
     availableBalance: number;
     /** Tien dang bi giam (chua qua ngay mo khoa). */
@@ -1282,35 +1347,52 @@ export class LedgerStore {
   }> {
     const rows = this.db
       .prepare(
-        `SELECT ce.platform AS platform, ce.user_id AS user_id, up.display_name AS display_name,
+        // Hop nhat 2 nguon (2026-10-09): user da co don + user Zalo bot tung thay trong group khach
+        // hang (zalo_known_users, loc theo notify_enabled - xem doc comment cua bang do). Nho vay
+        // admin cau hinh duoc % hoa hong rieng cho nguoi CHUA mua lan nao.
+        // CAI BAY: COUNT(*) cu dem ca DONG RONG cua LEFT JOIN -> user chua co don bao cao "1 don".
+        // Phai la COUNT(ce.order_id). Co test chan.
+        // Moi subquery tuong quan doc k.platform/k.user_id chu KHONG ce.* : voi user chua co don,
+        // ce.* la NULL nen khong khop duoc dong nao.
+        `WITH known AS (
+           SELECT platform, user_id FROM commission_entries
+           UNION
+           SELECT 'zalo' AS platform, ku.user_id AS user_id
+             FROM zalo_known_users ku
+             JOIN zalo_groups g ON g.group_id = ku.group_id AND g.notify_enabled = 1
+         )
+         SELECT k.platform AS platform, k.user_id AS user_id, up.display_name AS display_name,
+            up.avatar_url AS avatar_url,
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
               AND (ce.available_from IS NULL OR ce.available_from <= ?) THEN ce.user_share_amount ELSE 0 END), 0) AS available,
             COALESCE(SUM(CASE WHEN ce.status = 'confirmed' AND ce.withdrawal_id IS NULL
               AND ce.available_from IS NOT NULL AND ce.available_from > ? THEN ce.user_share_amount ELSE 0 END), 0) AS held,
             COALESCE((SELECT SUM(pd.remaining) FROM payout_debts pd
-              WHERE pd.platform = ce.platform AND pd.user_id = ce.user_id
+              WHERE pd.platform = k.platform AND pd.user_id = k.user_id
                 AND pd.settled_at IS NULL AND pd.written_off_at IS NULL), 0) AS debt_remaining,
             -- pending/paid = so NET (so admin THAT SU phai chuyen / da chuyen), khop /admin/withdrawals
             -- (yeu cau user 2026-10-08). KHAC getUserSummary.pendingBalance (dashboard user) la so
             -- user YEU CAU rut (W) - user chi biet con so minh bam rut, admin can so phai chuyen.
             COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
-              WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'requested'), 0) AS pending,
+              WHERE wr.platform = k.platform AND wr.user_id = k.user_id AND wr.status = 'requested'), 0) AS pending,
             COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
-              WHERE wr.platform = ce.platform AND wr.user_id = ce.user_id AND wr.status = 'paid'), 0) AS paid,
-            COUNT(*) AS orders_count,
+              WHERE wr.platform = k.platform AND wr.user_id = k.user_id AND wr.status = 'paid'), 0) AS paid,
+            COUNT(ce.order_id) AS orders_count,
             uco.user_share_percent AS override_percent,
             uco.start_date AS override_start_date,
             uco.end_date AS override_end_date,
             uco.updated_at AS override_updated_at
-         FROM commission_entries ce
-         LEFT JOIN user_profiles up ON up.platform = ce.platform AND up.user_id = ce.user_id
-         LEFT JOIN user_commission_overrides uco ON uco.platform = ce.platform AND uco.user_id = ce.user_id
-         GROUP BY ce.platform, ce.user_id`
+         FROM known k
+         LEFT JOIN commission_entries ce ON ce.platform = k.platform AND ce.user_id = k.user_id
+         LEFT JOIN user_profiles up ON up.platform = k.platform AND up.user_id = k.user_id
+         LEFT JOIN user_commission_overrides uco ON uco.platform = k.platform AND uco.user_id = k.user_id
+         GROUP BY k.platform, k.user_id`
       )
       .all(todayVnIso(), todayVnIso()) as Array<{
       platform: Platform;
       user_id: string;
       display_name: string | null;
+      avatar_url: string | null;
       available: number;
       held: number;
       debt_remaining: number;
@@ -1327,6 +1409,7 @@ export class LedgerStore {
       platform: r.platform,
       userId: r.user_id,
       displayName: r.display_name,
+      avatarUrl: r.avatar_url,
       availableBalance: r.available,
       heldBalance: r.held,
       debtRemaining: r.debt_remaining,

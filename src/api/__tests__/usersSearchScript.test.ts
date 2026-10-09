@@ -40,6 +40,7 @@ function makeControl() {
 function buildFakeDom(rows: FakeRow[]) {
   const input = makeControl();
   const sortSelect = makeControl();
+  const ordersFilter = makeControl();
   const counter = { textContent: "" };
   const emptyHint = { hidden: true };
   // appendChild() that se DI CHUYEN dong xuong cuoi tbody - mo phong dung the de doc duoc thu tu
@@ -56,6 +57,7 @@ function buildFakeDom(rows: FakeRow[]) {
     getElementById(id: string) {
       if (id === "user-search") return input;
       if (id === "user-sort") return sortSelect;
+      if (id === "user-orders-filter") return ordersFilter;
       if (id === "users-tbody") return tbody;
       if (id === "users-count") return counter;
       if (id === "users-no-match") return emptyHint;
@@ -65,7 +67,7 @@ function buildFakeDom(rows: FakeRow[]) {
       return rows;
     },
   };
-  return { document, input, sortSelect, counter, emptyHint, order };
+  return { document, input, sortSelect, ordersFilter, counter, emptyHint, order };
 }
 
 /** Lay noi dung <script> trong trang /admin/users da render. */
@@ -283,4 +285,42 @@ test("/admin/users: user khong no -> menu chi co Cau hinh, khong co Xoa no", () 
   const html = renderUsersPage([userRow()], 80, "2026-10-08");
   assert.match(html, /Cấu hình % hoa hồng/);
   assert.doesNotMatch(html, /Xoá nợ/);
+});
+
+// Bo loc "da/chua co don" (2026-10-09): /admin/users gio gom ca thanh vien group chua mua lan nao,
+// nen phai tach duoc 2 nhom - va bo loc do phai chay CHUNG voi o tim kiem, khong ghi de nhau.
+test("loc /admin/users: 'Chưa có đơn' chi hien dong co 0 don", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 0, 0, 1), row("c u-003", 0, 0, 2)];
+  const { ordersFilter } = runScript(rows);
+
+  ordersFilter.type("no-orders");
+  assert.deepEqual(rows.map((r) => r.hidden), [true, false, false]);
+});
+
+test("loc /admin/users: 'Đã có đơn' an dong 0 don", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 0, 0, 1)];
+  const { ordersFilter } = runScript(rows);
+
+  ordersFilter.type("with-orders");
+  assert.deepEqual(rows.map((r) => r.hidden), [false, true]);
+});
+
+test("loc /admin/users: bo loc va o tim kiem ap dung DONG THOI", () => {
+  const rows = [row("trần bảo u-001", 0, 0, 0), row("nguyễn an u-002", 0, 0, 1), row("trần bảo u-003", 3, 0, 2)];
+  const { ordersFilter, input, counter } = runScript(rows);
+
+  ordersFilter.type("no-orders");
+  input.type("bảo");
+
+  assert.deepEqual(rows.map((r) => r.hidden), [false, true, true]);
+  assert.equal(counter.textContent, "1");
+});
+
+test("loc /admin/users: ve 'Tất cả' thi hien lai het", () => {
+  const rows = [row("a u-001", 2, 500, 0), row("b u-002", 0, 0, 1)];
+  const { ordersFilter } = runScript(rows);
+
+  ordersFilter.type("no-orders");
+  ordersFilter.type("");
+  assert.deepEqual(rows.map((r) => r.hidden), [false, false]);
 });

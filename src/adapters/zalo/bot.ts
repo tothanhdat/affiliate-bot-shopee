@@ -10,6 +10,7 @@ import {
   type Credentials,
   type TAttachmentContent,
   type AttachmentSource,
+  type GroupCurrentMem,
 } from "zca-js";
 import { AppError } from "../../core/errors.js";
 import type { OutgoingNotification } from "../../core/notification.js";
@@ -120,6 +121,13 @@ const SESSION_LOGIN_MAX_ATTEMPTS = 5;
 /** Delay lan retry dau, cac lan sau nhan doi: 4s + 8s + 16s + 32s = ~1 phut cho ca 5 lan thu. */
 const SESSION_LOGIN_RETRY_DELAY_MS = 4_000;
 
+/**
+ * So uid toi da moi lenh goi getGroupMembersInfo (2026-10-09). Group lon co the khong duoc Zalo tra
+ * `currentMems`, luc do phai goi bu ho so cho toan bo thanh vien - goi ca 500 uid trong 1 request
+ * co nguy co bi tu choi CA LO, chia nho thi loi 1 lo khong keo mat ten cua nhung lo con lai.
+ */
+const MEMBERS_INFO_BATCH_SIZE = 50;
+
 export class ZaloGroupBot {
   private api: API | null = null;
   private stopping = false;
@@ -185,6 +193,65 @@ export class ZaloGroupBot {
       this.options.ledgerStore.upsertZaloGroup(groupId, info.gridInfoMap?.[groupId]?.name ?? "");
     }
     console.log(`[zalo] Da dong bo ${groupIds.length} group vao danh sach chon thong bao (/admin/settings).`);
+
+    // Doc co SAU khi upsert: group vua xuat hien lan dau mac dinh TAT nen khong bi lay thanh vien.
+    const notifyEnabled = new Set(
+      this.options.ledgerStore.listNotifyEnabledZaloGroups().map((group) => group.groupId)
+    );
+    for (const groupId of groupIds) {
+      if (!notifyEnabled.has(groupId)) continue;
+      await this.syncGroupRoster(api, groupId, info.gridInfoMap?.[groupId]);
+    }
+  }
+
+  /**
+   * Ghi nhan TOAN BO thanh vien 1 group khach hang vao zalo_known_users (2026-10-09) - nguon thu hai
+   * cua /admin/users, de admin cau hinh duoc % hoa hong rieng cho nguoi CHUA mua lan nao.
+   * KHONG TON LENH GOI MANG NAO MOI o duong chinh: danh sach thanh vien (`memberIds`) va ho so kem
+   * ten/avatar (`currentMems`) nam san trong response getGroupInfo ma ham goi da co.
+   * Zalo chi tra `currentMems` cho MOT PHAN thanh vien o group lon, nen uid con lai duoc goi bu bang
+   * getGroupMembersInfo theo lo <=50 (goi ca 500 uid 1 lan co the bi tu choi ca lo). Ten chi de admin
+   * de nhan dien nen buoc bu nay la best-effort: loi chi log, user VAN duoc ghi nhan.
+   * Chi cong don, khong xoa ai (nguoi roi group van DM cho bot duoc - xem bang zalo_known_users).
+   */
+  private async syncGroupRoster(
+    api: API,
+    groupId: string,
+    groupInfo: { memberIds?: string[]; currentMems?: GroupCurrentMem[] } | undefined
+  ): Promise<void> {
+    const ownUid = api.getOwnId();
+    const currentMems = (groupInfo?.currentMems ?? []).filter((member) => member.id !== ownUid);
+    const profiles = new Map(currentMems.map((member) => [member.id, member]));
+    const memberIds = new Set<string>([...(groupInfo?.memberIds ?? []), ...profiles.keys()]);
+    memberIds.delete(ownUid);
+
+    for (const userId of memberIds) {
+      this.options.ledgerStore.upsertZaloKnownUser(groupId, userId);
+      const profile = profiles.get(userId);
+      if (profile !== undefined) {
+        this.options.ledgerStore.upsertUserProfile("zalo", userId, profile.dName ?? "", profile.avatar ?? "");
+      }
+    }
+
+    const missingProfile = [...memberIds].filter((userId) => !profiles.has(userId));
+    for (let i = 0; i < missingProfile.length; i += MEMBERS_INFO_BATCH_SIZE) {
+      const batch = missingProfile.slice(i, i + MEMBERS_INFO_BATCH_SIZE);
+      try {
+        const res = await api.getGroupMembersInfo(batch);
+        for (const [userId, profile] of Object.entries(res.profiles ?? {})) {
+          this.options.ledgerStore.upsertUserProfile("zalo", userId, profile.displayName ?? "", profile.avatar ?? "");
+        }
+      } catch (err) {
+        console.warn(`[zalo] khong lay duoc ho so ${batch.length} thanh vien group ${groupId}:`, (err as Error).message);
+      }
+    }
+  }
+
+  /** Group admin da tick tren /admin/settings = group khach hang - xem syncGroupRoster(). */
+  private isCustomerGroup(groupId: string): boolean {
+    return this.options.ledgerStore
+      .listNotifyEnabledZaloGroups()
+      .some((group) => group.groupId === groupId);
   }
 
   /**
@@ -666,8 +733,15 @@ export class ZaloGroupBot {
     if (event.type !== GroupEventType.JOIN) return;
 
     const ownUid = api.getOwnId();
+    // Ghi nhan vao danh sach user NGAY (2026-10-09) - khong phai doi lan dong bo ke tiep (chi chay
+    // luc dang nhap) moi thay nguoi vua join tren /admin/users de cau hinh % hoa hong rieng.
+    const isCustomerGroup = this.isCustomerGroup(event.threadId);
     for (const member of event.data.updateMembers) {
       if (member.id === ownUid) continue;
+      if (isCustomerGroup) {
+        this.options.ledgerStore.upsertZaloKnownUser(event.threadId, member.id);
+        this.options.ledgerStore.upsertUserProfile("zalo", member.id, member.dName ?? "");
+      }
       await this.maybeSendGroupJoinWelcome(api, member.id, member.dName ?? "", event.threadId);
     }
   }
@@ -794,6 +868,21 @@ export class ZaloGroupBot {
       throw new Error("Zalo bot chua dang nhap, khong the gui tin nhan.");
     }
     await this.api.sendMessage(message, groupId, ThreadType.Group);
+  }
+
+  /**
+   * Dong bo danh sach thanh vien cua DUNG 1 group (2026-10-09) - goi tu route POST
+   * /admin/settings/zalo-groups khi admin vua tick group do la group khach hang, de /admin/users co
+   * nguoi lien ma khong phai cho lan dang nhap ke tiep (syncKnownGroups chi chay luc login).
+   * CO Y khong kiem tra lai notify_enabled: day la yeu cau tuong minh cho dung 1 group.
+   * Nem loi neu chua dang nhap - noi goi tu bat (.catch) de khong lam fail request cua admin.
+   */
+  async syncGroupMembers(groupId: string): Promise<void> {
+    if (!this.api) {
+      throw new Error("Zalo bot chua dang nhap, khong the lay danh sach thanh vien group.");
+    }
+    const info = await this.api.getGroupInfo(groupId);
+    await this.syncGroupRoster(this.api, groupId, info.gridInfoMap?.[groupId]);
   }
 
   stop(): void {

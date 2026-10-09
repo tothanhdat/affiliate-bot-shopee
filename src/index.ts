@@ -148,6 +148,16 @@ const notifyZaloGroup = async (groupId: string, message: string): Promise<void> 
   await zaloBot.sendGroupMessage(groupId, message);
 };
 
+// 2026-10-09: admin vua tick 1 group la group khach hang -> lay danh sach thanh vien ngay de
+// /admin/users co nguoi lien. Doc `zaloBot` LUC GOI, cung ly do nhu notifyZaloGroup o tren.
+const syncZaloGroupMembers = async (groupId: string): Promise<void> => {
+  if (!zaloBot) {
+    console.warn(`[group-sync] Zalo adapter chua chay - bo qua dong bo thanh vien group ${groupId}.`);
+    return;
+  }
+  await zaloBot.syncGroupMembers(groupId);
+};
+
 const app = createServer(
   resolver,
   logStore,
@@ -167,7 +177,8 @@ const app = createServer(
   env.dashboard.baseUrl,
   notifyUser,
   notifyZaloGroup,
-  env.orderImage.enabled
+  env.orderImage.enabled,
+  syncZaloGroupMembers
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);

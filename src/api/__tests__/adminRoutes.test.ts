@@ -55,6 +55,14 @@ function setup(
     notifyZaloGroupCalls.push({ groupId, message });
   };
 
+  // Dong bo danh sach thanh vien cua 1 group vua duoc tick (2026-10-09) - xem syncGroupRoster.
+  const syncZaloGroupMembersCalls: string[] = [];
+  let syncZaloGroupMembersError: Error | null = null;
+  const syncZaloGroupMembers = async (groupId: string): Promise<void> => {
+    syncZaloGroupMembersCalls.push(groupId);
+    if (syncZaloGroupMembersError !== null) throw syncZaloGroupMembersError;
+  };
+
   const app = createServer(
     resolver,
     logStore,
@@ -68,7 +76,8 @@ function setup(
     "http://localhost:3002",
     notifyUser,
     notifyZaloGroup,
-    orderImageEnabled
+    orderImageEnabled,
+    syncZaloGroupMembers
   );
   const httpServer = app.listen(0);
   const port = (httpServer.address() as AddressInfo).port;
@@ -83,7 +92,19 @@ function setup(
     rmSync(withdrawalProofDir, { recursive: true, force: true });
   }
 
-  return { logStore, ledgerStore, baseUrl, withdrawalProofDir, notifyUserCalls, notifyZaloGroupCalls, cleanup };
+  return {
+    logStore,
+    ledgerStore,
+    baseUrl,
+    withdrawalProofDir,
+    notifyUserCalls,
+    notifyZaloGroupCalls,
+    syncZaloGroupMembersCalls,
+    setSyncZaloGroupMembersError: (err: Error | null) => {
+      syncZaloGroupMembersError = err;
+    },
+    cleanup,
+  };
 }
 
 /** FormData multipart 1 anh "chuyen khoan" gia lap, dung chung cho cac test mark-paid. */
@@ -1633,6 +1654,79 @@ test("import bao 'Da huy' cho don dang trong 1 yeu cau rut -> TU DONG huy yeu ca
       notifyUserCalls[0].message,
       /đơn hàng bị trả lại/,
       `tin nhan phai noi ro ly do, nhan duoc: ${notifyUserCalls[0].message}`
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Tick 1 group = "day la group khach hang" -> phai lay danh sach thanh vien NGAY (2026-10-09).
+ * Thieu duong nay thi admin tick xong phai cho restart bot moi thay nguoi tren /admin/users.
+ */
+test("POST /admin/settings/zalo-groups dong bo thanh vien cua group VUA duoc tick", async () => {
+  const { ledgerStore, baseUrl, syncZaloGroupMembersCalls, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    ledgerStore.upsertZaloGroup("group-2", "B");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams([
+        ["groupIds", "group-1"],
+        ["groupIds", "group-2"],
+      ]).toString(),
+      redirect: "manual",
+    });
+
+    assert.deepEqual(syncZaloGroupMembersCalls, ["group-2"], "group-1 da tick san thi khong dong bo lai");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/settings/zalo-groups bo tick thi khong dong bo thanh vien", async () => {
+  const { ledgerStore, baseUrl, syncZaloGroupMembersCalls, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: "",
+      redirect: "manual",
+    });
+
+    assert.deepEqual(syncZaloGroupMembersCalls, []);
+  } finally {
+    cleanup();
+  }
+});
+
+/** Bot chua dang nhap / Zalo loi khong duoc lam that bai viec LUU lua chon cua admin. */
+test("POST /admin/settings/zalo-groups van luu duoc khi dong bo thanh vien loi", async () => {
+  const { ledgerStore, baseUrl, setSyncZaloGroupMembersError, cleanup } = setup();
+  try {
+    ledgerStore.upsertZaloGroup("group-1", "A");
+    setSyncZaloGroupMembersError(new Error("Zalo chua dang nhap"));
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/settings/zalo-groups`, {
+      method: "POST",
+      headers: { cookie: cookie!, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams([["groupIds", "group-1"]]).toString(),
+      redirect: "manual",
+    });
+
+    assert.equal(res.status, 303);
+    assert.deepEqual(
+      ledgerStore.listNotifyEnabledZaloGroups().map((g) => g.groupId),
+      ["group-1"]
     );
   } finally {
     cleanup();
