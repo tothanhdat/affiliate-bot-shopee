@@ -78,6 +78,19 @@ export const MERCHANTS: readonly MerchantConfig[] = defaultRegistry.active;
  */
 export const RETIRED_MERCHANTS: readonly MerchantConfig[] = defaultRegistry.retired;
 
+/**
+ * Ten cac san DANG ho tro, ghep thanh mot cum doc duoc cho user ("Shopee" / "Shopee va TikTok Shop").
+ *
+ * Ly do ton tai: truoc 2026-10-09 he thong chi co MOT san nen moi tin nhan deu viet thang chu
+ * "Shopee" vao. Bat TikTok len thi nhung cau do noi SAI (bot tra link TikTok roi hen "cho Shopee
+ * duyet"). Moi cho noi ve "san nao duoc ho tro" phai di qua day, dung viet ten san vao template.
+ */
+export function supportedMerchantNames(merchants: readonly MerchantConfig[] = MERCHANTS): string {
+  const names = merchants.map((m) => m.displayName);
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} và ${names[names.length - 1]}`;
+}
+
 function matchesHost(merchant: MerchantConfig, host: string): boolean {
   return merchant.hostPattern.test(host) || merchant.shortHosts.has(host);
 }

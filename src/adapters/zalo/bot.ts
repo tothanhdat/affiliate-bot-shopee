@@ -569,6 +569,7 @@ export class ZaloGroupBot {
           formatSuccessReply(
             successTemplate,
             result.affiliateUrl,
+            result.merchant,
             this.toReplyEstimate(result.commissionEstimate),
             result.noCommission
           )

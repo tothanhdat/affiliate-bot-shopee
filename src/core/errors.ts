@@ -1,4 +1,5 @@
 import { formatVnd } from "./money.js";
+import { supportedMerchantNames } from "./merchants.js";
 export type ErrorCode =
   | "INVALID_LINK"
   | "UNSUPPORTED_MERCHANT_LINK"
@@ -61,7 +62,7 @@ export class RetiredMerchantLinkError extends AppError {
   constructor() {
     super(
       "RETIRED_MERCHANT_LINK",
-      "Hiện em chỉ hỗ trợ Shopee thôi ạ 🛒 Bạn gửi link Shopee giúp em nha!"
+      `Hiện em chỉ hỗ trợ ${supportedMerchantNames()} thôi ạ 🛒 Bạn gửi link sản phẩm bên đó giúp em nha!`
     );
   }
 }

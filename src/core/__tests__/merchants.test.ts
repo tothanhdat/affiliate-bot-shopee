@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MERCHANTS,
   buildMerchantRegistry,
+  supportedMerchantNames,
   RETIRED_MERCHANTS,
   detectMerchantByHost,
   detectRetiredMerchantByHost,
@@ -80,4 +81,15 @@ test("vt.tiktok.com VAN duoc nhan dien la tiktok du khong resolve", () => {
   const tiktok = active.find((m) => m.id === "tiktokshop");
   // Bo shortHosts di thi extractProductUrls khong nhat link ra -> bot IM LANG.
   assert.ok(tiktok?.shortHosts.has("vt.tiktok.com"));
+});
+
+test("supportedMerchantNames: 1 san -> ten tran, 2 san -> noi bang 'va'", () => {
+  const off = buildMerchantRegistry({ tiktokEnabled: false });
+  const on = buildMerchantRegistry({ tiktokEnabled: true });
+  assert.equal(supportedMerchantNames(off.active), "Shopee");
+  assert.equal(supportedMerchantNames(on.active), "Shopee và TikTok Shop");
+});
+
+test("supportedMerchantNames: danh sach rong khong lam vo cau tin nhan", () => {
+  assert.equal(supportedMerchantNames([]), "");
 });

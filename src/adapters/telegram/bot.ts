@@ -96,7 +96,7 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
           userSharePercent: ledgerStore.getUserSharePercent(options.commissionUserSharePercent),
         });
         await ctx.reply(
-          formatSuccessReply(successTemplate, result.affiliateUrl, replyEstimate, result.noCommission),
+          formatSuccessReply(successTemplate, result.affiliateUrl, result.merchant, replyEstimate, result.noCommission),
           { reply_parameters: { message_id: ctx.message.message_id } }
         );
       } catch (err) {

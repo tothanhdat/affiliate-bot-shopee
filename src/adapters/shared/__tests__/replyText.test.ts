@@ -91,7 +91,7 @@ test("formatGroupJoinWelcomeReply: template admin tu soan khong co placeholder t
 });
 
 test("formatSuccessReply: template mac dinh chua link, cau hoa hong va dong luu y cuoi", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc");
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee");
   assert.match(result, /Link đây ạ: https:\/\/s\.shopee\.vn\/abc/);
   assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
   assert.match(result, /đừng lướt video\/live/);
@@ -100,14 +100,14 @@ test("formatSuccessReply: template mac dinh chua link, cau hoa hong va dong luu 
 test("formatSuccessReply: template mac dinh KHONG con placeholder chua duoc thay", () => {
   // Chan viec them placeholder moi vao default ma quen truyen vars tuong ung -> bot nhan
   // nguyen van "{{...}}" cho khach.
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc");
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee");
   assert.ok(!result.includes("{{"), `con placeholder chua thay trong: ${result}`);
 });
 
 test("formatSuccessReply: template CU con {{commissionLine}} van render ra cau hoa hong day du", () => {
   // Tuong thich nguoc: instance da bam Luu o /admin/settings giu template cu trong DB, gia tri DB
   // de len default trong code. Bo key nay la bot nhan nguyen van "{{commissionLine}}" cho khach.
-  const result = formatSuccessReply("LINK: {{link}} | GHI CHU: {{commissionLine}}", "https://x.test");
+  const result = formatSuccessReply("LINK: {{link}} | GHI CHU: {{commissionLine}}", "https://x.test", "shopee");
   assert.equal(
     result,
     "LINK: https://x.test | GHI CHU: Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!"
@@ -115,7 +115,7 @@ test("formatSuccessReply: template CU con {{commissionLine}} van render ra cau h
 });
 
 test("formatSuccessReply: placeholder khong biet duoc giu nguyen, khong throw", () => {
-  const result = formatSuccessReply("{{link}} / {{khongTonTai}}", "https://x.test");
+  const result = formatSuccessReply("{{link}} / {{khongTonTai}}", "https://x.test", "shopee");
   assert.equal(result, "https://x.test / {{khongTonTai}}");
 });
 
@@ -244,7 +244,7 @@ test("formatGroupJoinBlockedGroupReply: template default co {{name}} va link So 
  * src/core/commissionLookup.ts) nen cau hoa hong quay lai la MOT SLOT co HAI trang thai.
  */
 test("formatSuccessReply: co uoc tinh thi thay cau 'chua bao so duoc' bang so tien that", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", {
     userReceiveAmount: 9822,
   });
 
@@ -255,7 +255,7 @@ test("formatSuccessReply: co uoc tinh thi thay cau 'chua bao so duoc' bang so ti
 });
 
 test("formatSuccessReply: khong co uoc tinh thi giu nguyen cau cho xac nhan", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null);
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null);
   assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
   assert.ok(!result.includes("{{"), `con placeholder chua thay trong: ${result}`);
 });
@@ -263,7 +263,7 @@ test("formatSuccessReply: khong co uoc tinh thi giu nguyen cau cho xac nhan", ()
 test("formatSuccessReply: template CU cua instance cung nhan duoc so uoc tinh", () => {
   // Instance da bam Luu truoc 2026-10-01 co "{{commissionLine}}" trong DB - ho phai duoc huong
   // tinh nang moi ma khong can sua tay template.
-  const result = formatSuccessReply("LINK: {{link}} | {{commissionLine}}", "https://x.test", {
+  const result = formatSuccessReply("LINK: {{link}} | {{commissionLine}}", "https://x.test", "shopee", {
     userReceiveAmount: 12250,
   });
   assert.match(result, /12\.250đ/);
@@ -285,7 +285,7 @@ test("SUCCESS_REPLY_TEMPLATE_DEFAULT: PHAI con placeholder {{commissionLine}}", 
  * den vi don nay se khong bao gio co hoa hong de bao.
  */
 test("formatSuccessReply: noCommission -> bao thang la chua bat hoa hong, KHONG hen suong", () => {
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null, true);
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null, true);
 
   assert.match(result, /chưa bật hoa hồng/);
   assert.doesNotMatch(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
@@ -294,7 +294,7 @@ test("formatSuccessReply: noCommission -> bao thang la chua bat hoa hong, KHONG 
 
 test("formatSuccessReply: co so tien thi KHONG bao gio hien cau 'chua bat hoa hong'", () => {
   // Phong truong hop caller truyen nham ca hai - co so tien that thi noCommission chac chan sai.
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", {
     userReceiveAmount: 28512,
   }, true);
 
@@ -305,7 +305,7 @@ test("formatSuccessReply: co so tien thi KHONG bao gio hien cau 'chua bat hoa ho
 test("formatSuccessReply: khong biet (null, false) -> van la cau hen nhu cu", () => {
   // Ranh gioi quan trong nhat cua tinh nang nay: API timeout / het han muc / tat tinh nang deu roi
   // vao day. Noi "san pham chua bat hoa hong" o ca nay la noi SAI ve mot san pham binh thuong.
-  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", null, false);
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null, false);
 
   assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
   assert.doesNotMatch(result, /chưa bật hoa hồng/);
@@ -408,4 +408,23 @@ test("formatOrdersConfirmedCaption: debtLine cung mot slot 2 trang thai", () => 
 test("formatOrdersConfirmedCaption: default template KHONG lap lai debtLine du co no", () => {
   const caption = formatOrdersConfirmedCaption(ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT, "https://x/d/t", null, 40_000);
   assert.doesNotMatch(caption, /nợ hoàn trả/);
+});
+
+/**
+ * Bug that 2026-10-09: bot tra link TikTok nhung cau hoa hong van viet "khi Shopee duyet nha"
+ * (chu "Shopee" hard-code trong 2 cau hoa hong tu thoi he thong chi co MOT san). Hai test duoi
+ * chot lai ca HAI nhanh cua {{commissionLine}} co nhac ten san.
+ */
+test("formatSuccessReply: link TikTok -> cau uoc tinh goi dung ten TikTok Shop, KHONG noi Shopee", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://www.tiktok.com/t/abc", "tiktokshop", {
+    userReceiveAmount: 1522,
+  });
+  assert.match(result, /khi TikTok Shop duyệt/);
+  assert.doesNotMatch(result, /Shopee/);
+});
+
+test("formatSuccessReply: link TikTok khong co uoc tinh -> cau hen cung goi dung ten san", () => {
+  const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://www.tiktok.com/t/abc", "tiktokshop", null);
+  assert.match(result, /sau khi TikTok Shop xác nhận đơn/);
+  assert.doesNotMatch(result, /Shopee/);
 });

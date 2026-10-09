@@ -1,11 +1,11 @@
 import { formatVnd } from "../../core/money.js";
 import type { CommissionEstimate, PromotionItem } from "../../core/affiliateProvider.js";
 import { computeCommissionBreakdown } from "../../core/commissionMath.js";
-import { getMerchantConfig, type MerchantId } from "../../core/merchants.js";
+import { getMerchantConfig, supportedMerchantNames, type MerchantId } from "../../core/merchants.js";
 import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
 export const USAGE_TEXT =
-  "👋 Gửi cho mình link sản phẩm Shopee (ví dụ: https://vn.shp.ee/xxxxxxx), " +
+  `👋 Gửi cho mình link sản phẩm ${supportedMerchantNames()} (ví dụ: https://vn.shp.ee/xxxxxxx), ` +
   "mình sẽ trả về link áp mã cho bạn.";
 
 /**
@@ -30,8 +30,9 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
  * Cau giai thich vi sao chua bao duoc so hoa hong ngay luc tra link - dung khi KHONG tra duoc
  * uoc tinh (chua bat COMMISSION_LOOKUP_ENABLED, link khong co item_id, hoac nguon loi/timeout).
  */
-const COMMISSION_PENDING_LINE =
-  "Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!";
+function commissionPendingLine(merchantName: string): string {
+  return `Hoa hồng chỉ chốt được sau khi ${merchantName} xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!`;
+}
 
 /**
  * Cau bao san pham khong co hoa hong - CHI dung khi da XAC MINH TU NGUON (xem `noCommission`
@@ -52,8 +53,8 @@ export interface CommissionReplyEstimate {
  * nguon du lieu tinh tren GIA NIEM YET, con hoa hong that tinh tren gia sau voucher/xu cua user,
  * nen so thuc te gan nhu luon THAP HON con so nay. Hua chac so tien la tu tao khieu nai.
  */
-function commissionEstimateLine(estimate: CommissionReplyEstimate): string {
-  return `💰 Đơn này ước tính hoàn ~${formatVnd(estimate.userReceiveAmount)} về ví bạn. Số chốt theo giá thực trả khi Shopee duyệt nha!`;
+function commissionEstimateLine(estimate: CommissionReplyEstimate, merchantName: string): string {
+  return `💰 Đơn này ước tính hoàn ~${formatVnd(estimate.userReceiveAmount)} về ví bạn. Số chốt theo giá thực trả khi ${merchantName} duyệt nha!`;
 }
 
 /**
@@ -106,9 +107,16 @@ export function toCommissionReplyEstimate(
 export function formatSuccessReply(
   template: string,
   affiliateUrl: string,
+  /**
+   * San cua CHINH link vua tra. Tham so BAT BUOC co chu dich: 2 cau hoa hong nhac ten san ra, de
+   * tham so tuy chon thi cho nao quen truyen se am tham noi "Shopee" tren mot link TikTok - dung
+   * cai loi da gap 2026-10-09. Bat buoc thi trinh bien dich bat het moi cho goi.
+   */
+  merchant: MerchantId,
   estimate?: CommissionReplyEstimate | null,
   noCommission?: boolean
 ): string {
+  const merchantName = getMerchantConfig(merchant).displayName;
   // Mot slot, BA trang thai loai tru nhau - khong bao gio hien hai cau cung luc:
   //   co so tien      -> bao so
   //   chua bat hoa hong (DA XAC MINH tu nguon) -> bao thang, dung hen suong
@@ -116,10 +124,10 @@ export function formatSuccessReply(
   // Thu tu uu tien quan trong: estimate truoc, vi neu co so tien that thi noCommission chac chan
   // la false, con nguoc lai thi khong.
   const commissionLine = estimate
-    ? commissionEstimateLine(estimate)
+    ? commissionEstimateLine(estimate, merchantName)
     : noCommission
       ? COMMISSION_NONE_LINE
-      : COMMISSION_PENDING_LINE;
+      : commissionPendingLine(merchantName);
   return renderTemplate(template, { link: affiliateUrl, commissionLine });
 }
 
@@ -305,6 +313,10 @@ export function formatWithdrawalPaidReply(template: string, dashboardUrl: string
  *
  * Cau "khong phai chuyen tien lai" la BAT BUOC chu khong phai cho lich su: nhan tin "ban dang no
  * 40.000d" ma khong co cau do thi user tuong phai tra tien ra ngoai.
+ *
+ * Chu "Shopee" o day la CO Y, khong phai sot cua dot bo hard-code ten san 2026-10-09: no hoan tra
+ * CHI sinh ra tu shopeeReportImport, TikTok chua co duong doi soat don. Khi lam doi soat TikTok
+ * thi phai doi cau nay sang ten san cua chinh don do.
  */
 export const PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT =
   `Đơn {{orderId}} đã được trả hàng sau khi bạn đã nhận tiền, nên Shopee thu lại {{amount}} hoa hồng của đơn đó.
@@ -372,7 +384,7 @@ export function formatWelcomeReply(
 /** Default cho setting "group_join_welcome_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
-  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm Shopee vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
+  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm ${supportedMerchantNames()} vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
   `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: {{handbookUrl}}\n\n` +
   `Nhớ bấm chấp nhận lời mời kết bạn của em nha 🤝 Có đơn hoàn tiền là em nhắn báo riêng cho mình liền!\n\n` +
   `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
@@ -417,6 +429,9 @@ export const FRIEND_REQUEST_MESSAGE_DEFAULT =
  * Gui MOI lan import thanh cong, ke ca khi 0 don moi (quyet dinh cua user: giu nhip thong bao deu
  * dan hang ngay), nen noi dung co chu dich khong noi gi ve so luong don.
  * {{date}} la ngay HOM QUA theo gio VN, dinh dang dd/mm - xem src/core/vietnamDate.ts.
+ *
+ * Chu "Shopee" o day la CO Y (xem PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT): tin nay chi gui sau khi
+ * import file bao cao Shopee, dung ten san khac se la noi sai ve nguon du lieu vua cap nhat.
  */
 /** Default cho setting "group_report_updated_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT =
