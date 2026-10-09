@@ -9,6 +9,8 @@ import {
   USAGE_TEXT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
+  TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT,
+  TIKTOK_NO_COMMISSION_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
   GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
   FRIEND_REQUEST_MESSAGE_DEFAULT,
@@ -111,6 +113,20 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
       + "user nhận được, không tra được thì thành câu hẹn báo sau khi Shopee xác nhận đơn. "
       + "GIỮ placeholder này trong template — viết thẳng câu hoa hồng vào đây thì bot sẽ không bao giờ "
       + "hiện được số tiền ước tính nữa.",
+  },
+  {
+    key: SETTINGS_KEYS.tiktokProviderDownTemplate,
+    label: "Tin nhắn khi hệ thống Affiliate TikTok bảo trì",
+    type: "textarea",
+    default: TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT,
+    helpText: "Không có placeholder động. Gửi khi RioHub không gọi được (sập, hết hạn mức, key sai).",
+  },
+  {
+    key: SETTINGS_KEYS.tiktokNoCommissionTemplate,
+    label: "Tin nhắn khi sản phẩm TikTok chưa bật hoàn tiền",
+    type: "textarea",
+    default: TIKTOK_NO_COMMISSION_TEMPLATE_DEFAULT,
+    helpText: "Không có placeholder động. Đừng hẹn thử lại sau — sản phẩm này sẽ vẫn không có hoa hồng.",
   },
   {
     key: SETTINGS_KEYS.dashboardLinkReplyTemplate,

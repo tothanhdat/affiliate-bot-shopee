@@ -17,6 +17,10 @@ export const SETTINGS_KEYS = {
   usageText: "usage_text",
   welcomeMessageTemplate: "welcome_message_template",
   successReplyTemplate: "success_reply_template",
+  /** Tin bao khi RioHub khong goi duoc (2026-10-09). */
+  tiktokProviderDownTemplate: "tiktok_provider_down_template",
+  /** Tin bao khi san pham TikTok chua bat hoa hong (422 product_not_promotable). */
+  tiktokNoCommissionTemplate: "tiktok_no_commission_template",
   groupJoinWelcomeTemplate: "group_join_welcome_template",
   /** Chao bu trong group khi DM chao mung bi user chan (2026-09-24) - xem zalo/bot.ts. */
   groupJoinBlockedReplyTemplate: "group_join_blocked_reply_template",

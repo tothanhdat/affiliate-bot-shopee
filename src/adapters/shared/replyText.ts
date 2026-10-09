@@ -427,3 +427,17 @@ export const GROUP_REPORT_UPDATED_TEMPLATE_DEFAULT =
 export function formatGroupReportUpdatedReply(template: string, date: string): string {
   return renderTemplate(template, { date });
 }
+
+/**
+ * RioHub (nguon affiliate TikTok) khong goi duoc - quyet dinh cua chu bot 2026-10-09: bao bao tri,
+ * KHONG tra link goc thay the. Nguyen van cau chu do chu bot dat, co test chan viec sua tuy tien.
+ */
+export const TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT =
+  "Hệ thống Affiliate của Tiktok đang bảo trì, hãy thử lại sau 30 phút nữa";
+
+/**
+ * San pham co that nhung shop chua bat hoa hong (`422 product_not_promotable`). TUYET DOI khong
+ * gop vao cau bao tri: 30 phut nua san pham do van khong co hoa hong, hua thu lai la noi sai.
+ */
+export const TIKTOK_NO_COMMISSION_TEMPLATE_DEFAULT =
+  "Sản phẩm này shop chưa bật hoàn tiền nên em không tạo được link nha 😅 Bạn thử sản phẩm khác giúp em.";

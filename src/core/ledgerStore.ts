@@ -2209,6 +2209,14 @@ export class LedgerStore {
     return this.getSetting(SETTINGS_KEYS.welcomeMessageTemplate, defaultValue);
   }
 
+  getTiktokProviderDownTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.tiktokProviderDownTemplate, defaultValue);
+  }
+
+  getTiktokNoCommissionTemplate(defaultValue: string): string {
+    return this.getSetting(SETTINGS_KEYS.tiktokNoCommissionTemplate, defaultValue);
+  }
+
   getSuccessReplyTemplate(defaultValue: string): string {
     return this.getSetting(SETTINGS_KEYS.successReplyTemplate, defaultValue);
   }
