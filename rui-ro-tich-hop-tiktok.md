@@ -4,7 +4,7 @@ Rà soát ngày 2026-10-09, dựa trên **gọi API thật** bằng key của ch
 và đọc tài liệu chính thức `https://data.addlivetag.com/tiktok/` — không phải suy đoán quy trình.
 Hồ sơ kỹ thuật/business đầy đủ: `docs/riohub-tiktok.md`.
 
-Trạng thái tích hợp khi lập file này: **chưa viết dòng code nào.** Mọi rủi ro dưới đây đều còn mở.
+Trạng thái tích hợp: **đường TẠO LINK đã xong và đang chạy thật trên production** (10/10/2026, chưa thông báo cho user). Đường **đối soát đơn chưa làm** — đó là nơi phần lớn rủi ro còn lại nằm.
 
 Quy ước trạng thái:
 - **CHỜ DỮ LIỆU** — chỉ thời gian mới giải được, không đọc thêm tài liệu nào ra.
@@ -14,6 +14,8 @@ Quy ước trạng thái:
 > **Nguyên tắc giữ file (yêu cầu của chủ bot 2026-10-09): rủi ro nào giải quyết xong thì XOÁ HẲN
 > khỏi file**, không giữ lại kèm nhãn "đã fix" — để mở file ra là thấy đúng phần việc còn lại.
 > Dữ kiện kỹ thuật của mục bị xoá vẫn nằm trong `docs/riohub-tiktok.md`, không mất.
+>
+> **Số thứ tự KHÔNG đánh lại sau khi xoá** — nó là mã định danh ổn định, được tham chiếu từ commit, `docs/riohub-tiktok.md` và các phiên làm việc trước. Thấy số nhảy cóc nghĩa là mục đó đã giải quyết xong và bị xoá, không phải sót.
 
 ---
 
@@ -97,7 +99,9 @@ Hai hệ quả phải nhớ khi viết code:
 
 ### 4. Phụ thuộc runtime vào RioHub trên đường sống — ĐÃ CÓ SỰ CỐ THẬT, 2 lần trong 11 ngày
 
-**Trạng thái: CẦN QUYẾT ĐỊNH — mức độ đã được nâng lên sau sự cố 09/10/2026.**
+**Trạng thái: ĐÃ GIẢM NHẸ, RỦI RO GỐC VẪN CÒN (10/10/2026).**
+
+Phần đã làm: RioHub hỏng thì user nhận câu báo bảo trì (template admin sửa được ở `/admin/settings`), và admin được báo kèm mã lỗi — gộp theo mã, tối đa 1 tin/15 phút cho mỗi mã (`src/core/alertThrottle.ts`), vì sự cố 7 phút hôm 09/10 nếu không gộp sẽ sinh hàng chục tin giống hệt nhau. Phần KHÔNG giải được bằng code: RioHub sập thì vẫn không tạo được link, và tên miền dự phòng không cứu được vì cả 3 dùng chung một backend.
 
 #### Bằng chứng đo trực tiếp, 09/10/2026 17:28 giờ VN
 
@@ -186,19 +190,6 @@ bot. **Nhớ cái bẫy chung**: instance đã từng bấm Lưu thì giá trị
 
 ## Rủi ro vừa
 
-### 5. `422 product_not_promotable` — user gửi link hợp lệ nhưng không tạo được link affiliate
-
-**Trạng thái: CẦN QUYẾT ĐỊNH.**
-
-Tài liệu: *"sản phẩm không có hoa hồng, chưa được shop duyệt, hoặc bị TikTok hạn chế"*. Đây **không
-phải lỗi hệ thống** mà là câu trả lời thật về sản phẩm.
-
-**Nghiêm trọng hơn ca `noCommission` của Shopee**: ở Shopee bot vẫn trả được link (chỉ là 0đ hoa
-hồng, user vẫn mua được món họ cần — đánh đổi đã chọn). Ở đây **không có link nào để trả**.
-
-Cần một câu trả lời riêng, **không gộp vào nhánh lỗi chung** "hệ thống đang bảo trì" — vì bảo user
-thử lại sau 30 phút là sai: 30 phút nữa sản phẩm đó vẫn không có hoa hồng.
-
 ### 6. `424 creator_token_invalid` — vẫn chưa biết hình dạng thật
 
 **Trạng thái: ĐÃ GIẢM, CÒN LẠI PHẦN NHỎ (2026-10-09).**
@@ -224,19 +215,7 @@ khi viết lớp tra hoa hồng.
 **không tái hiện được** — creator của người khác cũng ra `404 not_found` y hệt creator không tồn tại.
 Không phân biệt được hai ca này từ phía client.
 
-### 7. subId 4 đoạn của bot chưa chạy qua một đơn thật
-
-**Trạng thái: CHỜ DỮ LIỆU.**
-
-Mắt xích link→đơn **đã thông** (đơn `586494603346282174` trả về nguyên văn `sub_id` + `trace_id` +
-`trace_type: "SPECIFIC"`), nhưng mới chứng minh với chuỗi **2 đoạn** do app RioHub sinh
-(`u35008-m1791535058`). Chuỗi **4 đoạn** của bot (`{mã}-{userId}-{ts36}-{random}`) đã đo được cơ chế
-tách đúng lúc **tạo link**, chưa đi qua một đơn thật.
-
-Rủi ro còn lại thấp, nhưng đây là đường quy tiền về user nên không nên dừng ở mức "chắc ổn".
-
-**Lưu ý đã biết**: `sub3`/`sub4` của đơn không có subId là **chuỗi rỗng, không phải `null`** →
-phân biệt bằng `sub_id !== ""`, dùng `=== null` là sai.
+> **Ghi chú kỹ thuật giữ lại từ mục 7 (đã xoá 2026-10-10)**: `sub3`/`sub4` của đơn không có subId là **chuỗi rỗng, không phải `null`** → phân biệt bằng `sub_id !== ""`, dùng `=== null` là sai. Cần đến khi viết đường đối soát đơn.
 
 ### 8. Webhook — chưa verify một dòng nào
 

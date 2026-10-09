@@ -654,7 +654,11 @@ Nên khi đơn TikTok được ghi vào `commission_entries` với `merchant='ti
 
 ## 2.10 Cách chạy lại kiểm tra
 
-Script probe nằm ngoài repo (scratchpad của phiên). Khung tối thiểu:
+**Đọc đơn: đã có CLI trong repo** (2026-10-10) — `npm run riohub:orders`, xem `src/scripts/riohubOrders.ts`. Chỉ đọc, không ghi ledger; đọc key từ `.env`; đánh dấu đơn nào đến từ link bot (subId 4 đoạn) và in sẵn 3 field đang chờ (`shared_with_partner`, `pit`, `time_delivered_iso`).
+
+⚠️ **Mọi endpoint nằm dưới tiền tố `/partner/tiktok/affiliate`** — quên tiền tố thì API trả `404 not_found`, **rất giống lỗi sai key**. Phân biệt: `404` = sai đường dẫn, `401 unauthorized` = sai key (đã dính thật 2026-10-10). Hằng số dùng chung: `RIOHUB_TIKTOK_PATH_PREFIX` trong `src/core/providers/riohubClient.ts`.
+
+Khung tối thiểu nếu cần gọi tay:
 
 ```js
 const BASE = "https://riohub.vn/api/v1/partner/tiktok/affiliate";
@@ -690,12 +694,18 @@ Khi thêm một tham số mới, **luôn kiểm bằng giá trị mà kết qu�
 | 2026-10-09 | **SỰ CỐ THẬT 17:28–17:35 VN** — cả 3 tên miền `500 server_error`, web vẫn 200 | Tên miền dự phòng KHÔNG cứu được; hồi phục sau vài phút, **dữ liệu nguyên vẹn**; xem rủi ro 4 |
 | 2026-10-09 | Đối chiếu CSV dashboard với API | **CSV thiếu 26/50 field gồm cả 5 field tiền** → không dùng làm nguồn dữ liệu |
 | 2026-10-09 | Lập bản đồ hình dạng lỗi thật (10 ca) | Khuôn `error.code` thống nhất; **403 của tài liệu không tái hiện được**; phát hiện bẫy `GET /products` trả 200 khi không thấy |
+| 2026-10-09 | Dựng xong đường tạo link (7 commit) | `riohubClient` + `tiktokAffiliateProvider` + định tuyến theo merchant; mặc định TẮT |
+| 2026-10-10 | Bật thật trên production, gửi link TikTok vào group | **Bot trả link affiliate kèm ước tính hoa hồng** — đường tạo link THÔNG |
+| 2026-10-10 | Bẫy `TIKTOK_ENABLED=true` mà thiếu `RIOHUB_CREATOR_USERNAME` | Provider tự tắt, link TikTok báo "chưa cấu hình" — chỉ thấy lý do trong log |
+| 2026-10-10 | Gọi `/orders` thiếu tiền tố `/partner/tiktok/affiliate` | **`404 not_found`, dễ tưởng nhầm sai key** — đường đúng trả `401` khi key sai |
+| 2026-10-10 | **Đơn thật qua link BOT tạo** (`586502233699747518`) | ✅ `sub_id` 4 đoạn về NGUYÊN VẸN `k-9053348487804998642-mv16nixs-f85f8a`, `trace_type: SPECIFIC` → **rủi ro 7 đóng** |
+| 2026-10-10 | Đối chiếu ước tính bot hứa với `est_commission` thật | `est=2136đ` → thuế 10% → phí 1% → user 80% = **1.522đ**, khớp từng đồng câu bot đã gửi |
 
 ## Việc còn treo
 
 - [ ] Đơn thật đi hết vòng đời → chốt `time_delivered_iso`, `pit`, `settlement_status`
 - [x] ~~Đơn qua link **có sub_id** → chốt mắt xích link → đơn~~ ✅ 2026-10-09
-- [ ] Chạy lại với sub_id **4 đoạn** của bot qua một đơn thật (khoảng hở nhỏ còn lại, mục 2.3)
+- [x] ~~Chạy lại với sub_id **4 đoạn** của bot qua một đơn thật~~ ✅ 2026-10-10 — đơn `586502233699747518`, sub_id về nguyên vẹn, ước tính khớp từng đồng
 - [ ] Xem `commission_bonus_rate` trên một đơn đã **`SETTLED`** (tại lúc tạo đơn thì đã đo: vẫn `0`)
 - [x] ~~Hỏi RioHub tên 3 miền dự phòng~~ ✅ 2026-10-09 (mục 2.1, kèm quy tắc failover phải bắt cả lỗi TLS)
 - [ ] Rotate API key trước khi lên production
