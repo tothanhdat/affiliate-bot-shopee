@@ -5,6 +5,7 @@ export type ErrorCode =
   | "RETIRED_MERCHANT_LINK"
   | "MERCHANT_NOT_CONFIGURED"
   | "AFFILIATE_API_ERROR"
+  | "PROVIDER_UNAVAILABLE"
   | "AFFILIATE_API_TIMEOUT"
   | "RATE_LIMITED"
   | "INSUFFICIENT_BALANCE"
@@ -228,5 +229,26 @@ export class ImplausibleCommissionAmountError extends AppError {
         `(${formatVnd(orderAmount)}), có thể gõ nhầm. Kiểm tra lại hoặc tăng ` +
         `COMMISSION_MAX_RATIO_PERCENT nếu đúng.`
     );
+  }
+}
+
+/**
+ * Nguon affiliate khong goi duoc (RioHub sap, het han muc, key sai, khong voi toi duoc ten mien
+ * nao). KHAC HAN ProductNotAffiliateEligibleError: ca do thu lai bao nhieu lan cung the, con ca
+ * nay thu lai sau co the chay.
+ *
+ * MOI loi loai nay deu phai BAO ADMIN - day la ly do no la mot lop rieng thay vi dung chung
+ * AffiliateApiError: adapter nhin `instanceof` la biet co phai canh bao hay khong.
+ *
+ * userMessage o day chi la DU PHONG - adapter se thay bang template
+ * `tiktokProviderDownTemplate` admin sua duoc tren /admin/settings.
+ */
+export class ProviderUnavailableError extends AppError {
+  constructor(
+    readonly providerErrorCode: string,
+    detail: string
+  ) {
+    super("PROVIDER_UNAVAILABLE", "Hệ thống affiliate đang bảo trì, bạn thử lại sau ít phút nhé.");
+    this.message = `Provider unavailable (${providerErrorCode}): ${detail}`;
   }
 }
