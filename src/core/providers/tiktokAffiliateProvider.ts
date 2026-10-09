@@ -13,9 +13,14 @@ import type {
   CreateAffiliateLinkOutput,
   PromotionItem,
 } from "../affiliateProvider.js";
-import { RiohubApiError, RiohubUnreachableError, type RiohubClient } from "./riohubClient.js";
+import {
+  RIOHUB_TIKTOK_PATH_PREFIX,
+  RiohubApiError,
+  RiohubUnreachableError,
+  type RiohubClient,
+} from "./riohubClient.js";
 
-const PRODUCT_LINKS_PATH = "/partner/tiktok/affiliate/product-links";
+const PRODUCT_LINKS_PATH = `${RIOHUB_TIKTOK_PATH_PREFIX}/product-links`;
 
 interface RiohubProduct {
   title?: string;

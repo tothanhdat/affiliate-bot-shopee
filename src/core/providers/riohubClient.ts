@@ -27,6 +27,13 @@ export const RIOHUB_DEFAULT_BASE_URLS: readonly string[] = [
   "https://riohub.riokupon.me/api/v1",
 ];
 
+/**
+ * Moi endpoint TikTok affiliate deu nam duoi tien to nay (base URL + tien to nay + ten endpoint).
+ * Tach ra hang so vi quen no thi API tra `404 not_found` chu khong phai loi xac thuc - de tuong
+ * nham la sai key (da dinh that 2026-10-10 luc viet script doc don).
+ */
+export const RIOHUB_TIKTOK_PATH_PREFIX = "/partner/tiktok/affiliate";
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
@@ -105,6 +112,40 @@ export class RiohubClient {
   }
 
   async post<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: "POST",
+      headers: {
+        "X-Riohub-Api-Key": this.config.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * GET kem query string.
+   *
+   * Tham so `undefined`/chuoi rong bi BO di chu khong gui len: RioHub nuot im lang tham so sai ten
+   * hoac sai dinh dang (khong 422, khong canh bao - xem docs/riohub-tiktok.md muc 2.5), nen gui
+   * len mot tham so rong chi lam minh tuong da loc trong khi API tra ve toan bo lich su.
+   */
+  async get<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === "") continue;
+      params.set(key, String(value));
+    }
+    const qs = params.toString();
+    return this.request<T>(qs === "" ? path : `${path}?${qs}`, {
+      method: "GET",
+      headers: { "X-Riohub-Api-Key": this.config.apiKey },
+    });
+  }
+
+  private async request<T>(
+    path: string,
+    init: { method: string; headers: Record<string, string>; body?: string }
+  ): Promise<T> {
     const order = this.pinnedBaseUrl
       ? [this.pinnedBaseUrl, ...this.baseUrls.filter((b) => b !== this.pinnedBaseUrl)]
       : [...this.baseUrls];
@@ -115,12 +156,7 @@ export class RiohubClient {
       let res: Awaited<ReturnType<RiohubFetchLike>>;
       try {
         res = await this.fetchImpl(base + path, {
-          method: "POST",
-          headers: {
-            "X-Riohub-Api-Key": this.config.apiKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
+          ...init,
           signal: AbortSignal.timeout(this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         });
       } catch (err) {

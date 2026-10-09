@@ -130,3 +130,56 @@ test("body loi khong phai JSON van ra RiohubApiError co code mac dinh", async ()
     (err: unknown) => err instanceof RiohubApiError && err.code === "unknown_error"
   );
 });
+
+test("get: ghep query string, bo tham so rong", async () => {
+  let seen = "";
+  const fetchImpl: RiohubFetchLike = async (url) => {
+    seen = url;
+    return okResponse({ data: [] });
+  };
+  const client = new RiohubClient({ apiKey: "k", baseUrls: BASES, fetchImpl });
+  await client.get("/orders", { creator_username: "c1", page_size: 20, sub_id: undefined, trace_id: "" });
+  assert.ok(seen.startsWith("https://a.test/api/v1/orders?"));
+  const qs = new URL(seen).searchParams;
+  assert.equal(qs.get("creator_username"), "c1");
+  assert.equal(qs.get("page_size"), "20");
+  // RioHub NUOT im lang tham so sai - gui len tham so rong la tu lam mu mat minh (xem doc cua get).
+  assert.equal(qs.has("sub_id"), false);
+  assert.equal(qs.has("trace_id"), false);
+});
+
+test("get: khong co query thi KHONG de lai dau '?' thua", async () => {
+  let seen = "";
+  const fetchImpl: RiohubFetchLike = async (url) => {
+    seen = url;
+    return okResponse({});
+  };
+  const client = new RiohubClient({ apiKey: "k", baseUrls: BASES, fetchImpl });
+  await client.get("/orders");
+  assert.equal(seen, "https://a.test/api/v1/orders");
+});
+
+test("get: dung CHUNG quy tac du phong ten mien voi post", async () => {
+  const seen: string[] = [];
+  const fetchImpl: RiohubFetchLike = async (url) => {
+    seen.push(url);
+    if (url.startsWith("https://a.test")) throw connErr("ENOTFOUND");
+    return okResponse({ ok: 1 });
+  };
+  const client = new RiohubClient({ apiKey: "k", baseUrls: BASES, fetchImpl });
+  await client.get("/orders", { page: 1 });
+  assert.equal(seen.length, 2);
+  assert.ok(seen[1].startsWith("https://b.test"));
+});
+
+test("get: gui header xac thuc va dung method GET", async () => {
+  let init: { method?: string; headers?: Record<string, string> } = {};
+  const fetchImpl: RiohubFetchLike = async (_url, got) => {
+    init = got ?? {};
+    return okResponse({});
+  };
+  const client = new RiohubClient({ apiKey: "secret-key", baseUrls: BASES, fetchImpl });
+  await client.get("/orders");
+  assert.equal(init.method, "GET");
+  assert.equal(init.headers?.["X-Riohub-Api-Key"], "secret-key");
+});

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SUBID_PLATFORM_CODE, generateSubId } from "../subId.js";
+import { SUBID_PLATFORM_CODE, generateSubId, looksLikeBotSubId } from "../subId.js";
 import type { Platform } from "../types.js";
 
 const ALL_PLATFORMS: Platform[] = ["zalo", "telegram", "http"];
@@ -54,4 +54,15 @@ test("generateSubId: 2 lan goi lien tiep cho cung 1 user ra 2 subId khac nhau", 
   const a = generateSubId("zalo", "123");
   const b = generateSubId("zalo", "123");
   assert.notEqual(a, b);
+});
+
+test("looksLikeBotSubId: phan biet subId cua bot voi subId link tu tao tren app RioHub", () => {
+  assert.equal(looksLikeBotSubId(generateSubId("zalo", "123456")), true);
+  assert.equal(looksLikeBotSubId(generateSubId("telegram", "987")), true);
+  // Dang that cua link chu bot tu tao tren app RioHub (do duoc tren don that 09/10/2026).
+  assert.equal(looksLikeBotSubId("u35008-m1791535058"), false);
+  assert.equal(looksLikeBotSubId(""), false);
+  assert.equal(looksLikeBotSubId(null), false);
+  // Format CU truoc 2026-09-26 ("zalo-...") khong con duoc sinh ra nua - doan dau phai la ma 1 ky tu.
+  assert.equal(looksLikeBotSubId("zalo-123-abc-ff00aa"), false);
 });

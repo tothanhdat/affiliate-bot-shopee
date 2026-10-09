@@ -46,3 +46,17 @@ export function generateSubId(platform: Platform, userId: string): string {
   const rand = randomBytes(3).toString("hex");
   return `${SUBID_PLATFORM_CODE[platform]}-${userId}-${Date.now().toString(36)}-${rand}`;
 }
+
+/**
+ * Doan xem mot subId co phai do CHINH bot sinh khong, dua tren hinh dang 4 doan o tren.
+ *
+ * CHI dung de CHAN DOAN (vd script doc don RioHub phan biet don tu link bot voi don tu link chu
+ * bot tu tao tren app, sub_id dang "u35008-m1791535058"). TUYET DOI khong dung tren duong quy don
+ * ve user: duong do van la logStore.findBySubId() khop NGUYEN CHUOI, va nen tang that doc tu cot
+ * `platform` cua requests.db chu khong suy tu ky tu dau - xem doc comment cua generateSubId().
+ */
+export function looksLikeBotSubId(subId: string | null | undefined): boolean {
+  if (!subId) return false;
+  const parts = subId.split("-");
+  return parts.length === 4 && Object.values(SUBID_PLATFORM_CODE).includes(parts[0]);
+}
