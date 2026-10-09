@@ -4,6 +4,10 @@ import type { LogStore } from "../logStore.js";
 import { MockAffiliateProvider } from "./mockProvider.js";
 import { ShopeeAffiliateProvider } from "./shopeeAffiliateProvider.js";
 import { AddlivetagCommissionLookup, type CommissionLookup } from "../commissionLookup.js";
+import type { MerchantId } from "../merchants.js";
+import { CompositeAffiliateProvider } from "./compositeProvider.js";
+import { RiohubClient } from "./riohubClient.js";
+import { TiktokAffiliateProvider } from "./tiktokAffiliateProvider.js";
 
 /**
  * Tao nguon tra hoa hong uoc tinh, hoac `null` neu chua bat/thieu cau hinh.
@@ -32,6 +36,38 @@ function createCommissionLookup(): CommissionLookup | null {
 }
 
 /**
+ * Provider TikTok, hoac `null` neu chua bat/thieu cau hinh.
+ *
+ * Thieu key thi ROT VE tat kem canh bao chu KHONG throw - giong createCommissionLookup(). Ly do:
+ * TikTok la tinh nang them, khong duoc phep lam bot khong khoi dong duoc; thieu no thi link TikTok
+ * quay ve hanh vi cu (RetiredMerchantLinkError).
+ */
+function createTiktokProvider(): AffiliateProvider | null {
+  if (!env.tiktok.enabled) return null;
+
+  const missing: string[] = [];
+  if (env.tiktok.apiKey === "") missing.push("RIOHUB_API_KEY");
+  if (env.tiktok.creatorUsername === "") missing.push("RIOHUB_CREATOR_USERNAME");
+  if (missing.length > 0) {
+    console.warn(
+      `[tiktok] TIKTOK_ENABLED=true nhung thieu ${missing.join(", ")} - tat TikTok. ` +
+        "Lay API key tai riohub.vn/tiktok-shop-developer."
+    );
+    return null;
+  }
+
+  return new TiktokAffiliateProvider({
+    client: new RiohubClient({
+      apiKey: env.tiktok.apiKey,
+      baseUrls: env.tiktok.baseUrls,
+      timeoutMs: env.tiktok.timeoutMs,
+    }),
+    creatorUsername: env.tiktok.creatorUsername,
+    channel: env.tiktok.linkChannel,
+  });
+}
+
+/**
  * logStore duoc truyen vao (thay vi ShopeeAffiliateProvider tu tao rieng 1 SQLite store) vi
  * short_links (T3.2) dung chung DB voi requests.db - tranh 2 ket noi/2 file rieng cho cung 1
  * du lieu khong phai tai chinh.
@@ -42,16 +78,25 @@ function createCommissionLookup(): CommissionLookup | null {
 export function createAffiliateProvider(logStore: LogStore): AffiliateProvider {
   assertAffiliateProviderConfigured();
 
-  if (env.affiliateProvider === "shopee_direct") {
-    return new ShopeeAffiliateProvider({
-      affiliateId: env.shopeeDirect.affiliateId,
-      createShortLink: (targetUrl) => logStore.createShortLink(targetUrl),
-      // DASHBOARD_BASE_URL nguoi dung dien co the co dau "/" cuoi - bo di de khong tao URL
-      // dang "https://bot.example.com//s/abc123".
-      shortLinkBaseUrl: env.dashboard.baseUrl.replace(/\/$/, ""),
-      commissionLookup: createCommissionLookup(),
-    });
+  if (env.affiliateProvider !== "shopee_direct") {
+    return new MockAffiliateProvider();
   }
 
-  return new MockAffiliateProvider();
+  const byMerchant = new Map<MerchantId, AffiliateProvider>();
+  byMerchant.set(
+    "shopee",
+    new ShopeeAffiliateProvider({
+      affiliateId: env.shopeeDirect.affiliateId,
+      createShortLink: (targetUrl) => logStore.createShortLink(targetUrl),
+      shortLinkBaseUrl: env.dashboard.baseUrl.replace(/\/$/, ""),
+      commissionLookup: createCommissionLookup(),
+    })
+  );
+
+  const tiktok = createTiktokProvider();
+  if (tiktok) byMerchant.set("tiktokshop", tiktok);
+
+  // Mot provider thi tra thang - do mot lop gian tiep cho truong hop pho bien nhat.
+  const only = byMerchant.size === 1 ? [...byMerchant.values()][0] : null;
+  return only ?? new CompositeAffiliateProvider(byMerchant);
 }
