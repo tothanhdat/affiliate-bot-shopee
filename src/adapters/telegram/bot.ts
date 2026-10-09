@@ -17,6 +17,8 @@ import {
   formatDashboardLinkReply,
   toCommissionReplyEstimate,
 } from "../shared/replyText.js";
+import { resolveErrorUserMessage } from "../shared/providerErrorReply.js";
+import type { AlertThrottle } from "../../core/alertThrottle.js";
 
 export interface TelegramBotOptions {
   token: string;
@@ -34,6 +36,12 @@ export interface TelegramBotOptions {
    */
   commissionTaxPercent: number;
   commissionPlatformFeePercent: number;
+  /**
+   * Canh bao admin khi nguon affiliate (RioHub) hong - gop theo ma loi, xem alertThrottle.ts.
+   * Khong truyen thi van tra cau bao tri cho user, chi la khong bao admin.
+   */
+  alertThrottle?: AlertThrottle;
+  notifyAdmin?: (text: string) => Promise<void>;
 }
 
 export function createTelegramBot(resolver: LinkResolverService, options: TelegramBotOptions) {
@@ -96,8 +104,11 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
         const detail = err instanceof Error ? err.message : String(err);
         const code = err instanceof AppError ? err.code : "UNKNOWN";
         console.warn(`[telegram] tao link that bai (${code}) cho ${rawUrl}: ${detail}`);
-        const userMessage =
-          err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
+        const userMessage = resolveErrorUserMessage(err, {
+          ledgerStore,
+          alertThrottle: options.alertThrottle,
+          notifyAdmin: options.notifyAdmin,
+        });
         await ctx.reply(formatErrorReply(userMessage), {
           reply_parameters: { message_id: ctx.message.message_id },
         });

@@ -41,6 +41,8 @@ import {
   formatGroupJoinBlockedGroupReply,
   toCommissionReplyEstimate,
 } from "../shared/replyText.js";
+import { resolveErrorUserMessage } from "../shared/providerErrorReply.js";
+import type { AlertThrottle } from "../../core/alertThrottle.js";
 
 export interface ZaloGroupBotOptions {
   sessionPath: string;
@@ -66,6 +68,12 @@ export interface ZaloGroupBotOptions {
    * voi moi DM khong phai "xemhh"/link san pham - dung hanh vi truoc 2026-09-13.
    */
   faqService?: FaqService;
+  /**
+   * Canh bao admin khi nguon affiliate (RioHub) hong - gop theo ma loi, xem alertThrottle.ts.
+   * Khong truyen thi van tra cau bao tri cho user, chi la khong bao admin.
+   */
+  alertThrottle?: AlertThrottle;
+  notifyAdmin?: (text: string) => Promise<void>;
 }
 
 /**
@@ -572,8 +580,11 @@ export class ZaloGroupBot {
         const detail = err instanceof Error ? err.message : String(err);
         const code = err instanceof AppError ? err.code : "UNKNOWN";
         console.warn(`[zalo] tao link that bai (${code}) cho ${rawUrl}: ${detail}`);
-        const userMessage =
-          err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
+        const userMessage = resolveErrorUserMessage(err, {
+          ledgerStore: this.options.ledgerStore,
+          alertThrottle: this.options.alertThrottle,
+          notifyAdmin: this.options.notifyAdmin,
+        });
         await sendReply(formatErrorReply(userMessage));
       }
     }

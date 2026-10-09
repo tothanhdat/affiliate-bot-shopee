@@ -13,6 +13,7 @@ import type { NotifyUser } from "./core/notification.js";
 import { createAdminNotifier } from "./adapters/shared/adminNotifier.js";
 import { FaqService } from "./core/faq/faqService.js";
 import { createFaqClassifier } from "./core/faq/providers/index.js";
+import { AlertThrottle } from "./core/alertThrottle.js";
 
 const logStore = new LogStore(env.databasePath);
 const ledgerStore = new LedgerStore(env.ledgerDatabasePath);
@@ -20,6 +21,9 @@ const rateLimiter = new RateLimiter(env.rateLimit.maxRequests, env.rateLimit.win
 const adminLoginRateLimiter = new RateLimiter(env.adminLoginRateLimit.maxRequests, env.adminLoginRateLimit.windowMs);
 const affiliateProvider = createAffiliateProvider(logStore);
 const resolver = new LinkResolverService(affiliateProvider, logStore, rateLimiter);
+// Gop canh bao "nguon affiliate TikTok hong" theo ma loi: su co ~7 phut ngay 09/10/2026 se sinh
+// hang chuc tin giong nhau neu khong gop. Dung chung cho Telegram va Zalo.
+const providerAlertThrottle = new AlertThrottle(15 * 60_000);
 
 if (env.affiliateProvider === "mock") {
   console.warn(
@@ -49,6 +53,9 @@ if (env.telegramBotToken === "") {
     promotionsLimit: env.promotionsDisplayLimit,
     ledgerStore,
     dashboardBaseUrl: env.dashboard.baseUrl,
+    alertThrottle: providerAlertThrottle,
+    // notifyAdmin khai bao SAU doan nay - boc lai de chi doc luc GOI, khong phai luc tao bot.
+    notifyAdmin: (text) => notifyAdmin(text),
   });
 }
 
@@ -207,6 +214,8 @@ if (!env.zaloGroup.enabled) {
     commissionPlatformFeePercent: env.commission.platformFeePercent,
     withdrawalThresholdVnd: env.withdrawal.thresholdVnd,
     faqService,
+    alertThrottle: providerAlertThrottle,
+    notifyAdmin,
   });
   zaloBot.start().then(
     () => console.log("[zalo] Bot dang chay"),
