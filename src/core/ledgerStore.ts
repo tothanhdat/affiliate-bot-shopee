@@ -42,6 +42,12 @@ import type { UserCommissionOverride } from "./userCommissionOverride.js";
  */
 const DAY_EXPR = "COALESCE(order_date, date(created_at, '+7 hours'))";
 
+/**
+ * Ty le THAT cua giai doan truoc 2026-10-01 (moc chia 10/90 co hieu luc tu 19/08/2026), dung de
+ * backfill 3 cot % cho entry cu - xem backfillLegacyRatePercents(). HANG SO LICH SU, khong phai
+ * cau hinh: doc tu settings hien hanh la SAI (hien la 20/80, va con doi tiep trong tuong lai).
+ */
+const LEGACY_RATE_PERCENTS = { taxPercent: 10, platformFeePercent: 1, userSharePercent: 90 } as const;
 
 /**
  * Bo 3 ty le dung de chia hoa hong 1 don. Truyen vao updatePendingEntry/confirmPendingEntry duoi vai
@@ -393,8 +399,82 @@ export class LedgerStore {
     this.migrateAddWithdrawalDebtColumns();
     // DB tao truoc 2026-10-09 (truoc khi dong bo avatar Zalo) se thieu cot nay.
     this.migrateAddUserAvatarColumn();
+    this.backfillLegacyRatePercents();
   }
 
+  /**
+   * Dien 3 cot ty le cho entry ghi TRUOC 2026-10-01 (2026-10-09, yeu cau truc tiep cua user) - luc
+   * do he thong chua chot ty le theo tung don nen 3 cot la NULL va /admin/orders hien "—".
+   * Ty le that cua giai doan do la LEGACY_RATE_PERCENTS (thue 10%, phi san 1%, user 90% - moc 10/90
+   * co hieu luc 19/08-01/10/2026, user xac nhan va so tien da luu trong DB tu xac minh).
+   *
+   * **CHI ghi khi tinh lai ra DUNG TUNG DONG da luu** (lua chon cua user 2026-10-09): don nao khong
+   * khop thi de nguyen NULL chu khong gan nhan ty le co the sai len don tien that - vd don thoi 20/80
+   * (truoc 19/08) neu con sot lai se noi 80%, gan 90% len la noi sai ngay tren trang de doi soat.
+   * Day la ly do viec backfill nay AN TOAN du CLAUDE.md tung ghi "khong backfill duoc": cau do noi ve
+   * suy nguoc TU DONG tu so tien (sai khi hoa hong nho - thue 10% cua 7d lam tron con 1d, suy ra 14%),
+   * con o day ty le do NGUOI cung cap va so tien chi dung de XAC MINH, khong dung de suy ra.
+   *
+   * TUYET DOI khong dung toi cot tien nao: chi ghi nhan ty le da dung, khong tinh lai tien.
+   * Tu nhien la mot lan duy nhat (WHERE user_share_percent IS NULL) - don moi luon ghi san 3 cot.
+   */
+  private backfillLegacyRatePercents(): void {
+    const rows = this.db
+      .prepare(
+        `SELECT id, order_id, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount
+         FROM commission_entries WHERE user_share_percent IS NULL`
+      )
+      .all() as Array<{
+      id: string;
+      order_id: string;
+      commission_amount: number;
+      tax_amount: number;
+      platform_fee_amount: number;
+      after_tax_amount: number;
+      user_share_amount: number;
+    }>;
+    if (rows.length === 0) return;
+
+    const update = this.db.prepare(
+      `UPDATE commission_entries SET tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?
+       WHERE id = ?`
+    );
+    let filled = 0;
+    const skipped: string[] = [];
+    for (const row of rows) {
+      const expected = computeCommissionBreakdown({
+        commissionAmount: row.commission_amount,
+        ...LEGACY_RATE_PERCENTS,
+      });
+      const matches =
+        expected.taxAmount === row.tax_amount &&
+        expected.platformFeeAmount === row.platform_fee_amount &&
+        expected.afterTaxAmount === row.after_tax_amount &&
+        expected.userShareAmount === row.user_share_amount;
+      if (!matches) {
+        skipped.push(row.order_id);
+        continue;
+      }
+      update.run(
+        LEGACY_RATE_PERCENTS.taxPercent,
+        LEGACY_RATE_PERCENTS.platformFeePercent,
+        LEGACY_RATE_PERCENTS.userSharePercent,
+        row.id
+      );
+      filled++;
+    }
+
+    if (filled > 0 || skipped.length > 0) {
+      console.log(
+        `[ledger] Backfill ty le don cu: da ghi ${filled} don theo ${LEGACY_RATE_PERCENTS.userSharePercent}%` +
+          `, bo qua ${skipped.length} don khong khop so tien da luu.`
+      );
+    }
+    if (skipped.length > 0) {
+      // Liet ke ra de doi soat tay: nhung don nay giu "—" tren /admin/orders.
+      console.warn(`[ledger] Don giu nguyen "—" (so tien khong khop ty le cu): ${skipped.join(", ")}`);
+    }
+  }
 
   /**
    * Avatar Zalo cua user (2026-10-09) - URL tren CDN cua Zalo, lay tu currentMems/getGroupMembersInfo
