@@ -4,7 +4,10 @@ import { resolveErrorUserMessage } from "../providerErrorReply.js";
 import { AlertThrottle } from "../../../core/alertThrottle.js";
 import { ProviderUnavailableError, ProductNotAffiliateEligibleError } from "../../../core/errors.js";
 
-const store = { getTiktokProviderDownTemplate: (d: string) => d };
+const store = {
+  getTiktokProviderDownTemplate: (d: string) => d,
+  getTiktokNoCommissionTemplate: (d: string) => d,
+};
 
 test("ProviderUnavailableError -> cau bao tri + bao admin", () => {
   const sent: string[] = [];
@@ -22,7 +25,7 @@ test("ProviderUnavailableError -> cau bao tri + bao admin", () => {
 
 test("template admin da sua duoc uu tien hon default", () => {
   const msg = resolveErrorUserMessage(new ProviderUnavailableError("x", "y"), {
-    ledgerStore: { getTiktokProviderDownTemplate: () => "cau rieng" },
+    ledgerStore: { ...store, getTiktokProviderDownTemplate: () => "cau rieng" },
   });
   assert.equal(msg, "cau rieng");
 });
@@ -55,6 +58,13 @@ test("loi ve san pham (chua bat hoa hong) KHONG bao tri, KHONG bao admin", () =>
   });
   assert.equal(msg, err.userMessage);
   assert.equal(sent.length, 0);
+});
+
+test("cau 'chua bat hoan tien' lay tu template admin sua, uu tien hon default", () => {
+  const msg = resolveErrorUserMessage(new ProductNotAffiliateEligibleError("x"), {
+    ledgerStore: { ...store, getTiktokNoCommissionTemplate: () => "shop nay chua bat nha" },
+  });
+  assert.equal(msg, "shop nay chua bat nha");
 });
 
 test("loi la -> cau chung chung", () => {

@@ -1,10 +1,13 @@
-import { AppError, ProviderUnavailableError } from "../../core/errors.js";
+import { AppError, ProductNotAffiliateEligibleError, ProviderUnavailableError } from "../../core/errors.js";
 import type { AlertThrottle } from "../../core/alertThrottle.js";
-import { TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT } from "./replyText.js";
+import { TIKTOK_NO_COMMISSION_TEMPLATE_DEFAULT, TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT } from "./replyText.js";
 
 export interface ProviderErrorContext {
   /** Chi can getter template - de test khong phai dung ca LedgerStore. */
-  ledgerStore: { getTiktokProviderDownTemplate(defaultValue: string): string };
+  ledgerStore: {
+    getTiktokProviderDownTemplate(defaultValue: string): string;
+    getTiktokNoCommissionTemplate(defaultValue: string): string;
+  };
   /** Khong truyen -> khong bao admin (vd test, hoac instance chua noi). */
   alertThrottle?: AlertThrottle;
   notifyAdmin?: (text: string) => Promise<void>;
@@ -25,6 +28,10 @@ export function resolveErrorUserMessage(err: unknown, ctx: ProviderErrorContext)
         .catch(() => {});
     }
     return ctx.ledgerStore.getTiktokProviderDownTemplate(TIKTOK_PROVIDER_DOWN_TEMPLATE_DEFAULT);
+  }
+  // Chi TikTok nem loi nay (422 product_not_promotable). Khong bao admin: day la su that ve san pham.
+  if (err instanceof ProductNotAffiliateEligibleError) {
+    return ctx.ledgerStore.getTiktokNoCommissionTemplate(TIKTOK_NO_COMMISSION_TEMPLATE_DEFAULT);
   }
   return err instanceof AppError ? err.userMessage : "Đã có lỗi không xác định, vui lòng thử lại sau.";
 }
