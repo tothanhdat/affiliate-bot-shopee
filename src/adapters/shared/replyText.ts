@@ -5,8 +5,22 @@ import { getMerchantConfig, supportedMerchantNames, type MerchantId } from "../.
 import type { ConfirmedOrderItem } from "../../core/orderIngest.js";
 
 export const USAGE_TEXT =
-  `👋 Gửi cho mình link sản phẩm ${supportedMerchantNames()} (ví dụ: https://vn.shp.ee/xxxxxxx), ` +
+  "👋 Gửi cho mình link sản phẩm {{san}} (ví dụ: https://vn.shp.ee/xxxxxxx), " +
   "mình sẽ trả về link áp mã cho bạn.";
+
+/**
+ * Render `{{san}}` = danh sach san DANG ho tro ("Shopee" / "Shopee va TikTok Shop").
+ *
+ * Vi sao la PLACEHOLDER chu khong phai noi thang ten san vao default (quyet dinh cua chu bot
+ * 2026-10-09): gia tri trong DB de len default trong code, nen instance da bam Luu o
+ * /admin/settings se KHONG nhan duoc ten san moi du da sua default. Co placeholder thi admin chi
+ * phai sua tay DUNG MOT LAN de chen `{{san}}` vao, tu do ve sau bat/tat san nao cung tu dong dung.
+ *
+ * Template cu (chua co `{{san}}`) van chay binh thuong - renderTemplate bo qua key khong co mat.
+ */
+export function formatUsageText(template: string): string {
+  return renderTemplate(template, { san: supportedMerchantNames() });
+}
 
 /**
  * Zalo DM voi noi dung khong khop lenh "xemhh" - truoc day IM LANG hoan toan (quyet dinh 2026-08-17,
@@ -384,13 +398,13 @@ export function formatWelcomeReply(
 /** Default cho setting "group_join_welcome_template" (xem SETTINGS_KEYS) - dung khi admin chua tuy chinh. */
 export const GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT =
   `Ơ hi bạn mới toanh 👋🎉 Chào mừng vào nhà tụi mình nha!\n\n` +
-  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm ${supportedMerchantNames()} vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
+  `Em là bot săn sale hoàn tiền nè — cứ thả link sản phẩm {{san}} vào group, em trả lại link mua hàng gắn mã hoàn tiền liền, mua xong là có tiền về túi 💸\n\n` +
   `Chưa rành cách chơi thì đọc lẹ Sổ tay hoàn tiền ở đây nè: {{handbookUrl}}\n\n` +
   `Nhớ bấm chấp nhận lời mời kết bạn của em nha 🤝 Có đơn hoàn tiền là em nhắn báo riêng cho mình liền!\n\n` +
   `Có gì cứ hỏi riêng em, đừng ngại nha! 🥳`;
 
 export function formatGroupJoinWelcomeReply(template: string, handbookUrl: string): string {
-  return renderTemplate(template, { handbookUrl });
+  return renderTemplate(template, { handbookUrl, san: supportedMerchantNames() });
 }
 
 /**

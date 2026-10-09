@@ -25,6 +25,7 @@ import { loadZaloCredentials, saveZaloCredentials } from "./session.js";
 import { SentMessageTracker } from "./sentMessageTracker.js";
 import {
   USAGE_TEXT,
+  formatUsageText,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   WELCOME_MESSAGE_TEMPLATE_DEFAULT,
   GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
@@ -510,7 +511,7 @@ export class ZaloGroupBot {
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
-      await this.sendGroupReply(api, message, this.options.ledgerStore.getUsageText(USAGE_TEXT));
+      await this.sendGroupReply(api, message, formatUsageText(this.options.ledgerStore.getUsageText(USAGE_TEXT)));
       return;
     }
 

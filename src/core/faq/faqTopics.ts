@@ -1,4 +1,3 @@
-import { supportedMerchantNames } from "../merchants.js";
 
 /**
  * Bo chu de FAQ bot tu tra loi trong Zalo DM (2026-09-13).
@@ -25,6 +24,8 @@ export const FAQ_ANSWER_PLACEHOLDERS = [
   "botSharePercent",
   "withdrawalThreshold",
   "dashboardUrl",
+  // Danh sach san dang ho tro - xem formatUsageText() de biet vi sao phai la placeholder.
+  "san",
 ];
 
 /** So phut khoa FAQ mac dinh sau khi admin go tay trong thread (admin doi duoc tren /admin/settings). */
@@ -111,7 +112,7 @@ export const FAQ_TOPICS: FaqTopic[] = [
       "User hoi dung bot the nao, gui link o dau, gui gi cho bot, copy link kieu nao, dung trong group hay nhan rieng",
     defaultAnswer:
       `Đơn giản lắm ạ 🥳\n\n` +
-      `Bạn copy link sản phẩm trên ${supportedMerchantNames()} rồi gửi cho em — gửi trong group hoặc nhắn riêng cho em đều được nha (nhắn riêng nếu bạn không muốn người khác thấy mình mua gì 😉).\n\n` +
+      `Bạn copy link sản phẩm trên {{san}} rồi gửi cho em — gửi trong group hoặc nhắn riêng cho em đều được nha (nhắn riêng nếu bạn không muốn người khác thấy mình mua gì 😉).\n\n` +
       `Em sẽ gửi lại link đã gắn mã hoàn tiền. Bạn mở đúng link đó và đặt hàng luôn trong phiên là xong!\n\n` +
       `⚠️ Quan trọng: đừng xem video/livestream xen giữa lúc mở link và lúc đặt hàng, đơn sẽ không được ghi nhận đó.`,
   },
@@ -133,7 +134,7 @@ export const FAQ_TOPICS: FaqTopic[] = [
     description:
       "User hoi san nao duoc ho tro, co TikTok Shop/Lazada/Tiki/Dien May Xanh khong, mua o dau thi duoc tinh tien",
     defaultAnswer:
-      `Hiện em chỉ hỗ trợ **${supportedMerchantNames()}** thôi ạ 🛒\n\n` +
+      `Hiện em chỉ hỗ trợ **{{san}}** thôi ạ 🛒\n\n` +
       `Các sàn khác em chưa hỗ trợ, bạn gửi link vào em sẽ báo lại ngay nha.\n\n` +
       `Có thêm sàn mới em sẽ báo trong group liền!`,
   },

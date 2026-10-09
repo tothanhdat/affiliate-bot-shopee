@@ -8,6 +8,7 @@ import type { MerchantId } from "../../core/merchants.js";
 import type { LinkSourceContext } from "../../core/types.js";
 import {
   USAGE_TEXT,
+  formatUsageText,
   SUCCESS_REPLY_TEMPLATE_DEFAULT,
   DASHBOARD_LINK_REPLY_TEMPLATE_DEFAULT,
   formatSuccessReply,
@@ -48,8 +49,8 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
   const { token, maxLinksPerMessage, promotionsLimit, ledgerStore, dashboardBaseUrl } = options;
   const bot = new Telegraf(token);
 
-  bot.start((ctx) => ctx.reply(ledgerStore.getUsageText(USAGE_TEXT)));
-  bot.help((ctx) => ctx.reply(ledgerStore.getUsageText(USAGE_TEXT)));
+  bot.start((ctx) => ctx.reply(formatUsageText(ledgerStore.getUsageText(USAGE_TEXT))));
+  bot.help((ctx) => ctx.reply(formatUsageText(ledgerStore.getUsageText(USAGE_TEXT))));
 
   bot.on(message("text"), async (ctx) => {
     const text = ctx.message.text;
@@ -76,7 +77,7 @@ export function createTelegramBot(resolver: LinkResolverService, options: Telegr
     const links = extractProductUrls(text);
 
     if (links.length === 0) {
-      await ctx.reply(ledgerStore.getUsageText(USAGE_TEXT));
+      await ctx.reply(formatUsageText(ledgerStore.getUsageText(USAGE_TEXT)));
       return;
     }
 

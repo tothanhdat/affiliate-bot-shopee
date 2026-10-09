@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  formatUsageText,
+  USAGE_TEXT,
   renderTemplate,
   formatOrdersConfirmedCaption,
   ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT,
@@ -427,4 +429,34 @@ test("formatSuccessReply: link TikTok khong co uoc tinh -> cau hen cung goi dung
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://www.tiktok.com/t/abc", "tiktokshop", null);
   assert.match(result, /sau khi TikTok Shop xác nhận đơn/);
   assert.doesNotMatch(result, /Shopee/);
+});
+
+/**
+ * `{{san}}` (2026-10-09, yeu cau truc tiep cua chu bot): ten san KHONG duoc viet thang vao default,
+ * vi gia tri trong DB de len default trong code - instance da bam Luu o /admin/settings se khong
+ * bao gio nhan duoc ten san moi. Co placeholder thi admin sua tay DUNG MOT LAN.
+ */
+test("USAGE_TEXT: dung {{san}} chu KHONG viet thang ten san vao default", () => {
+  assert.ok(USAGE_TEXT.includes("{{san}}"), "default phai giu placeholder de bat them san khong phai sua lai");
+  assert.doesNotMatch(USAGE_TEXT, /Shopee|TikTok/);
+});
+
+test("formatUsageText: render {{san}} thanh danh sach san, khong con placeholder sot lai", () => {
+  const result = formatUsageText(USAGE_TEXT);
+  assert.match(result, /link sản phẩm Shopee/);
+  assert.ok(!result.includes("{{"), `con placeholder chua thay: ${result}`);
+});
+
+test("formatUsageText: template CU cua instance (khong co {{san}}) van gui binh thuong", () => {
+  // Tuong thich nguoc bat buoc: DB cua instance dang giu cau viet thang "Shopee", khong duoc crash
+  // hay nhan nguyen van "{{san}}" cho khach.
+  const cu = "Gửi link sản phẩm Shopee cho mình nha";
+  assert.equal(formatUsageText(cu), cu);
+});
+
+test("formatGroupJoinWelcomeReply: render ca {{handbookUrl}} lan {{san}}", () => {
+  const result = formatGroupJoinWelcomeReply(GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT, "https://bot.test/so-tay");
+  assert.match(result, /link sản phẩm Shopee/);
+  assert.match(result, /https:\/\/bot\.test\/so-tay/);
+  assert.ok(!result.includes("{{"), `con placeholder chua thay: ${result}`);
 });

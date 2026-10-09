@@ -9,6 +9,7 @@ import {
   detectRetiredMerchantByHost,
   getMerchantConfig,
 } from "../merchants.js";
+import { FAQ_ANSWER_PLACEHOLDERS } from "../faq/faqTopics.js";
 
 test("MERCHANTS: chi con Shopee", () => {
   assert.deepEqual(
@@ -92,4 +93,10 @@ test("supportedMerchantNames: 1 san -> ten tran, 2 san -> noi bang 'va'", () => 
 
 test("supportedMerchantNames: danh sach rong khong lam vo cau tin nhan", () => {
   assert.equal(supportedMerchantNames([]), "");
+});
+
+test("FAQ_ANSWER_PLACEHOLDERS co 'san' -> /admin/settings moi hien chip bam de chen", () => {
+  // helpText cua ca 8 o FAQ duoc sinh tu mang nay (settingsRegistry.ts), va trang settings quet
+  // {{...}} trong helpText de ve chip. Thieu "san" thi admin khong biet placeholder nay ton tai.
+  assert.ok(FAQ_ANSWER_PLACEHOLDERS.includes("san"));
 });

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { LedgerStore } from "../../ledgerStore.js";
 import { RateLimiter } from "../../rateLimiter.js";
 import { FaqService } from "../faqService.js";
+import { renderTemplate } from "../../../adapters/shared/replyText.js";
+import { supportedMerchantNames } from "../../merchants.js";
 import { FAQ_TOPICS, FAQ_OUT_OF_SCOPE_REPLY_DEFAULT } from "../faqTopics.js";
 import { SETTINGS_KEYS, faqAnswerKey } from "../../settingsKeys.js";
 import type { FaqClassifier } from "../faqClassifier.js";
@@ -56,7 +58,7 @@ test("resolve: khop 1 chu de -> tra dung cau tra loi cua chu de do", async () =>
   try {
     const answer = await service.resolve(input);
     const topic = FAQ_TOPICS.find((t) => t.id === "san_ho_tro");
-    assert.equal(answer, topic?.defaultAnswer);
+    assert.equal(answer, renderTemplate(topic?.defaultAnswer ?? "", { san: supportedMerchantNames() }));
   } finally {
     cleanup();
   }
@@ -207,7 +209,7 @@ test("resolve: sau 1 cau khong nhan ra, cau FAQ hop le tiep theo VAN duoc tra lo
     );
     const answer = await service.resolve({ ...input, question: "bot hỗ trợ sàn nào" });
     const topic = FAQ_TOPICS.find((t) => t.id === "san_ho_tro");
-    assert.equal(answer, topic?.defaultAnswer);
+    assert.equal(answer, renderTemplate(topic?.defaultAnswer ?? "", { san: supportedMerchantNames() }));
   } finally {
     cleanup();
   }

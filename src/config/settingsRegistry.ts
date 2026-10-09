@@ -70,7 +70,10 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     label: "Hướng dẫn khi chưa gửi link sản phẩm",
     type: "textarea",
     default: USAGE_TEXT,
-    helpText: "Không có placeholder động.",
+    helpText:
+      "Placeholder hợp lệ: {{san}} (danh sách sàn bot đang hỗ trợ, tự đổi theo cấu hình — "
+      + "ví dụ \"Shopee\" hoặc \"Shopee và TikTok Shop\"). Giữ placeholder này thay vì gõ thẳng tên sàn, "
+      + "để bật thêm sàn mới không phải sửa lại câu này.",
   },
   {
     key: SETTINGS_KEYS.welcomeMessageTemplate,
@@ -85,7 +88,9 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     label: "Tin nhắn chào mừng khi vừa được thêm vào group (Zalo DM, gửi 1 lần/user)",
     type: "textarea",
     default: GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT,
-    helpText: "Placeholder hợp lệ: {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay).",
+    helpText:
+      "Placeholder hợp lệ: {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay) và "
+      + "{{san}} (danh sách sàn bot đang hỗ trợ, tự đổi theo cấu hình).",
   },
   {
     key: SETTINGS_KEYS.groupJoinBlockedReplyTemplate,

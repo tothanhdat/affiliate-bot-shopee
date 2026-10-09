@@ -1,5 +1,6 @@
 import { formatVnd } from "../money.js";
 import { renderTemplate } from "../../adapters/shared/replyText.js";
+import { supportedMerchantNames } from "../merchants.js";
 import { SETTINGS_KEYS, faqAnswerKey } from "../settingsKeys.js";
 import type { RateLimiter } from "../rateLimiter.js";
 import type { FaqMuteReason } from "../types.js";
@@ -186,6 +187,7 @@ export class FaqService {
       botSharePercent: String(100 - userShare),
       withdrawalThreshold: formatVnd(threshold),
       dashboardUrl: input.dashboardUrl,
+      san: supportedMerchantNames(),
     });
   }
 }
