@@ -45,7 +45,10 @@ function setup() {
   let allGroupIds: string[] = [];
   // Roster gia lap cua tung group: memberIds (danh sach DAY DU) va currentMems (ho so kem san ten +
   // avatar, Zalo chi tra ve cho MOT PHAN thanh vien o group lon).
-  const groupMembers = new Map<string, { memberIds: string[]; currentMems: { id: string; dName: string; avatar: string }[] }>();
+  const groupMembers = new Map<
+    string,
+    { memberIds: string[]; currentMems: { id: string; dName: string; avatar: string }[]; memVerList?: string[] }
+  >();
   // Cac lo uid ma getGroupMembersInfo duoc goi voi - de khang dinh so lenh goi mang (chia lo <=50).
   const membersInfoCalls: string[][] = [];
   let membersInfoError: Error | null = null;
@@ -91,6 +94,7 @@ function setup() {
               name: groupNames.get(id) ?? "",
               memberIds: groupMembers.get(id)?.memberIds,
               currentMems: groupMembers.get(id)?.currentMems,
+              memVerList: groupMembers.get(id)?.memVerList,
             },
           ])
         ),
@@ -201,9 +205,17 @@ function setup() {
     },
     setGroupMembers: (
       groupId: string,
-      members: { memberIds: string[]; currentMems?: { id: string; dName: string; avatar: string }[] }
+      members: {
+        memberIds?: string[];
+        currentMems?: { id: string; dName: string; avatar: string }[];
+        memVerList?: string[];
+      }
     ) => {
-      groupMembers.set(groupId, { memberIds: members.memberIds, currentMems: members.currentMems ?? [] });
+      groupMembers.set(groupId, {
+        memberIds: members.memberIds ?? [],
+        currentMems: members.currentMems ?? [],
+        memVerList: members.memVerList,
+      });
     },
     membersInfoCalls,
     setMembersInfoError: (err: Error | null) => {
@@ -1222,6 +1234,92 @@ test("Zalo roster: syncGroupMembers nem loi ro rang khi bot chua dang nhap", asy
   const { bot, cleanup } = setup();
   try {
     await assert.rejects(() => bot.syncGroupMembers("group-1"), /chua dang nhap/i);
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Do THAT tren production 2026-10-09: `getGroupInfo` tra ve `name` day du (ten group hien dung tren
+ * /admin/settings) nhung KHONG co `memberIds`/`currentMems` - roster im lang rong, khong loi nao.
+ * Thanh vien nam o `memVerList` dang "<uid>_<version>".
+ */
+test("Zalo roster: doc duoc thanh vien tu memVerList khi thieu memberIds/currentMems", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", { memVerList: ["khach-a_3", "khach-b_12"] });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a", "khach-b"], "phai bo phan _version");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: memVerList khong co dau _ thi lay nguyen chuoi lam uid", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", { memVerList: ["khach-a", "", "  "] });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a"], "bo qua phan tu rong");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: uid cua bot trong memVerList cung bi loai", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", { memVerList: ["bot-uid_1", "khach-a_2"] });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: 3 nguon deu rong thi khong crash, khong ghi ai", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, membersInfoCalls, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", {});
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), []);
+    assert.deepEqual(membersInfoCalls, [], "khong goi API bu ho so cho danh sach rong");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo roster: memVerList gop voi memberIds, khong nhan ban user", async () => {
+  const { ledgerStore, setAllGroupIds, setGroupMembers, syncKnownGroups, cleanup } = setup();
+  try {
+    setAllGroupIds(["group-1"]);
+    ledgerStore.upsertZaloGroup("group-1", "Group Hoàn Tiền");
+    ledgerStore.setZaloGroupNotifySelection(["group-1"]);
+    setGroupMembers("group-1", { memberIds: ["khach-a"], memVerList: ["khach-a_5", "khach-b_1"] });
+
+    await syncKnownGroups();
+
+    assert.deepEqual(knownUserIds(ledgerStore), ["khach-a", "khach-b"]);
   } finally {
     cleanup();
   }

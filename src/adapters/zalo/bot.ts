@@ -217,12 +217,22 @@ export class ZaloGroupBot {
   private async syncGroupRoster(
     api: API,
     groupId: string,
-    groupInfo: { memberIds?: string[]; currentMems?: GroupCurrentMem[] } | undefined
+    groupInfo: { memberIds?: string[]; currentMems?: GroupCurrentMem[]; memVerList?: string[] } | undefined
   ): Promise<void> {
     const ownUid = api.getOwnId();
     const currentMems = (groupInfo?.currentMems ?? []).filter((member) => member.id !== ownUid);
     const profiles = new Map(currentMems.map((member) => [member.id, member]));
-    const memberIds = new Set<string>([...(groupInfo?.memberIds ?? []), ...profiles.keys()]);
+    // 3 nguon vi response THAT khong giong type khai bao (do tren production 2026-10-09: getGroupInfo
+    // tra `name` day du nhung KHONG co memberIds/currentMems, thanh vien nam o memVerList dang
+    // "<uid>_<version>"). Gop ca 3 chu khong chon 1: Zalo co the doi hinh dang bat ky luc nao, va Set tu khu trung.
+    const fromMemVerList = (groupInfo?.memVerList ?? [])
+      .map((entry) => entry.split("_")[0]?.trim() ?? "")
+      .filter((uid) => uid !== "");
+    const memberIds = new Set<string>([
+      ...(groupInfo?.memberIds ?? []),
+      ...profiles.keys(),
+      ...fromMemVerList,
+    ]);
     memberIds.delete(ownUid);
 
     for (const userId of memberIds) {
@@ -234,6 +244,22 @@ export class ZaloGroupBot {
     }
 
     const missingProfile = [...memberIds].filter((userId) => !profiles.has(userId));
+    // Log LUON (khong chi khi loi): truoc day ham nay im lang tuyet doi khi doc ra 0 thanh vien, nen
+    // tu xa khong phan biet duoc "group chua tick" voi "response khong co truong thanh vien" - dung
+    // cai bay do da lam mat mot vong deploy. In ca 3 nguon de biet Zalo dang tra bang duong nao.
+    console.log(
+      `[zalo] Group ${groupId}: ${memberIds.size} thanh vien ` +
+        `(memberIds=${groupInfo?.memberIds?.length ?? 0}, currentMems=${groupInfo?.currentMems?.length ?? 0}` +
+        `, memVerList=${groupInfo?.memVerList?.length ?? 0}), bu ho so ${missingProfile.length} uid.`
+    );
+    if (memberIds.size === 0) {
+      // Goi ten cac truong THAT co trong response - neu Zalo lai doi cho thanh vien lan nua thi dong
+      // nay chi thang ra cho moi ma khong phai doan.
+      console.warn(
+        `[zalo] Group ${groupId}: khong doc duoc thanh vien nao. Cac truong getGroupInfo tra ve: ` +
+          `${Object.keys(groupInfo ?? {}).join(", ") || "(rong)"}`
+      );
+    }
     for (let i = 0; i < missingProfile.length; i += MEMBERS_INFO_BATCH_SIZE) {
       const batch = missingProfile.slice(i, i + MEMBERS_INFO_BATCH_SIZE);
       try {
