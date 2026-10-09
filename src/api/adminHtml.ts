@@ -1764,6 +1764,9 @@ export const SELECT_CHEVRON_CLASS = "field-select";
 export function merchantChipClass(merchant: MerchantId): string {
   const byMerchant: Partial<Record<MerchantId, string>> = {
     shopee: "border-orange-100 bg-orange-50 text-orange-600",
+    // TikTok: nen den dac trung cua thuong hieu. Cam/xanh la/xanh duong/do da mang nghia rieng trong
+    // khu /admin (cho xac nhan, kha dung, kenh Zalo, da huy) nen khong dung lai cho san.
+    tiktokshop: "border-slate-800 bg-slate-900 text-white",
   };
   return byMerchant[merchant] ?? "border-slate-200 bg-white text-slate-700";
 }
