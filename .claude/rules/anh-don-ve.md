@@ -1,0 +1,29 @@
+# Ảnh "đơn về" + QR chuyển khoản
+
+> Đọc khi sửa `src/core/orderImage/*` (satori/resvg/jpeg-js, font, toạ độ) hoặc `src/core/vietQr.ts`.
+
+## orderImage/
+
+**orderImage/** — (2026-10-05, doi template 2026-10-06) Anh bao "don ve" gui THAY tin van ban (quyet dinh cua user: tin cu la mot khoi chu dai noi bang dau "/", doc roi). 4 file: orderImageLayout.ts = ham THUAN dung view model (chon 3 don tien cao nhat len the, phan du gop vao "+N don khac", **TONG tinh tren TAT CA don chu khong phai 3 the dang hien** - co test chan hoi quy vi day la sai lech ve TIEN); orderImageRenderer.ts = satori -> SVG -> resvg -> pixel RGBA -> jpeg-js -> JPEG (~90-115KB, 110-250ms, khong goi mang, khong Chromium); orderCountBadge.ts = ve RIENG con so don; ordersConfirmedNotification.ts = cho DUY NHAT quyet dinh gui anh hay gui text, KHONG BAO GIO nem loi.
+
+**(2026-10-08) dong "Trong do X mo khoa tu dd/mm"** chi ve khi lo co don bi giam (lo khong co thi anh y nhu cu, khong doi mot pixel): anh in "Tong cong" cua lo CANH "So du kha dung", ma don bi giam vao Tong cong nhung KHONG vao So du kha dung -> user soi dung MOT tam anh thay 2 so khong khop (y het bay thu-tu-doc-so-du ghi o duoi, chi khac nguyen nhan). Dong nay co NEN RIENG chu khong de chu tran tren nen cam. `{{heldLine}}` la MOT SLOT hai trang thai loai tru nhau trong ca `ordersConfirmedTemplate` lan caption, giong `{{commissionLine}}`.
+
+**resvg CHI xuat PNG** nen bat buoc ma hoa lai bang jpeg-js (thuan JS ~100KB, ~20-30ms, khong them native dep nao - tranh rui ro build tren Railway).
+
+**Asset (nen + 2 font Montserrat) nam trong assets/ va PHAI duoc copy sang dist/ qua `npm run build:assets`** - tsc chi copy .ts, quen buoc nay thi local chay ngon ma Railway crash vi khong thay font. Khung anh = DUNG kich thuoc goc cua file template (1678x937) de nen khong bi phong to lam nhoe; **doi template chi can sua 2 hang so ORDER_IMAGE_WIDTH/HEIGHT**, NHUNG phai DO LAI khe so don va chieu cao chu hoa tren file moi - ban 1678x937 KHONG phai ban phong deu cua ban 1024x572 (chu tieu de to hon ~11% so voi khung), suy ra bang phep nhan la sai - moi toa do/co chu viet trong he thiet ke 1024 roi nhan voi K qua ham u() nen tu dong gian theo. Toa do NGANG do TRUC TIEP tu file template (khe so don = khoang trang giua chu trang "BAN CO" het o x=608 va chu vang "DON" bat dau x=748, tam 678; chu hoa cua tieu de cao 62px, chan o y=223); toa do DOC cua phan noi dung thi KHONG co trong template, giu ty le da duyet.
+
+**Bon cai bay da gap that, dung lap lai**: (1) `lineClamp` cua satori CHI an khi `display: "block"` - de "flex" thi no IM LANG bo qua, ten san pham dai tran them dong va day so tien ra khoi the (co test ten cuc dai chan); (2) chu sang dat TRAN tren nen cam thi CHIM, cang sang cang chim - dong so du BAT BUOC co nen kem rieng (da thu de chu tran, so tien gan nhu khong doc duoc); (3)
+
+**`backgroundClip: "text"` cua satori khong cat sach theo net chu** (sot mot vet mau hinh chu nhat phia tren chu) va **gop voi `WebkitTextStroke` thi stroke khong duoc ve ra** - vi vay con so don phai ve bang SVG viet tay roi cho resvg render ra PNG trong suot, nhung vao nhu mot `<img>` (xem orderCountBadge.ts), day la cach DUY NHAT kiem soat du mau to + bong do.
+
+**Style cua con so lay bang cach DO MAU THAT tren chu "ĐƠN" in san**, khong phai tu chon: gradient chay NGANG #FDF1B3 -> #FDE589 (bien thien theo chieu DOC trong cung mot cot gan nhu bang 0, nen KHONG phai gradient doc), KHONG co vien trang, bong do #C14000 opacity .95 dy=.10*fontSize blur=.03*fontSize - dat diem toi nhat #b23f00 so voi #a53d06 cua "ĐƠN", lech 4/255. Chu TRANG ben canh ("VỀ LUÔN NÈ") cung do ra bong gan nhu trung mau, tuc ca dong tieu de dung CHUNG mot kieu bong; (4) do co chu cua con so bang mat se sai - dinh con so la vang sang tren nen cam nen tuong phan rat thap, do tren anh da ghep se ra "nho hon va thap hon thuc te"; phai do tren KENH ALPHA cua rieng anh con so (fontSize 49 trong he thiet ke = 80px that; net cao 57, THAP hon chu hoa 5px - lua chon CO Y cua chu bot vi Montserrat ExtraBold dac hon font template nen de cao bang dung thi so trong nang. cy=118 de DUONG CHAN van o y=222-223 nhu chu hai ben: chu so can GIUA trong hop nen doi fontSize ma giu nguyen cy se lam chan nhich len). 💰 trong o Tong cong duoc cat tu template CU (template moi khong co) - van dung vi la emoji tieu chuan. Tat qua ORDER_IMAGE_ENABLED=false; render loi thi TU DONG lui ve text nen co nay chi danh cho truong hop muon tat han.
+
+## vietQr.ts
+
+**vietQr.ts** — (2026-10-04) vietQrImageUrl() - sinh link anh QR chuyen khoan (img.vietqr.io) cho trang /admin/withdrawals, theo yeu cau truc tiep cua user.
+
+**ANH TAI TU MAY CHU BEN THU BA**: trinh duyet cua admin gui SANG HO so tai khoan + ten chu TK + so tien moi lan hien QR - danh doi nay user da chon co y sau khi duoc trinh bay ca phuong an sinh QR tren server. Vi vay UI dat QR trong <details> DONG SAN, chi row nao admin BAM MO moi goi anh do, khong phai ca trang gui du lieu khach di luc vua tai. Ma ngan hang (VIETQR_BANK_CODES) lay tu danh sach chinh thuc https://api.vietqr.io/v2/banks (tra ngay 2026-10-04), KHONG doan: gan nham ma la QR tro sang ngan hang khac, admin quet xong chuyen nham tien ma khong biet. 3 ngan hang trong VIETNAM_BANKS duoc VietQR bao KHONG ho tro chuyen khoan (HSBC Viet Nam, Standard Chartered Viet Nam, DongA Bank - da chuyen giao bat buoc thanh "Vikki") nam trong BANKS_WITHOUT_VIETQR, vietQrImageUrl() tra `null` cho nhom nay va UI an nut QR di thay vi hien ma khong quet duoc.
+
+**Noi dung chuyen khoan de TRONG** (2026-10-08, yeu cau user): /admin/withdrawals khong truyen `note` nen QR khong mang `addInfo`, app ngan hang tu dien noi dung mac dinh - co test chan.
+
+**Co test dong bo (vietQr.test.ts) chan moi ngan hang moi them vao VIETNAM_BANKS ma QUEN phan loai** (chua co ma VA chua ghi vao danh sach khong ho tro) - khong co test nay thi nut QR am tham bien mat voi ngan hang do ma khong ai phat hien duoc.

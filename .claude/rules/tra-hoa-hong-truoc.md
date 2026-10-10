@@ -1,0 +1,19 @@
+# Tra hoa hồng trước khi trả link (commissionLookup.ts)
+
+> Đọc khi sửa `src/core/commissionLookup.ts`, đổi nguồn dữ liệu hoa hồng, hoặc khi định "đơn giản hoá" bằng cách gọi thẳng Shopee.
+
+**commissionLookup.ts** — (2026-10-01) AddlivetagCommissionLookup - tra SO TIEN hoa hong cua 1 san pham theo item_id de bot bao truoc cho user ngay luc tra link.
+
+**Nguon la API ben thu ba `data.addlivetag.com`, KHONG phai Shopee truc tiep** - ly do da verify ky 2026-09-30, doc doc comment dau file truoc khi dinh "don gian hoa" ve goi thang Shopee: (1) Shopee tu choi cap Open API cho tai khoan ca nhan, hoi lai 2026-09-30 van tu choi - trang /open_api hien "khong co quyen truy cap", nut "Ap dung" bi `disabled`; (2) API noi bo cua portal (`/api/v3/offer/product?item_id=`) doi 5 header chong bot (`x-sap-sec`, `x-sap-ri`, `af-ac-enc-dat`, `af-ac-enc-sz-token`, `x-sz-sdk-version`) sinh boi JS obfuscate trong trinh duyet - test that: bo header thi `{"is_login":true,"error":90309999}` (cookie hop le VAN bi tu choi), giu du header va CHI doi item_id thi cung loi do -> **chu ky gan theo TUNG request, replay tu server bat kha thi**. LAY THANG field `commission` cua API (**da ap TRAN hoa hong san**), TUYET DOI khong nhan `ratePercent` voi `price`: don 19 trieu co rate 2,5% nhung Shopee chi tra toi da 40.000d - nhan tay se hua gap 12 lan so that. Da co test chan viec nay. MOI duong that bai (timeout/429/401/JSON hong/so am) deu tra `null`, KHONG BAO GIO throw - ham nay nam tren duong gui tin cho user.
+
+**`commission = 0` KHONG phai that bai**: do la cau tra loi that "san pham chua bat hoa hong", tra ve nguyen `commissionAmount: 0` chu khong gop vao `null` (2026-10-01). Tu do tin nhan tra link co **BA trang thai loai tru nhau** qua `{{commissionLine}}`: co so tien -> bao so; `noCommission` -> bao thang la shop chua bat hoa hong (VAN tra link, vi san pham 0d hom nay co the bat hoa hong sau va chan link thi user khong mua duoc mon ho can); `null` -> cau hen nhu cu.
+
+**Ranh gioi song con**: chi duoc noi "chua bat hoa hong" khi so 0 da XAC MINH TU NGUON - noi cau do luc API timeout/het han muc la tuyen bo SAI ve mot san pham binh thuong va duoi user khoi don ho dang le co tien. Co test chan ca hai chieu.
+
+**Mac dinh TAT** (`COMMISSION_LOOKUP_ENABLED=false`); bat ma thieu `ADDLIVETAG_API_KEY` thi tu tat kem canh bao chu khong crash (giong FAQ_PROVIDER). Khong co cache - co chu dich, he thong con nho nen xac suat 2 user gui cung 1 san pham gan nhu 0, ma them cache lai chong len cache 3h cua chinh ben cung cap => so cu hon ma chang loi gi.
+
+**CACHE CUA BEN CUNG CAP CO THE TRA SO 0 SAI** (do that 2026-10-01, dung go buoc thu lai trong fetchCommission): cung item 57810614027, cung mot phut - ban cache (`dataSource: "db"`) tra `commission: 0`, ban ep goi nguon (`clear_cache=1`, `dataSource: "api"`) tra `commission: 40000`, va portal Shopee xac nhan 40.000d moi dung. Ho cache 3 tieng nen mot lan refresh loi se giu so 0 sai suot 3 tieng. Vi vay `commission <= 0` CHI dang tin khi `dataSource === "api"`; den tu cache thi phai goi lai MOT lan voi `clear_cache=1` truoc khi ket luan. Ngan sach thoi gian la TONG cho ca luot tra (khong phai moi request) nen user khong bao gio cho qua `COMMISSION_LOOKUP_TIMEOUT_MS`.
+
+**productName (2026-10-08)**: API tra san `productInfo.productName` trong CUNG loi goi do - doc them khong ton request nao, day la nguon DUY NHAT biet ten san pham (dung cho cot "Ten san pham" cua /admin/links). He qua: tat COMMISSION_LOOKUP_ENABLED thi MAT CA ten san pham lan hoa hong tren trang do. Chuoi rong -> null.
+
+**Luu y van hanh khac**: ty le hoa hong co doi that theo thoi gian (vd cung item Canon do duoc 2,5% roi 4%), va `price` la GIA NIEM YET trong khi hoa hong that tinh tren gia sau voucher/xu - nen so bao cho user gan nhu luon CAO HON so thuc nhan, chu "uoc tinh" trong tin nhan la bat buoc.
