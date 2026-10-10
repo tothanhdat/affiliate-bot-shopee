@@ -225,6 +225,31 @@ test("/admin/orders: don DA qua ngay mo khoa -> KHONG con nhan giam", () => {
   assert.doesNotMatch(html, /mở khoá/);
 });
 
+/**
+ * Don NHO vua duoc Shopee ghi "Hoan thanh" nhung con cho vai ngay o "Cho xac nhan" (2026-10-11, xem
+ * payoutHold.ts): khong noi ro thi admin doi soat se thay bao cao Shopee ghi Hoan thanh ma trang
+ * minh ghi "Cho xac nhan" va khong hieu vi sao. User KHONG thay dong nay (dashboard rieng).
+ */
+test("/admin/orders: don nho dang cho -> hien 'sàn đã duyệt' + ngay vao Kha dung", () => {
+  const future = addDaysToVnIso(todayVnIso(), 1);
+  const html = renderOne(orderEntry({ status: "pending", availableFrom: future }));
+  assert.match(html, /sàn đã duyệt/);
+  assert.match(html, new RegExp(`Khả dụng ${formatVnDateDdMm(new Date(`${future}T12:00:00Z`)).replace("/", "\\/")}`));
+  // Khong duoc dung chu "mo khoa"/"tam giu" o day - do la ngon tu cua don TO bi giam.
+  assert.doesNotMatch(html, /mở khoá/);
+});
+
+test("/admin/orders: don pending binh thuong (chua Hoan thanh) -> khong co dong 'sàn đã duyệt'", () => {
+  const html = renderOne(orderEntry({ status: "pending" }));
+  assert.doesNotMatch(html, /sàn đã duyệt/);
+});
+
+// Cung cai bay voi nhan "mo khoa": don da toi han van giu nguyen gia tri trong cot available_from.
+test("/admin/orders: don nho DA toi han nhung chua import lai -> khong con dong 'sàn đã duyệt'", () => {
+  const html = renderOne(orderEntry({ status: "pending", availableFrom: "2020-01-08" }));
+  assert.doesNotMatch(html, /sàn đã duyệt/);
+});
+
 test("/admin/orders: don dang nam trong yeu cau rut -> khong deo nhan giam", () => {
   const html = renderOne(
     orderEntry({ availableFrom: addDaysToVnIso(todayVnIso(), 7), withdrawalId: "w1" })

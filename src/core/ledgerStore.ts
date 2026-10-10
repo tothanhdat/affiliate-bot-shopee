@@ -30,7 +30,7 @@ import type {
   WithdrawalRequest,
   ZaloGroup,
 } from "./types.js";
-import { resolveAvailableFrom, type PayoutHoldConfig } from "./payoutHold.js";
+import { resolveConfirmPlan, type PayoutHoldConfig } from "./payoutHold.js";
 import { resolveUserSharePercent } from "./userCommissionOverride.js";
 import { todayVnIso } from "./vietnamDate.js";
 import type { UserCommissionOverride } from "./userCommissionOverride.js";
@@ -905,17 +905,22 @@ export class LedgerStore {
     });
 
     const completedAt = input.completedAt ?? null;
-    // CHI don da "confirmed" moi co ngay mo khoa: don pending chua co tien kha dung nen chua tinh
-    // (ghi o day se la hua mot ngay roi den luc duyet lai tinh ra ngay khac).
-    const availableFrom =
+    // CHI don da "confirmed" moi chay qua luat giu tien: don admin chu dong ghi "pending" thi chua
+    // biet ngay giao hang nen chua co gi de chot (ghi o day se la hua mot ngay roi den luc duyet lai
+    // tinh ra ngay khac). Don NHO co the bi tra ve "pending" kem ngay da chot - xem payoutHold.ts.
+    const plan =
       status === "confirmed"
-        ? resolveAvailableFrom({
+        ? resolveConfirmPlan({
             userShareAmount,
             completedAtVn: completedAt,
             fallbackDayVn: todayVnIso(),
+            todayVn: todayVnIso(),
+            plannedAvailableFrom: null,
             config: input.holdConfig,
           })
-        : null;
+        : { status, availableFrom: null };
+    const effectiveStatus: CommissionStatus = plan.status;
+    const availableFrom = plan.availableFrom;
 
     try {
       this.db
@@ -948,7 +953,7 @@ export class LedgerStore {
           input.taxPercent,
           input.platformFeePercent,
           input.userSharePercent,
-          status,
+          effectiveStatus,
           input.note ?? null
         );
     } catch (err) {
@@ -981,7 +986,7 @@ export class LedgerStore {
       platformFeePercent: input.platformFeePercent,
       userSharePercent: input.userSharePercent,
       commissionOverriddenAt: null,
-      status,
+      status: effectiveStatus,
       withdrawalId: null,
       note: input.note ?? null,
       proofImagePath: null,
@@ -1100,9 +1105,12 @@ export class LedgerStore {
 
     this.db
       .prepare(
+        // available_from = NULL: ngay vao Kha dung da chot duoc tinh TREN SO TIEN cu, sua hoa hong
+        // len tren nguong thi don thanh don TO va phai giam 7 ngay chu khong phai cho 1 ngay nua
+        // (2026-10-11) - xoa de lan import sau chot lai theo so moi, xem payoutHold.ts.
         `UPDATE commission_entries SET commission_amount = ?, tax_amount = ?, platform_fee_amount = ?,
           after_tax_amount = ?, user_share_amount = ?, tax_percent = ?, platform_fee_percent = ?,
-          user_share_percent = ?, commission_overridden_at = ?
+          user_share_percent = ?, commission_overridden_at = ?, available_from = NULL
          WHERE id = ? AND status = 'pending'`
       )
       .run(
@@ -1127,6 +1135,7 @@ export class LedgerStore {
       userShareAmount,
       ...percents,
       commissionOverriddenAt: overriddenAt,
+      availableFrom: null,
     };
   }
 
@@ -1204,22 +1213,29 @@ export class LedgerStore {
     // Day la DUNG luc don chuyen sang confirmed, tuc luc CHOT ngay mo khoa. Bao cao luc duyet moi co
     // cot "Thời gian hoàn thành" (don con pending thi cot do trong - da doi chieu file that).
     const completedAt = input.completedAt ?? existing.completedAt;
-    const availableFrom = resolveAvailableFrom({
+    // Don NHO co the con phai cho vai ngay o "pending" truoc khi vao Kha dung (2026-10-11): ham nay
+    // KHONG con bao dam tra ve entry "confirmed", caller phai doc entry.status. Ngay da chot tu lan
+    // import truoc duoc truyen vao de khong bi tinh lai theo setting hien hanh - xem payoutHold.ts.
+    const plan = resolveConfirmPlan({
       userShareAmount,
       completedAtVn: completedAt,
       fallbackDayVn: todayVnIso(),
+      todayVn: todayVnIso(),
+      plannedAvailableFrom: existing.availableFrom,
       config: input.holdConfig,
     });
+    const availableFrom = plan.availableFrom;
 
     this.db
       .prepare(
-        `UPDATE commission_entries SET status = 'confirmed', order_amount = ?, commission_amount = ?,
+        `UPDATE commission_entries SET status = ?, order_amount = ?, commission_amount = ?,
           tax_amount = ?, platform_fee_amount = ?, after_tax_amount = ?, user_share_amount = ?,
           tax_percent = ?, platform_fee_percent = ?, user_share_percent = ?, product_name = ?,
           completed_at = ?, available_from = ?
          WHERE id = ?`
       )
       .run(
+        plan.status,
         input.orderAmount,
         commissionAmount,
         taxAmount,
@@ -1237,7 +1253,7 @@ export class LedgerStore {
 
     return {
       ...existing,
-      status: "confirmed",
+      status: plan.status,
       orderAmount: input.orderAmount,
       commissionAmount,
       taxAmount,
@@ -2374,6 +2390,11 @@ export class LedgerStore {
 
   getPayoutHoldDays(defaultValue: number): number {
     return this.getSettingInt(SETTINGS_KEYS.payoutHoldDays, defaultValue);
+  }
+
+  /** So ngay don NHO cho o "Cho xac nhan" truoc khi vao Kha dung (2026-10-11, xem payoutHold.ts). */
+  getPayoutHoldSmallDays(defaultValue: number): number {
+    return this.getSettingInt(SETTINGS_KEYS.payoutHoldSmallDays, defaultValue);
   }
 
   getPayoutDebtNoticeTemplate(defaultValue: string): string {

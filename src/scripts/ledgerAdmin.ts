@@ -135,6 +135,7 @@ async function main(): Promise<void> {
     holdConfig: {
       thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(env.payoutHold.thresholdVnd),
       holdDays: ledgerStore.getPayoutHoldDays(env.payoutHold.holdDays),
+      smallHoldDays: ledgerStore.getPayoutHoldSmallDays(env.payoutHold.smallHoldDays),
     },
   };
 

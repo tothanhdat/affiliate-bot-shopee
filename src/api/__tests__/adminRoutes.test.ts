@@ -17,7 +17,7 @@ import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
 import { SETTINGS_REGISTRY } from "../../config/settingsRegistry.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
-import { todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
+import { addDaysToVnIso, formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
 
 const THRESHOLD_VND = 50_000;
 const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
@@ -1415,7 +1415,7 @@ test("/admin/users hien cot % hoa hong rieng + nut cau hinh", async () => {
   }
 });
 
-test("GET /admin/settings hien 4 setting cua giam don to + no hoan tra", async () => {
+test("GET /admin/settings hien 5 setting cua giu tien don + no hoan tra", async () => {
   const { baseUrl, cleanup } = setup();
   try {
     const cookie = await loginAndGetCookie(baseUrl);
@@ -1424,8 +1424,89 @@ test("GET /admin/settings hien 4 setting cua giam don to + no hoan tra", async (
 
     assert.match(html, /payout_hold_threshold_vnd/);
     assert.match(html, /payout_hold_days/);
+    assert.match(html, /payout_hold_small_days/);
     assert.match(html, /payout_debt_notice_template/);
     assert.match(html, /withdrawal_cancelled_template/);
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Admin chon "Kha dung" nhung don nho bi hoan sang "Cho xac nhan" (2026-10-11): khong noi ro thi
+ * admin tuong minh bam sai o chon, hoac tuong he thong ghi nhan loi.
+ */
+test("POST record-orders/single: don nho chon 'Kha dung' -> bao ro dang cho + ngay vao Kha dung", async () => {
+  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "sub-small-hold", { platform: "zalo", userId: "user-a" });
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: settingsFormBody({ payout_hold_threshold_vnd: "100000", payout_hold_small_days: "1" }),
+      redirect: "manual",
+    });
+
+    const res = await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        subId: "sub-small-hold",
+        orderId: "order-small-hold",
+        orderAmount: "500000",
+        commissionAmount: "50000",
+        status: "confirmed",
+      }).toString(),
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "order-small-hold")?.status, "pending");
+    assert.match(html, /Chờ xác nhận/);
+    // Ngay vao Kha dung = hom nay + 1 (khong co ngay giao hang nen lui ve hom nay, xem payoutHold.ts).
+    assert.match(html, new RegExp(`Khả dụng ${formatVnDateDdMm(new Date(`${addDaysToVnIso(todayVnIso(), 1)}T12:00:00Z`)).replace("/", "\\/")}`));
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Chot chong "quen truyen smallHoldDays": config duoc dung lai o 5 cho trong production, va
+ * smallHoldDays la field TUY CHON (mac dinh 0 = khong cho) nen quen truyen se lam tinh nang am tham
+ * khong chay ma khong co loi typecheck nao - xem doc comment trong payoutHold.ts.
+ */
+test("POST shopee-report doc payout_hold_small_days tu settings: don nho nam lai 'Cho xac nhan', khong DM user", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: settingsFormBody({ payout_hold_threshold_vnd: "100000", payout_hold_small_days: "1" }),
+      redirect: "manual",
+    });
+
+    // Hoa hong 10.000d, user nhan 80% = 8.000d -> duoi nguong 100.000d -> la don NHO.
+    const csvContent = [
+      SHOPEE_REPORT_HEADER,
+      shopeeReportRow("SHOPEE-NHO", "Hoàn thành", ["zalo", "user-a", "abc", "def"]),
+    ].join("\n");
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "report.csv");
+    const res = await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+
+    const entry = ledgerStore.getEntryByOrderId("shopee", "SHOPEE-NHO");
+    assert.equal(entry?.status, "pending");
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0);
+    // Khong co tin "don ve" nao: user chi thay "Cho xac nhan", den ngay vao Kha dung moi duoc bao.
+    assert.deepEqual(notifyUserCalls, []);
   } finally {
     cleanup();
   }

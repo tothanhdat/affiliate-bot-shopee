@@ -193,6 +193,12 @@ export const env = {
      * do ma van nghe duoc voi user.
      */
     holdDays: optionalInt("PAYOUT_HOLD_DAYS", 7),
+    /**
+     * So ngay don NHO (duoi nguong) nam lai o "Cho xac nhan" truoc khi vao Kha dung (2026-10-11).
+     * Mac dinh 1: du de bat don bi huy ngay hom sau ma user chi thay "san chua cap nhat kip" chu
+     * khong thay tien cua minh bi giam - xem payoutHold.ts. Dat 0 de khong cho.
+     */
+    smallHoldDays: optionalInt("PAYOUT_HOLD_SMALL_DAYS", 1),
   },
 
   withdrawal: {

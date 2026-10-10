@@ -412,3 +412,25 @@ test("khong no: cong thuc moi khong lam doi hanh vi cac case cu", () => {
   });
   assert.match(html, /Tích luỹ thêm 2\.000đ/); // 20.000 - 15.000 - 3.000
 });
+
+/**
+ * CHOT QUAN TRONG NHAT cua tinh nang "don nho cho them vai ngay" (2026-10-11, yeu cau truc tiep cua
+ * user): don nho dang cho co available_from TRONG DB nhung user phai thay dung mot thu - "Chờ xác
+ * nhận" - va KHONG duoc thay bat cu dau vet nao cua viec bi giam (khong badge "Đang tạm giữ", khong
+ * dong "mo khoa", khong the "Đang tạm giữ" o hang the tien). Voi ho day chi la "san chua cap nhat
+ * kip". Xem payoutHold.ts: tien cua don nay khong nam o availableBalance lan heldBalance.
+ */
+test("dashboard: don nho dang cho -> chi thay 'Chờ xác nhận', khong lo ngay nao", () => {
+  const html = render({
+    availableBalance: 0,
+    entries: [entry({ orderId: "SMALL-1", status: "pending", availableFrom: "2026-10-12" })],
+  });
+
+  const card = html.slice(html.indexOf('order-card">'));
+  assert.match(card, /Chờ xác nhận/);
+  assert.doesNotMatch(card, /mở khoá/);
+  assert.doesNotMatch(card, /Đang tạm giữ/);
+  assert.doesNotMatch(card, /12\/10/);
+  // Khong co the "Đang tạm giữ" nao o hang the tien (the do chi hien khi heldBalance > 0).
+  assert.doesNotMatch(html, /Đang tạm giữ/);
+});

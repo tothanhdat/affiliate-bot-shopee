@@ -1920,10 +1920,22 @@ export function renderOrdersPage(
               formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
             )}</div>`
           : "";
+      // Don NHO vua duoc bao cao ghi "Hoan thanh" nhung con cho vai ngay o "Cho xac nhan"
+      // (2026-10-11, xem payoutHold.ts). Dong nay CHI co o day, dashboard user khong he co: ca y
+      // tuong cua tinh nang la user khong biet don minh dang bi giu. Admin thi PHAI biet, neu khong
+      // ho se thay bao cao Shopee ghi "Hoan thanh" ma trang minh ghi "Cho xac nhan" va tuong la loi.
+      // Cung cai bay so-voi-hom-nay nhu nhan "mo khoa" o tren: don da toi han nhung chua import lai
+      // van giu nguyen available_from, bo phep so sanh thi no deo dong nay vinh vien.
+      const deferredHint =
+        e.status === "pending" && e.availableFrom !== null && e.availableFrom > todayVn
+          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Shopee đã ghi đơn Hoàn thành, nhưng đơn nhỏ được giữ ở Chờ xác nhận thêm vài ngày để kịp phát hiện khách trả hàng - user không thấy dòng này">sàn đã duyệt · Khả dụng ${escapeHtml(
+              formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
+            )}</div>`
+          : "";
       const returnedHint = debtOrderIds.has(e.orderId)
         ? `<div class="mt-1 text-[10px] font-semibold text-rose-600" title="Đơn này bị trả hàng sau khi đã trả tiền cho user - thành nợ, trừ khi user rút tiền lần sau">⚠ đã trả hàng</div>`
         : "";
-      const statusDetail = `${heldHint}${returnedHint}`;
+      const statusDetail = `${heldHint}${deferredHint}${returnedHint}`;
 
       // Hoa hong GOC san tra (2026-10-10), chua tru thue/phi/chia %. Don pending co nut but chi sang
       // trang sua (khong nhet nut vao cot "Thao tac": cot do dang sat mep man hinh). Don da sua tay
@@ -2430,6 +2442,7 @@ export function renderRecordOrdersPage(
       ${statRow("Số đơn quét được", shopeeReportResult.ordersScanned)}
       ${statRow(`Ghi mới "Khả dụng" (trùng bỏ qua ${shopeeReportResult.confirmedDuplicate})`, shopeeReportResult.confirmedNew)}
       ${statRow(`Ghi mới "Chờ xác nhận" (cập nhật lại ${shopeeReportResult.pendingUpdated})`, shopeeReportResult.pendingNew)}
+      ${statRow(`Đơn nhỏ đang chờ vào "Khả dụng"`, shopeeReportResult.smallHoldDeferred)}
       ${statRow("Đã huỷ (đơn huỷ / không hợp lệ)", shopeeReportResult.reversedCount)}
       ${statRow("Đơn nhiều sản phẩm đã gộp", shopeeReportResult.mergedMultiItem)}
       ${statRow("Bỏ qua - không tách được subId", shopeeReportResult.skippedNoSubId)}
@@ -2655,7 +2668,8 @@ function settingsTabOf(key: string): "faq" | "commission" | "messages" {
     key === SETTINGS_KEYS.userSharePercent ||
     key === SETTINGS_KEYS.withdrawalThresholdVnd ||
     key === SETTINGS_KEYS.payoutHoldThresholdVnd ||
-    key === SETTINGS_KEYS.payoutHoldDays
+    key === SETTINGS_KEYS.payoutHoldDays ||
+    key === SETTINGS_KEYS.payoutHoldSmallDays
   ) {
     return "commission";
   }

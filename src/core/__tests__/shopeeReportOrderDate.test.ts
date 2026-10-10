@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { LedgerStore } from "../ledgerStore.js";
 import { LogStore } from "../logStore.js";
 import { importShopeeReport, parseShopeeReportDay, parseShopeeReportTime } from "../shopeeReportImport.js";
+import { todayVnIso } from "../vietnamDate.js";
 
 /**
  * Ngay dat don THAT lay tu cot "Thời Gian Đặt Hàng" cua bao cao Shopee (2026-10-01) - truoc do
@@ -532,8 +533,12 @@ test("'Da huy' + entry da 'reversed' -> bo qua im lang, khong canh bao", () => {
   assert.deepEqual(second.errors, [], "don da huy roi thi khong con gi de canh bao");
 });
 
+// Ngay giao hang phai tinh theo HOM NAY: ban dau test nay hardcode "2026-10-02" + hold 7 ngay =
+// 2026-10-09, dung luc viet thi do la tuong lai nhung sang 2026-10-11 thi don da qua ngay mo khoa va
+// khong con "dang bi giam" nua (cung cai bay thoi gian da ghi o dau payoutHoldStore.test.ts).
 test("heldCount dem so don MOI bi giam", () => {
   const { logStore, ledgerStore } = setupImport();
+  const completedToday = `${todayVnIso()} 18:30:00`;
   const result = importShopeeReport(
     logStore,
     ledgerStore,
@@ -542,7 +547,7 @@ test("heldCount dem so don MOI bi giam", () => {
       {
         orderId: "BIG1",
         orderTime: "2026-09-30 10:00:00",
-        completedTime: "2026-10-02 18:30:00",
+        completedTime: completedToday,
         orderAmount: 3_000_000,
         commissionAmount: 300_000,
         status: "Hoàn thành",
@@ -551,7 +556,7 @@ test("heldCount dem so don MOI bi giam", () => {
       {
         orderId: "SMALL1",
         orderTime: "2026-09-30 10:00:00",
-        completedTime: "2026-10-02 18:30:00",
+        completedTime: completedToday,
         orderAmount: 100_000,
         commissionAmount: 10_000,
         status: "Hoàn thành",

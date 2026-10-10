@@ -114,9 +114,15 @@ export interface CommissionEntry {
    */
   completedAt: string | null;
   /**
-   * Ngay tien cua don nay duoc phep rut ("YYYY-MM-DD" gio VN). null = kha dung ngay (don duoi nguong,
-   * don con pending, hoac entry ghi truoc 2026-10-08 nen khong giam hoi to). Tinh 1 lan luc entry
-   * chuyen confirmed roi CHOT - doi setting khong tinh lai, xem resolveAvailableFrom().
+   * Ngay tien cua don nay duoc phep rut ("YYYY-MM-DD" gio VN). null = kha dung ngay (viec giu tien
+   * dang tat, don admin chu dong ghi "pending", hoac entry ghi truoc 2026-10-08 nen khong giam hoi
+   * to). Tinh 1 lan luc bao cao ghi don "Hoan thanh" roi CHOT - doi setting khong tinh lai, xem
+   * resolveConfirmPlan().
+   *
+   * Tu 2026-10-11 cot nay CO GIA TRI ca khi status van la "pending": do la don NHO dang cho vai ngay
+   * truoc khi vao Kha dung (xem payoutHold.ts). Vi vay moi query tien/nhan trang thai doc cot nay
+   * PHAI loc kem `status = 'confirmed'` - don dang cho khong phai tien kha dung, cung khong phai
+   * "dang tam giu".
    */
   availableFrom: string | null;
   platform: Platform;

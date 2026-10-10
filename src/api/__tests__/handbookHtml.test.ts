@@ -189,6 +189,18 @@ test("handbook: muc giam don to doc LIVE tu setting, khong hardcode", () => {
   assert.doesNotMatch(b, /100\.000/, "khong con vet cua so cu");
 });
 
+/**
+ * Tu 2026-10-11 don NHO cung nam lai o "Cho xac nhan" them vai ngay (xem payoutHold.ts), nen cau cu
+ * "van chuyen sang Kha dung NGAY nhu binh thuong" thanh mot loi hua sai. CO Y khong thay bang mot
+ * muc moi giai thich viec cho do: ca y tuong cua tinh nang la user khong phai nghi ve no (ho chi
+ * thay "san chua cap nhat kip"), noi ra la tu tay dung lai dung cai lo lang vua go bo.
+ */
+test("handbook: KHONG hua don nho vao Kha dung ngay, cung khong nhac viec cho them ngay", () => {
+  const html = render();
+  assert.doesNotMatch(html, /"Khả dụng" ngay/);
+  assert.match(html, /không bị giữ theo luật này/);
+});
+
 test("handbook: nguong giam = 0 -> AN ca muc (tinh nang dang tat)", () => {
   const html = render({ payoutHoldThresholdVnd: 0 });
   assert.doesNotMatch(html, /Đơn giá trị lớn được giữ thêm/);

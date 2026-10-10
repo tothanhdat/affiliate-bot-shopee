@@ -1066,6 +1066,7 @@ export function createServer(
         holdConfig: {
           thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
           holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
+          smallHoldDays: ledgerStore.getPayoutHoldSmallDays(orderConfig.holdConfig.smallHoldDays ?? 0),
         },
       };
       const entry = recordSingleOrder(logStore, ledgerStore, requestOrderConfig, {
@@ -1116,7 +1117,14 @@ export function createServer(
       // chi INSERT, khong bao gio UPDATE entry co san) - vi vay khong bao gio co statusTransitions.
       ledgerStore.recordImportHistory({ actionType: "single", newOrderIds: [entry.orderId], statusTransitions: [] });
 
-      const statusLabel = entry.status === "pending" ? "Chờ xác nhận" : "Khả dụng";
+      // Don NHO admin chon "Kha dung" co the bi hoan sang "Cho xac nhan" them vai ngay (2026-10-11,
+      // xem payoutHold.ts) - noi ro ngay vao Kha dung, neu khong admin tuong minh bam sai o chon.
+      const deferred = entry.status === "pending" && status === "confirmed" && entry.availableFrom !== null;
+      const statusLabel = deferred
+        ? `Chờ xác nhận - đơn nhỏ, vào Khả dụng ${formatVnDateDdMm(new Date(`${entry.availableFrom}T12:00:00Z`))}`
+        : entry.status === "pending"
+          ? "Chờ xác nhận"
+          : "Khả dụng";
       const amountHint =
         entry.status === "pending"
           ? `dự kiến user nhận ~${formatVnd(entry.userShareAmount)} khi được xác nhận`
@@ -1180,6 +1188,7 @@ export function createServer(
         holdConfig: {
           thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
           holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
+          smallHoldDays: ledgerStore.getPayoutHoldSmallDays(orderConfig.holdConfig.smallHoldDays ?? 0),
         },
       };
       const result = importShopeeReport(

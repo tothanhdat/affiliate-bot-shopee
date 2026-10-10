@@ -118,3 +118,35 @@ test("bo chon file (vd nguoi dung huy hop thoai): nhan tra ve ca cum HTML goc (g
   input.clearFile();
   assert.equal(label.innerHTML, defaultHtml, "phai tra ve DUNG HTML goc, khong phai chuoi text tho");
 });
+
+/**
+ * Don NHO vua "Hoan thanh" nhung con cho vai ngay o "Cho xac nhan" (2026-10-11, xem payoutHold.ts):
+ * khong hien so nay thi admin import xong thay "Ghi moi Kha dung: 0" va tuong import that bai, trong
+ * khi don da vao he thong binh thuong va dang doi den ngay vao Kha dung.
+ */
+test("ket qua import hien so don nho dang cho vao Kha dung", () => {
+  const html = renderRecordOrdersPage([], undefined, {
+    ordersScanned: 2,
+    confirmedNew: 0,
+    confirmedDuplicate: 0,
+    pendingNew: 0,
+    pendingUpdated: 0,
+    reversedCount: 0,
+    mergedMultiItem: 0,
+    skippedNoSubId: 0,
+    skippedSubIdNotFound: 0,
+    skippedUnknownStatus: 0,
+    errors: [],
+    confirmedByUser: [],
+    newOrderIds: [],
+    statusTransitions: [],
+    heldCount: 0,
+    smallHoldDeferred: 3,
+    debtCreatedCount: 0,
+    debtsByUser: [],
+    cancelledWithdrawals: [],
+  });
+
+  assert.match(html, /Đơn nhỏ đang chờ vào "Khả dụng"/);
+  assert.match(html, />3</);
+});

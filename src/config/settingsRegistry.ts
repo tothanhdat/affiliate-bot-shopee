@@ -185,6 +185,16 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
       "Đếm từ ngày Shopee ghi đơn là Hoàn thành (= ngày giao hàng), đúng mốc Shopee đếm 15 ngày được trả hàng. Ngày mở khoá được CHỐT lúc đơn chuyển Khả dụng — đổi số này không dịch ngày của đơn đã chốt trước đó. Không có placeholder động.",
   },
   {
+    key: SETTINGS_KEYS.payoutHoldSmallDays,
+    label: "Số ngày chờ thêm với đơn nhỏ",
+    type: "number",
+    default: String(env.payoutHold.smallHoldDays),
+    min: 0,
+    max: 60,
+    helpText:
+      'Đơn DƯỚI ngưỡng trên nằm lại ở trạng thái "Chờ xác nhận" thêm số ngày này rồi mới vào Khả dụng. Người dùng KHÔNG thấy chữ "đang tạm giữ" hay ngày mở khoá nào — với họ chỉ là sàn chưa cập nhật kịp, nên không ai thấy tiền mình bị giam vì một khoản nhỏ. Đếm từ ngày giao hàng như trên. Đặt 0 để đơn nhỏ vào Khả dụng ngay. Ngày vào Khả dụng được CHỐT lúc báo cáo ghi đơn Hoàn thành — đổi số này không dịch ngày của đơn đã chốt trước đó. Không có placeholder động.',
+  },
+  {
     key: SETTINGS_KEYS.payoutDebtNoticeTemplate,
     label: "Tin nhắn khi đơn đã trả tiền bị trả hàng",
     type: "textarea",

@@ -61,6 +61,14 @@ export interface ShopeeReportImportResult {
   /** Don MOI bi giam vi user_share >= nguong (2026-10-08) - xem payoutHold.ts. */
   heldCount: number;
   /**
+   * Don NHO duoc bao cao ghi "Hoan thanh" nhung con nam lai o "Cho xac nhan" them vai ngay
+   * (2026-10-11, xem payoutHold.ts). KHONG duoc cong vao confirmedNew: chua co dong nao vao Kha dung,
+   * khong co tin "don ve" nao duoc gui, va cot "Chuyen Kha dung" cua /admin/dashboard chua tinh.
+   * Dem CA lan import sau (don van dang cho) chu khong chi lan dau - admin can thay con bao nhieu don
+   * dang cho, khong phai "hom nay co bao nhieu don moi vao hang cho".
+   */
+  smallHoldDeferred: number;
+  /**
    * Don phat sinh NO hoan tra trong lan import nay: bao cao ghi da huy nhung tien DA ra khoi tay
    * (entry 'paid', hoac entry dang nam trong 1 yeu cau rut cho duyet).
    */
@@ -363,6 +371,7 @@ export function importShopeeReport(
     newOrderIds: [],
     statusTransitions: [],
     heldCount: 0,
+    smallHoldDeferred: 0,
     debtCreatedCount: 0,
     debtsByUser: [],
     cancelledWithdrawals: [],
@@ -468,6 +477,7 @@ export function importShopeeReport(
 
       try {
         let entry;
+        const wasPending = existing?.status === "pending";
         if (existing?.status === "pending") {
           entry = ledgerStore.confirmPendingEntry(existing.id, {
             orderAmount: order.orderAmount,
@@ -484,8 +494,6 @@ export function importShopeeReport(
             completedAt: order.completedAt,
             holdConfig: recordOrderConfig.holdConfig,
           });
-          result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
-          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         } else {
           entry = ledgerStore.recordConversion({
             subId,
@@ -507,11 +515,26 @@ export function importShopeeReport(
             note: "Nhap tu bao cao Shopee (file CSV admin upload)",
           });
           result.newOrderIds.push(orderId);
-          // Don hoa toc: lan dau thay da "Hoan thanh" -> cung tinh vao cot "Chuyen Kha dung" hom nay.
-          ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         }
+
+        // Don NHO con phai cho vai ngay o "Cho xac nhan" truoc khi vao Kha dung (2026-10-11, xem
+        // payoutHold.ts): chua co dong nao kha dung nen KHONG ghi chuyen trang thai (cot "Chuyen Kha
+        // dung" cua /admin/dashboard chua duoc tinh), KHONG gui tin "don ve", KHONG dem confirmedNew.
+        // Don VAN nam trong newOrderIds o tren vi no that su vua duoc ghi moi vao ledger.
+        if (entry.status !== "confirmed") {
+          result.smallHoldDeferred += 1;
+          continue;
+        }
+
+        if (wasPending) {
+          result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
+        }
+        // Don hoa toc (lan dau thay da "Hoan thanh") cung tinh vao cot "Chuyen Kha dung" hom nay.
+        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
         result.confirmedNew += 1;
-        if (entry.availableFrom !== null) result.heldCount += 1;
+        // PHAI so voi hom nay chu khong chi kiem `!== null`: don nho vua toi han cung co available_from
+        // (ngay da qua) nhung khong con bi giam - dem no vao day la bao sai so don dang bi giam.
+        if (entry.availableFrom !== null && entry.availableFrom > importDay) result.heldCount += 1;
         confirmedRows.push({
           line: 0,
           subId,
