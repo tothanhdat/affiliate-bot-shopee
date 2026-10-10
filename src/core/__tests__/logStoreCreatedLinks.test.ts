@@ -470,3 +470,53 @@ test("tim theo sub_id: danh sach, dem va KPI dung chung bo loc", () => {
     store.close();
   }
 });
+
+test("searchUserKeys: search khop them cac user theo khoa 'platform:userId' (ten user), ket hop duoc voi cac cot khac", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "100", productName: "Gối" });
+    recordLink(store, { userId: "200", productName: "Ốp lưng" });
+    // Cung userId "100" nhung KENH khac - khong duoc bi keo theo khi chi khoa "zalo:100" duoc truyen.
+    recordLink(store, { userId: "100", platform: "telegram", productName: "Tai nghe" });
+
+    const byName = store.listCreatedLinks({ search: "Thao", searchUserKeys: ["zalo:100"] });
+    assert.deepEqual(byName.map((r) => r.productName), ["Gối"]);
+
+    // Van khop theo cot khac (ten san pham) cung luc voi khop theo ten user.
+    const both = store.listCreatedLinks({ search: "lưng", searchUserKeys: ["zalo:100"] });
+    assert.deepEqual(both.map((r) => r.productName).sort(), ["Gối", "Ốp lưng"]);
+  } finally {
+    store.close();
+  }
+});
+
+test("searchUserKeys: list/count/totals loc y het nhau; mang rong hoac khong co search thi khong co tac dung", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "100" });
+    recordLink(store, { userId: "200" });
+    const filters = { search: "khong-khop-cot-nao", searchUserKeys: ["zalo:200"] };
+
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+
+    assert.equal(store.listCreatedLinks({ search: "khong-khop-cot-nao", searchUserKeys: [] }).length, 0);
+    // Khong co `search` thi searchUserKeys bi bo qua - khong duoc tu thanh bo loc.
+    assert.equal(store.listCreatedLinks({ searchUserKeys: ["zalo:200"] }).length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("searchUserKeys: hang tram user khop cung luc van chay (khong cham gioi han so bien SQLite)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u-last" });
+    const keys = Array.from({ length: 40_000 }, (_, i) => `zalo:fake-${i}`);
+    keys.push("zalo:u-last");
+    assert.equal(store.listCreatedLinks({ search: "zzz", searchUserKeys: keys }).length, 1);
+  } finally {
+    store.close();
+  }
+});

@@ -166,6 +166,20 @@ function likePattern(raw: string): string {
 }
 
 /**
+ * Chuan hoa de so khop TEN NGUOI: bo dau tieng Viet + khong phan biet hoa/thuong ("thao" khop "Thảo",
+ * "dung" khop "Dũng"). Khac o tim ma don dung LIKE (ASCII-only la du): ten nguoi la chu co dau, admin
+ * go khong dau la chuyen thuong xuyen. "đ" khong tach duoc bang NFD nen phai doi tay.
+ */
+function foldForNameSearch(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+/**
  * Dung menh de WHERE dung chung cho listCommissionEntries/countCommissionEntries/getOrdersFilterTotals -
  * 3 ham nay BAT BUOC phai loc y het nhau, neu khong thi tong so trang va cac the KPI dau trang se
  * khong khop voi so don that su hien ra trong bang.
@@ -1532,6 +1546,21 @@ export class LedgerStore {
       .prepare(`SELECT display_name FROM user_profiles WHERE platform = ? AND user_id = ?`)
       .get(platform, userId) as { display_name: string } | undefined;
     return row ? row.display_name : null;
+  }
+
+  /**
+   * Cac user co ten hien thi chua `search` (khong phan biet hoa/thuong va dau), dang khoa "platform:userId".
+   * Dung boi /admin/links: bang requests nam o DB khac nen khong JOIN duoc, route tra khoa o day roi dua
+   * xuong logStore. Chuoi rong -> mang rong (khong khop het user).
+   */
+  findUserKeysByDisplayName(search: string): string[] {
+    const needle = foldForNameSearch(search.trim());
+    if (needle === "") return [];
+    const keys: string[] = [];
+    for (const [key, name] of this.getDisplayNamesMap()) {
+      if (foldForNameSearch(name).includes(needle)) keys.push(key);
+    }
+    return keys;
   }
 
   /** Dung boi trang admin (withdrawals/orders) de tra cuu ten hien thi theo key "platform:userId". */

@@ -272,7 +272,7 @@ export function renderLinksPage(
       <label class="${FIELD_LABEL_CLASS}" for="links-q">Tìm kiếm</label>
       <div class="relative">
         ${icon("search", "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400")}
-        <input type="search" id="links-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Tìm theo tên sản phẩm, user ID, link hoặc Sub_id..." class="${FIELD_CLASS} pl-9">
+        <input type="search" id="links-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Tìm theo tên user, tên sản phẩm, user ID, link hoặc Sub_id..." class="${FIELD_CLASS} pl-9">
       </div>
     </div>
     <div class="w-full sm:w-40">

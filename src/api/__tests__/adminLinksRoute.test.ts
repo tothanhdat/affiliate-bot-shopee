@@ -691,3 +691,56 @@ test("trang Link da tao KHONG con the KPI 'Hoa hong uoc tinh' (cot trong bang va
     cleanup();
   }
 });
+
+test("o tim kiem khop TEN HIEN THI cua user (khong phan biet hoa/thuong va dau)", async () => {
+  const { baseUrl, logStore, ledgerStore, cleanup } = setup();
+  try {
+    ledgerStore.upsertUserProfile("zalo", "user-1", "Nguyễn Thảo");
+    ledgerStore.upsertUserProfile("zalo", "user-2", "Đặng Dũng");
+    for (const userId of ["user-1", "user-2"]) {
+      logStore.record({
+        platform: "zalo",
+        merchant: "shopee",
+        userId,
+        originalUrl: `https://shopee.vn/product/1/${userId.slice(-1)}`,
+        subId: `k-${userId}`,
+        outcome: "success",
+        errorCode: null,
+        affiliateUrl: `https://bot.example/s/${userId.replace("-", "")}`,
+      });
+    }
+
+    for (const q of ["thao", "THẢO", "nguyễn th"]) {
+      const { html } = await getLinksPage(baseUrl, `?q=${encodeURIComponent(q)}`);
+      assert.match(html, /bot\.example\/s\/user1/, `q=${q}`);
+      assert.doesNotMatch(html, /bot\.example\/s\/user2/, `q=${q}`);
+    }
+    // "đ" khong tach duoc bang NFD - "dung" van phai khop "Dũng".
+    const dung = await getLinksPage(baseUrl, `?q=${encodeURIComponent("dung")}`);
+    assert.match(dung.html, /bot\.example\/s\/user2/);
+    assert.doesNotMatch(dung.html, /bot\.example\/s\/user1/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("o tim kiem theo ten: ten khong khop ai thi bang rong, khong keo theo user khac", async () => {
+  const { baseUrl, logStore, ledgerStore, cleanup } = setup();
+  try {
+    ledgerStore.upsertUserProfile("zalo", "user-1", "Nguyễn Thảo");
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "user-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: "k-user-1",
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/user1",
+    });
+    const { html } = await getLinksPage(baseUrl, `?q=${encodeURIComponent("Trần Văn Z")}`);
+    assert.doesNotMatch(html, /bot\.example\/s\/user1/);
+  } finally {
+    cleanup();
+  }
+});

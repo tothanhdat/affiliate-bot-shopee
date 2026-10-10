@@ -17,8 +17,15 @@ export type RecordRequestInput = Omit<
   Partial<Pick<RequestLogEntry, "timestamp" | "productName" | "commissionEstimate" | "sourceContext">>;
 
 export interface CreatedLinkFilters {
-  /** Khop MOT PHAN user_id / product_name / original_url / sub_id. */
+  /** Khop MOT PHAN user_id / product_name / original_url / sub_id (va user nam trong `searchUserKeys`). */
   search?: string;
+  /**
+   * Khoa "platform:userId" cua cac user co TEN HIEN THI khop `search` (2026-10-10). Ten nam o DB khac
+   * (user_profiles) nen caller tu tra roi truyen xuong - chi co tac dung khi `search` co gia tri.
+   * Truyen qua MOT tham so json_each chu khong phai `IN (?,?,...)`: tim "a" co the khop hang tram user,
+   * khong duoc cham gioi han so bien cua SQLite.
+   */
+  searchUserKeys?: string[];
   platform?: Platform;
   /** undefined = lay ca luot thanh cong lan luot loi. */
   outcome?: RequestOutcome;
@@ -99,11 +106,15 @@ function buildCreatedLinksWhere(filters?: CreatedLinkFilters): {
   }
   const search = filters?.search?.trim();
   if (search) {
+    const byName = filters?.searchUserKeys && filters.searchUserKeys.length > 0;
     conditions.push(
-      `(user_id LIKE ? ESCAPE '\\' OR product_name LIKE ? ESCAPE '\\' OR original_url LIKE ? ESCAPE '\\' OR sub_id LIKE ? ESCAPE '\\')`
+      `(user_id LIKE ? ESCAPE '\\' OR product_name LIKE ? ESCAPE '\\' OR original_url LIKE ? ESCAPE '\\' OR sub_id LIKE ? ESCAPE '\\'${
+        byName ? " OR (platform || ':' || user_id) IN (SELECT value FROM json_each(?))" : ""
+      })`
     );
     const pattern = likePattern(search);
     params.push(pattern, pattern, pattern, pattern);
+    if (byName) params.push(JSON.stringify(filters.searchUserKeys));
   }
 
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };

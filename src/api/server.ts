@@ -823,6 +823,9 @@ export function createServer(
       fromDate: parseIsoDateParam(req.query.from),
       toDate: parseIsoDateParam(req.query.to),
     };
+    // O tim kiem cung khop TEN HIEN THI cua user (2026-10-10): ten nam o ledger.db, bang requests o
+    // log.db -> tra khoa user o day roi dua xuong logStore.
+    if (filters.search) filters.searchUserKeys = ledgerStore.findUserKeysByDisplayName(filters.search);
 
     // Tong so + 4 the KPI lay trong MOT truy van dung CHUNG bo loc voi bang. Phai co TRUOC khi lay
     // trang vi so trang quyet dinh viec kep "page" ve khoang hop le (admin dang o trang 5 roi doi
