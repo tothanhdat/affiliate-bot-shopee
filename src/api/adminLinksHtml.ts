@@ -231,7 +231,7 @@ export function renderLinksPage(
     })
     .join("\n");
 
-  // 4 the KPI tinh tren DUNG bo loc dang ap (getCreatedLinksTotals dung chung menh de WHERE voi
+  // 3 the KPI tinh tren DUNG bo loc dang ap (getCreatedLinksTotals dung chung menh de WHERE voi
   // bang) - lech la the KPI noi mot so trong khi bang liet ke so khac.
   const kpiRow = kpiGrid([
     kpiCard({
@@ -258,18 +258,10 @@ export function renderLinksPage(
       valueClass: totals.errors > 0 ? "text-rose-600" : "text-slate-400",
       iconClass: "bg-rose-50 text-rose-600",
     }),
-    kpiCard({
-      label: "Hoa hồng ước tính",
-      value: formatVnd(totals.commissionEstimateTotal),
-      // Dong nay BAT BUOC chu khong phai trang tri: so nay la hoa hong GOC Shopee tra, khong phai
-      // tien user nhan, va chi cong duoc nhung luot TRA DUOC gia - thieu chu thich thi admin se
-      // doc nham thanh doanh thu du kien.
-      note: "hoa hồng gốc, chỉ lượt tra được giá",
-      icon: "coins",
-      valueClass: "text-indigo-600",
-      iconClass: "bg-indigo-50 text-indigo-600",
-    }),
-  ]);
+    // KHONG co the "Hoa hong uoc tinh" (2026-10-10, yeu cau user): user tao link khong dong nghia voi
+    // mua hang, tong hoa hong uoc tinh de doc nham thanh doanh thu du kien. Cot cung ten trong bang
+    // van giu - o do la so cua TUNG luot, khong ai cong don len.
+  ], 3);
 
   // Form GET khong co input "page" -> moi lan bam Loc tu dong ve trang 1 (doi bo loc thi so trang
   // cu khong con y nghia). `userId` la input AN: bo loc khop CHINH XAC do /admin/users bam sang,

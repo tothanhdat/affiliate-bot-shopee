@@ -1929,3 +1929,111 @@ test("route sua hoa hong yeu cau dang nhap admin", async () => {
     cleanup();
   }
 });
+
+// --- Toggle kieu thoi gian o cot "Ma don & thoi gian" cua /admin/orders (2026-10-10) ---
+// OFF (mac dinh) = thoi diem IMPORT vao he thong (createdAt); ON (?time=order) = NGAY DAT HANG (order_date).
+
+function recordWithOrderDate(ledgerStore: LedgerStore, orderId: string, orderDate: string | null) {
+  return ledgerStore.recordConversion({
+    subId: "telegram-user-a-1",
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    status: "pending",
+    orderDate,
+  });
+}
+
+const tbodyOf = (html: string) => html.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? "";
+const TIME_OF_DAY = /\d{2}:\d{2}:\d{2} •/;
+
+test("/admin/orders mac dinh hien thoi gian IMPORT (gio:phut:giay), toggle OFF", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.match(tbodyOf(html), TIME_OF_DAY);
+    assert.doesNotMatch(tbodyOf(html), /20\/09\/2026/);
+    assert.match(html, /role="switch"[^>]*aria-checked="false"/);
+    // Toggle tro sang che do ngay dat.
+    assert.match(html, /href="\/admin\/orders\?time=order"[^>]*role="switch"|role="switch"[^>]*href="\/admin\/orders\?time=order"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders?time=order hien NGAY DAT HANG; don chua co ngay dat hien '—' (khong bia bang ngay import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-CO-NGAY", "2026-09-20");
+    recordWithOrderDate(ledgerStore, "DH-CU", null);
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    const body = tbodyOf(html);
+    assert.match(body, /20\/09\/2026/);
+    assert.doesNotMatch(body, TIME_OF_DAY, "khong con hien thoi diem import o che do ngay dat");
+    assert.match(html, /role="switch"[^>]*aria-checked="true"/);
+    // Bam lai la ve mac dinh (khong con tham so time).
+    assert.match(html, /href="\/admin\/orders"[^>]*role="switch"|role="switch"[^>]*href="\/admin\/orders"/);
+    // Dong cua don cu: o thoi gian la "—", van thay ma don.
+    const cuRow = body.split("<tr").find((r) => r.includes("DH-CU")) ?? "";
+    assert.match(cuRow, /—/);
+    assert.doesNotMatch(cuRow, /\d{2}\/\d{2}\/\d{4}/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("gia tri ?time= la thi ve mac dinh (import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=abc`, { headers: { cookie: cookie! } })).text();
+    assert.match(tbodyOf(html), TIME_OF_DAY);
+    assert.match(html, /aria-checked="false"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("che do ngay dat duoc GIU qua form Loc (input an) va link phan trang", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    for (let i = 0; i < 60; i++) recordWithOrderDate(ledgerStore, `DH-${i}`, "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    assert.match(html, /<input type="hidden" name="time" value="order">/);
+    assert.match(html, /\/admin\/orders\?[^"]*time=order[^"]*page=2/);
+    // Che do mac dinh thi khong day them tham so vao link.
+    const def = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.doesNotMatch(def, /name="time"/);
+    assert.doesNotMatch(def, /\/admin\/orders\?[^"]*time=order[^"]*page=2/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("toggle giu nguyen bo loc dang ap khi bam doi che do", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?q=DH&status=pending`, { headers: { cookie: cookie! } })).text();
+    const toggle = html.match(/<a[^>]*role="switch"[^>]*>/)?.[0] ?? "";
+    assert.match(toggle, /q=DH/);
+    assert.match(toggle, /status=pending/);
+    assert.match(toggle, /time=order/);
+  } finally {
+    cleanup();
+  }
+});

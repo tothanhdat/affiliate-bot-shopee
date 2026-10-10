@@ -771,6 +771,8 @@ export function createServer(
       // la mot dieu kien loc - neu khong thi bam Loc voi o tim de trong se them menh de LIKE '%%'
       // vao moi truy van (van dung ket qua, nhung lam trang bao "dang co bo loc" trong o danh sach rong).
       search: typeof req.query.q === "string" && req.query.q.trim() !== "" ? req.query.q.trim() : undefined,
+      // Toggle cot thoi gian (2026-10-10): gia tri la -> mac dinh (import). Chi la cach hien thi.
+      timeMode: req.query.time === "order" ? "order" : undefined,
     };
 
     // Tong so don + 3 so cua the KPI lay trong MOT truy van dung CHUNG bo loc voi bang (xem

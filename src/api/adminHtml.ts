@@ -1491,6 +1491,12 @@ export interface OrdersFilters {
   statuses?: CommissionStatus[];
   /** O tim 1 dong: khop mot phan ma don / userId / ten hien thi. Xem CommissionEntryFilters.search. */
   search?: string;
+  /**
+   * Cot "Ma don & thoi gian" hien gi (2026-10-10): undefined/"import" = thoi diem IMPORT vao he thong
+   * (createdAt), "order" = NGAY DAT HANG (order_date). Chi la cach HIEN THI - khong anh huong bo loc
+   * nen khong duoc dua vao menh de WHERE.
+   */
+  timeMode?: "import" | "order";
 }
 
 /** So don hien tren 1 trang /admin/orders. */
@@ -1514,6 +1520,7 @@ function ordersPageHref(filters: OrdersFilters, page: number): string {
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.search) params.set("q", filters.search);
   for (const status of filters.statuses ?? []) params.append("status", status);
+  if (filters.timeMode === "order") params.set("time", "order");
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query === "" ? "/admin/orders" : `/admin/orders?${query}`;
@@ -1719,8 +1726,13 @@ export function kpiCard(input: {
  * `columns` la so cot o man rong: 4 cho trang nhieu chi so, 2 cho trang it. Hai the keo het be ngang
  * man hinh trong rat trong rong nen ban 2 cot bi gioi han be ngang lai.
  */
-export function kpiGrid(cards: string[], columns: 2 | 4 = 4): string {
-  const wide = columns === 4 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 md:max-w-3xl";
+export function kpiGrid(cards: string[], columns: 2 | 3 | 4 = 4): string {
+  const wide =
+    columns === 4
+      ? "md:grid-cols-2 xl:grid-cols-4"
+      : columns === 3
+        ? "md:grid-cols-3"
+        : "md:grid-cols-2 md:max-w-3xl";
   return `<div class="mb-5 grid grid-cols-1 gap-4 ${wide}">\n${cards.join("\n")}\n</div>`;
 }
 
@@ -1858,6 +1870,17 @@ export function renderOrdersPage(
       const lockedShare = e.userSharePercent === null ? `<span class="muted">—</span>` : `${e.userSharePercent}%`;
       const displayName = displayNames.get(nameKey(e.platform, e.userId));
       const when = formatDateTimeParts(e.createdAt);
+      // Dong thoi gian duoi ma don (2026-10-10): theo toggle. Che do "ngay dat" chi co NGAY (order_date
+      // la "YYYY-MM-DD", khong co gio). Don ghi truoc 2026-10-01 khong co order_date -> "—", KHONG lui ve
+      // ngay import: o che do nay admin dang hoi "khach dat luc nao", tra loi bang ngay import la noi sai.
+      const timeLine =
+        filters.timeMode === "order"
+          ? e.orderDate
+            ? `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Ngày khách đặt hàng">Đặt ${escapeHtml(
+                e.orderDate.split("-").reverse().join("/")
+              )}</div>`
+            : `<div class="mt-0.5 text-[11px] text-slate-400" title="Đơn này ghi nhận trước khi hệ thống lưu ngày đặt hàng">Đặt —</div>`
+          : `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Thời điểm import vào hệ thống">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>`;
       // Don da huy: 2 cot tien van hien SO THAT (admin con doi soat voi bao cao Shopee) nhung phai
       // gach ngang + lam mo. De nguyen kieu thuong thi hang "Đã huỷ" doc ra thanh "khach nhan 5đ"
       // - mot so tien khong ai duoc nhan, va chinh 4 the KPI ben tren cung khong cong no vao.
@@ -1911,7 +1934,7 @@ export function renderOrdersPage(
       <span>${escapeHtml(e.orderId)}</span>
       ${copyIconButton(e.orderId, `Sao chép mã đơn ${e.orderId}`)}
     </div>
-    <div class="mt-0.5 text-[11px] text-slate-400 tabular-nums">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>
+    ${timeLine}
   </td>
   <td class="px-4 py-3.5">
     <div class="font-medium text-slate-800">${nameCell(displayName)}</div>
@@ -2054,10 +2077,30 @@ export function renderOrdersPage(
     </div>
   </div>
   ${filters.userId ? `<input type="hidden" name="userId" value="${escapeHtml(filters.userId)}">` : ""}
+  ${filters.timeMode === "order" ? `<input type="hidden" name="time" value="order">` : ""}
   <button type="submit" class="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
     ${icon("search", "h-3.5 w-3.5")} Lọc
   </button>
 </form>`;
+
+  // Toggle kieu thoi gian cua cot "Ma don & thoi gian" (2026-10-10), ngay DUOI bo loc. La LINK (khong
+  // phai checkbox + JS): trang render phia server nen doi che do = tai lai trang, va nho do trang thai
+  // song qua form Loc + phan trang (ordersPageHref) ma khong can dong JS nao. Giu NGUYEN bo loc va
+  // trang hien tai vi chi doi cach hien thi, khong doi tap don.
+  const timeOn = filters.timeMode === "order";
+  const toggleHref = ordersPageHref({ ...filters, timeMode: timeOn ? "import" : "order" }, pagination.page);
+  const timeToggle = `<div class="-mt-2 mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+  <a href="${escapeHtml(toggleHref)}" role="switch" aria-checked="${timeOn}" aria-label="Hiển thị thời gian theo ngày đặt hàng"
+     class="inline-flex h-5 w-9 shrink-0 items-center rounded-full no-underline transition-colors ${
+       timeOn ? "bg-indigo-600" : "bg-slate-300"
+     }"><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+       timeOn ? "translate-x-[18px]" : "translate-x-0.5"
+     }"></span></a>
+  <span class="font-medium text-slate-700">Hiển thị theo ngày đặt hàng</span>
+  <span class="text-slate-400">${
+    timeOn ? "Đang hiện ngày khách đặt đơn." : "Đang hiện thời điểm import vào hệ thống."
+  }</span>
+</div>`;
 
   const hasFilter = Boolean(
     filters.search || filters.platform || filters.merchant || filters.userId || filters.statuses?.length
@@ -2111,6 +2154,7 @@ export function renderOrdersPage(
 
   const body = `${kpiRow}
 ${filterForm}
+${timeToggle}
 ${statusDropdownScript}
 <div class="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
 ${entries.length > 0 ? table : emptyState}

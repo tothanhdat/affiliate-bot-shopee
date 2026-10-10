@@ -662,3 +662,32 @@ test("o tim kiem tim duoc theo Sub_id, placeholder noi ro", async () => {
     cleanup();
   }
 });
+
+// The KPI "Hoa hong uoc tinh" da bi go (2026-10-10, yeu cau user): user tao link khong dong nghia
+// voi mua hang nen tong hoa hong uoc tinh de doc nham thanh doanh thu. COT cung ten trong bang van giu.
+test("trang Link da tao KHONG con the KPI 'Hoa hong uoc tinh' (cot trong bang van con), con 3 the", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: SAMPLE_SUB_ID,
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/aaa",
+      commissionEstimate: 40_000,
+    });
+    const { html } = await getLinksPage(baseUrl);
+    const kpiRegion = html.slice(0, html.indexOf('id="links-q"')).replace(/<style>[\s\S]*?<\/style>/g, "");
+    assert.doesNotMatch(kpiRegion, /Hoa hồng ước tính/);
+    assert.doesNotMatch(kpiRegion, /chỉ lượt tra được giá/);
+    for (const label of ["Tổng lượt tạo link", "Tạo thành công", "Lượt lỗi"]) {
+      assert.match(kpiRegion, new RegExp(label));
+    }
+    assert.match(html, /<th[^>]*>Hoa hồng ước tính<\/th>/, "cot trong bang van giu");
+  } finally {
+    cleanup();
+  }
+});
