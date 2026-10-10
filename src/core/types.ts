@@ -145,6 +145,12 @@ export interface CommissionEntry {
   taxPercent: number | null;
   platformFeePercent: number | null;
   userSharePercent: number | null;
+  /**
+   * Luc admin sua TAY hoa hong goc cua don nay (2026-10-10), null = chua sua. Khac null nghia la
+   * commissionAmount bi KHOA: updatePendingEntry/confirmPendingEntry giu nguyen so nay thay vi lay
+   * so cua bao cao Shopee o cac lan import sau. Chi dat duoc tren don "pending".
+   */
+  commissionOverriddenAt: string | null;
   status: CommissionStatus;
   /** gan khi entry bi "giu" boi 1 yeu cau rut tien, null neu con kha dung */
   withdrawalId: string | null;

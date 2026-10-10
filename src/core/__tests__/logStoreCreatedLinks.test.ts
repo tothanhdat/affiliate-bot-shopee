@@ -377,3 +377,96 @@ test("khoang ngay ap dung cho CA count lan totals, khong chi bang", () => {
     store.close();
   }
 });
+
+// Loc theo gio phut (2026-10-10): fromDate/toDate nhan them "YYYY-MM-DDTHH:mm" (GIO VN).
+test("loc theo gio phut GIO VN: 'den HH:mm' tinh het phut do (ke ca giay :59)", () => {
+  const store = makeStore();
+  try {
+    // VN = UTC + 7. 22:59:59 VN = 15:59:59Z ... 00:00:00 ngay 10/10 VN = 17:00:00Z.
+    recordLink(store, { userId: "a-22h59", timestamp: "2026-10-09T15:59:59.000Z" });
+    recordLink(store, { userId: "b-23h00", timestamp: "2026-10-09T16:00:00.000Z" });
+    recordLink(store, { userId: "c-23h59s59", timestamp: "2026-10-09T16:59:59.999Z" });
+    recordLink(store, { userId: "d-00h00", timestamp: "2026-10-09T17:00:00.000Z" });
+
+    const rows = store.listCreatedLinks({ fromDate: "2026-10-09T23:00", toDate: "2026-10-09T23:59" });
+    assert.deepEqual(rows.map((r) => r.userId).sort(), ["b-23h00", "c-23h59s59"]);
+  } finally {
+    store.close();
+  }
+});
+
+test("chi co 1 dau co gio: tu gio do tro di / den het phut do", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "sang", timestamp: "2026-10-09T02:00:00.000Z" }); // 09:00 VN
+    recordLink(store, { userId: "chieu", timestamp: "2026-10-09T08:00:00.000Z" }); // 15:00 VN
+    assert.deepEqual(
+      store.listCreatedLinks({ fromDate: "2026-10-09T12:00" }).map((r) => r.userId),
+      ["chieu"]
+    );
+    assert.deepEqual(
+      store.listCreatedLinks({ toDate: "2026-10-09T12:00" }).map((r) => r.userId),
+      ["sang"]
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("KPI va danh sach dung CHUNG bo loc theo gio (so liet ke khop so dem)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "trong", timestamp: "2026-10-09T16:30:00.000Z" });
+    recordLink(store, { userId: "ngoai", timestamp: "2026-10-09T10:00:00.000Z" });
+    const filters = { fromDate: "2026-10-09T23:00", toDate: "2026-10-09T23:59" };
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+  } finally {
+    store.close();
+  }
+});
+
+// Tim theo Sub_id (2026-10-10): dung de do nguoc tu Sub_id1-5 cua bao cao Shopee ve dung luot tao link.
+test("search khop mot phan sub_id (ca chuoi day du lan doan giua/cuoi)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "k-2233805738531852881-mv17ndbz-18d664" });
+    recordLink(store, { userId: "u2", subId: "k-7777-mv17zzzz-aa11bb" });
+    recordLink(store, { userId: "u3", subId: null, outcome: "error", errorCode: "INVALID_LINK", affiliateUrl: null });
+
+    const full = store.listCreatedLinks({ search: "k-2233805738531852881-mv17ndbz-18d664" });
+    assert.deepEqual(full.map((r) => r.userId), ["u1"]);
+    assert.deepEqual(store.listCreatedLinks({ search: "mv17ndbz" }).map((r) => r.userId), ["u1"]);
+    assert.deepEqual(store.listCreatedLinks({ search: "aa11bb" }).map((r) => r.userId), ["u2"]);
+    // Dong khong co sub_id (NULL) khong bi khop nham va khong lam loi truy van.
+    assert.equal(store.listCreatedLinks({ search: "mv17" }).length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("search sub_id van escape '_' va '%' (go 'k_u' khong khop 'kxu')", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "kxu-1" });
+    assert.equal(store.listCreatedLinks({ search: "k_u" }).length, 0);
+    assert.equal(store.listCreatedLinks({ search: "100%" }).length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test("tim theo sub_id: danh sach, dem va KPI dung chung bo loc", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "k-abc-111" });
+    recordLink(store, { userId: "u2", subId: "k-xyz-222" });
+    const filters = { search: "abc-111" };
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+  } finally {
+    store.close();
+  }
+});

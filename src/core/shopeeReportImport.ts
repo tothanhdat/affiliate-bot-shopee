@@ -1,5 +1,6 @@
 import { parseCsv } from "./csv.js";
 import { AppError, DuplicateConversionError } from "./errors.js";
+import { formatVnd } from "./money.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
@@ -406,6 +407,23 @@ export function importShopeeReport(
       order.orderDate ?? todayVnIso(),
       recordOrderConfig.userSharePercent
     );
+
+    // Don pending ma admin da SUA TAY hoa hong goc (commissionOverriddenAt): ledgerStore giu so do
+    // chu khong lay so bao cao. Neu Shopee bao so khac thi bao admin - day la cho DUY NHAT phat hien
+    // viec tien tra cho user dang lech voi tien Shopee tra. Khong dung `continue`: van phai cap nhat
+    // trang thai/so lieu khac o nhanh ben duoi.
+    if (
+      existing?.status === "pending" &&
+      existing.commissionOverriddenAt !== null &&
+      targetStatus !== "reversed" &&
+      order.commissionAmount !== existing.commissionAmount
+    ) {
+      result.errors.push(
+        `[${orderId}] Shopee bao hoa hong ${formatVnd(order.commissionAmount)} nhung don dang khoa o ` +
+          `${formatVnd(existing.commissionAmount)} (admin sua tay) - giu so da khoa. Vao Don hang > sua hoa hong > ` +
+          `bo khoa neu muon lay lai so cua Shopee.`
+      );
+    }
 
     if (targetStatus === "confirmed") {
       if (existing?.status === "confirmed" || existing?.status === "paid") {

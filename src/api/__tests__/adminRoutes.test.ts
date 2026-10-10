@@ -1732,3 +1732,200 @@ test("POST /admin/settings/zalo-groups van luu duoc khi dong bo thanh vien loi",
     cleanup();
   }
 });
+
+// --- Sua tay hoa hong goc cua don pending (2026-10-10) ---
+
+function recordForCommissionEdit(
+  ledgerStore: LedgerStore,
+  orderId: string,
+  status: "pending" | "confirmed" = "pending"
+) {
+  return ledgerStore.recordConversion({
+    subId: "telegram-user-a-1",
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    status,
+  });
+}
+
+const formHeaders = (cookie: string) => ({ cookie, "content-type": "application/x-www-form-urlencoded" });
+
+test("/admin/orders co cot Hoa hong goc; chi don pending co nut sua, don da sua tay co nhan", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const locked = recordForCommissionEdit(ledgerStore, "PEND-2");
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    ledgerStore.overrideCommissionAmount(locked.id, {
+      commissionAmount: 70_000,
+      fallbackPercents: { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80 },
+      maxCommissionRatioPercent: 1000,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+
+    assert.match(html, /Hoa hồng gốc/);
+    assert.match(html, /50\.000/);
+    assert.match(html, /70\.000/);
+    assert.match(html, new RegExp(`/admin/orders/${pending.id}/commission`));
+    assert.match(html, new RegExp(`/admin/orders/${locked.id}/commission`));
+    assert.doesNotMatch(html, new RegExp(`/admin/orders/${confirmed.id}/commission`));
+    assert.match(html, /đã sửa tay/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET trang sua hoa hong: don pending co o nhap; don confirmed bi chan, khong co o nhap", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    const okHtml = await (
+      await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(okHtml, /name="commissionAmount"/);
+
+    const blockedHtml = await (
+      await fetch(`${baseUrl}/admin/orders/${confirmed.id}/commission`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(blockedHtml, /Chờ xác nhận/);
+    assert.doesNotMatch(blockedHtml, /name="commissionAmount"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET trang sua hoa hong voi ?commissionAmount= hien ban xem truoc khach/chu bot nhan theo ty le da chot", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders/${pending.id}/commission?commissionAmount=100000`, {
+        headers: { cookie: cookie! },
+      })
+    ).text();
+    // 0% thue/phi, 80% -> khach 80.000, chu bot 20.000.
+    assert.match(html, /80\.000/);
+    assert.match(html, /20\.000/);
+    // Xem truoc KHONG duoc ghi gi.
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong: luu, tinh lai tien khach, khoa so", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    const after = ledgerStore.getEntryById(pending.id)!;
+    assert.equal(after.commissionAmount, 100_000);
+    assert.equal(after.userShareAmount, 80_000);
+    assert.notEqual(after.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong: so khong hop le -> 422, khong doi gi", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    for (const bad of ["", "abc", "-5", "999999999"]) {
+      const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+        method: "POST",
+        headers: formHeaders(cookie!),
+        body: `action=save&commissionAmount=${bad}`,
+        redirect: "manual",
+      });
+      assert.equal(res.status, 422, `gia tri "${bad}"`);
+    }
+    const after = ledgerStore.getEntryById(pending.id)!;
+    assert.equal(after.commissionAmount, 50_000);
+    assert.equal(after.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong tren don da confirmed -> 422, khong doi so", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/orders/${confirmed.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 422);
+    assert.equal(ledgerStore.getEntryById(confirmed.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST action=unlock bo khoa", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=unlock",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("route sua hoa hong yeu cau dang nhap admin", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.match(res.headers.get("location") ?? "", /\/admin\/login/);
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});

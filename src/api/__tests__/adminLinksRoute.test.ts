@@ -363,7 +363,8 @@ test("link phan trang GIU NGUYEN bo loc dang ap dung", async () => {
 
     const { html } = await getLinksPage(baseUrl, "?q=massage&platform=zalo");
     assert.match(html, /\/admin\/links\?[^"]*q=massage[^"]*page=2/);
-    assert.match(html, /\/admin\/links\?[^"]*platform=zalo/);
+    // Bo loc "Kenh" da bi go (2026-10-10): ?platform= cu bi bo qua, khong con lan vao link phan trang.
+    assert.doesNotMatch(html, /\/admin\/links\?[^"]*platform=/);
   } finally {
     cleanup();
   }
@@ -427,13 +428,13 @@ test("loc ?from=&to= chi hien luot trong khoang (ca 2 dau tinh vao)", async () =
   }
 });
 
-test("2 o ngay GIU LAI gia tri dang loc sau khi bam Loc", async () => {
-  // Bam Loc xong ma o ngay trong lai thi admin khong biet minh dang xem khoang nao.
+test("2 o ngay gio GIU LAI gia tri dang loc sau khi bam Loc (link cu chi co ngay -> 00:00 / 23:59)", async () => {
+  // Bam Loc xong ma o trong lai thi admin khong biet minh dang xem khoang nao.
   const { baseUrl, cleanup } = setup();
   try {
     const { html } = await getLinksPage(baseUrl, "?from=2026-10-01&to=2026-10-03");
-    assert.match(html, /name="from"[^>]*value="2026-10-01"/);
-    assert.match(html, /name="to"[^>]*value="2026-10-03"/);
+    assert.match(html, /name="from"[^>]*value="2026-10-01T00:00"/);
+    assert.match(html, /name="to"[^>]*value="2026-10-03T23:59"/);
   } finally {
     cleanup();
   }
@@ -461,6 +462,202 @@ test("link phan trang GIU NGUYEN khoang ngay", async () => {
     const { html } = await getLinksPage(baseUrl, "?from=2026-10-01&to=2026-10-03");
     assert.match(html, /\/admin\/links\?[^"]*from=2026-10-01[^"]*/);
     assert.match(html, /\/admin\/links\?[^"]*to=2026-10-03[^"]*page=2/);
+  } finally {
+    cleanup();
+  }
+});
+
+// Cot Sub_id (2026-10-10): dung de doi chieu voi Sub_id1-5 cua bao cao Shopee.
+const SAMPLE_SUB_ID = "k-2233805738531852881-mv17ndbz-18d664";
+
+test("cot Sub_id: hien sub_id day du (title + nut copy), cat gon bang CSS chu khong cat chuoi", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: SAMPLE_SUB_ID,
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/aaa",
+    });
+
+    const { html } = await getLinksPage(baseUrl);
+    assert.match(html, /<th[^>]*>Sub_id<\/th>/);
+    // Chuoi day du nam trong title va trong ham copy -> admin lay duoc nguyen ven du o bi cat.
+    assert.match(html, new RegExp(`title="${SAMPLE_SUB_ID}"`));
+    assert.match(html, new RegExp(`writeText\\('${SAMPLE_SUB_ID}'\\)`));
+    assert.match(html, /Sao chép Sub_id/);
+    // Cat bang class `truncate`, KHONG cat chuoi o server (se mat doan cuoi dung de doi chieu).
+    assert.match(html, new RegExp(`class="[^"]*truncate[^"]*"[^>]*title="${SAMPLE_SUB_ID}"`));
+  } finally {
+    cleanup();
+  }
+});
+
+test("cot Sub_id: dong khong co sub_id hien '—', khong hien 'null'", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-cu",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: null,
+      outcome: "error",
+      errorCode: "INVALID_LINK",
+      affiliateUrl: null,
+    });
+    const { html } = await getLinksPage(baseUrl);
+    assert.doesNotMatch(html, /Sao chép Sub_id/);
+    assert.doesNotMatch(html, />null</);
+  } finally {
+    cleanup();
+  }
+});
+
+test("cot Sub_id: ky tu dac biet trong sub_id bi escape", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: `k-"><script>alert(1)</script>`,
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/aaa",
+    });
+    const { html } = await getLinksPage(baseUrl);
+    assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  } finally {
+    cleanup();
+  }
+});
+
+// O "Noi gui" (2026-10-10, yeu cau user): chi kinh doanh tren Zalo nen bo chip kenh "Zalo" - chi con
+// chip noi gui (Group/DM/API) + chip san. Bo loc "Kenh" o thanh tren van giu nguyen.
+test("o Noi gui KHONG con chip kenh Zalo, van con chip noi gui + chip san", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: SAMPLE_SUB_ID,
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/aaa",
+      sourceContext: "group",
+    });
+    const { html } = await getLinksPage(baseUrl);
+    const tbody = html.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? "";
+    assert.notEqual(tbody, "");
+    assert.doesNotMatch(tbody, /Zalo/);
+    assert.match(tbody, /Group/);
+    assert.match(tbody, /Shopee/);
+  } finally {
+    cleanup();
+  }
+});
+
+
+// Bo loc "Kenh" da bi go + bo loc ngay doi thanh ngay GIO (2026-10-10, yeu cau truc tiep cua user).
+test("form loc KHONG con o chon Kenh; 2 o thoi gian la datetime-local", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const { html } = await getLinksPage(baseUrl);
+    assert.doesNotMatch(html, /name="platform"/);
+    assert.doesNotMatch(html, /for="links-platform"/);
+    assert.match(html, /<input type="datetime-local"[^>]*name="from"/);
+    assert.match(html, /<input type="datetime-local"[^>]*name="to"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("loc theo gio phut GIO VN: 23:00 -> 23:59 ngay 9/10 giu dung luot trong khoang, ke ca giay :30 cua phut 23:59", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    // Gio VN = UTC + 7: 22:59:59 VN = 15:59:59Z, 23:00:00 VN = 16:00:00Z, 23:59:30 VN = 16:59:30Z.
+    seedAt(logStore, "truoc-23h", "2026-10-09T15:59:59.000Z");
+    seedAt(logStore, "dung-23h", "2026-10-09T16:00:00.000Z");
+    seedAt(logStore, "giua", "2026-10-09T16:30:00.000Z");
+    seedAt(logStore, "cuoi-phut", "2026-10-09T16:59:30.000Z");
+    seedAt(logStore, "qua-nua-dem", "2026-10-09T17:00:00.000Z");
+
+    const { html } = await getLinksPage(baseUrl, "?from=2026-10-09T23:00&to=2026-10-09T23:59");
+    assert.match(html, /San pham dung-23h/);
+    assert.match(html, /San pham giua/);
+    assert.match(html, /San pham cuoi-phut/);
+    assert.doesNotMatch(html, /San pham truoc-23h/);
+    assert.doesNotMatch(html, /San pham qua-nua-dem/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("o thoi gian giu lai gio phut, link phan trang giu nguyen khoang gio", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    for (let i = 0; i < 60; i++) seedAt(logStore, `u${i}`, "2026-10-09T16:30:00.000Z");
+    const { html } = await getLinksPage(baseUrl, "?from=2026-10-09T23:00&to=2026-10-09T23:59");
+    assert.match(html, /name="from"[^>]*value="2026-10-09T23:00"/);
+    assert.match(html, /name="to"[^>]*value="2026-10-09T23:59"/);
+    assert.match(html, /\/admin\/links\?[^"]*from=2026-10-09T23%3A00[^"]*page=2/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("gio sai (25:00, 23:61) hoac ngay khong co that bi BO QUA, khong lam vo trang", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    seedAt(logStore, "co-that", "2026-10-02T05:00:00.000Z");
+    for (const q of ["?from=2026-10-09T25:00", "?to=2026-10-09T23:61", "?from=2026-02-31T10:00", "?from=2026-10-09T10"]) {
+      const { status, html } = await getLinksPage(baseUrl, q);
+      assert.equal(status, 200, q);
+      assert.match(html, /San pham co-that/, q);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("o tim kiem tim duoc theo Sub_id, placeholder noi ro", async () => {
+  const { baseUrl, logStore, cleanup } = setup();
+  try {
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-1",
+      originalUrl: "https://shopee.vn/product/1/2",
+      subId: SAMPLE_SUB_ID,
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/aaa",
+      productName: "Co sub id",
+    });
+    logStore.record({
+      platform: "zalo",
+      merchant: "shopee",
+      userId: "u-2",
+      originalUrl: "https://shopee.vn/product/3/4",
+      subId: "k-khac-hoan-toan",
+      outcome: "success",
+      errorCode: null,
+      affiliateUrl: "https://bot.example/s/bbb",
+      productName: "Khong khop",
+    });
+
+    const { html } = await getLinksPage(baseUrl, `?q=${encodeURIComponent(SAMPLE_SUB_ID)}`);
+    assert.match(html, /Co sub id/);
+    assert.doesNotMatch(html, /Khong khop/);
+    assert.match(html, /placeholder="[^"]*Sub_id[^"]*"/);
   } finally {
     cleanup();
   }

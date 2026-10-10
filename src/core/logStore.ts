@@ -17,7 +17,7 @@ export type RecordRequestInput = Omit<
   Partial<Pick<RequestLogEntry, "timestamp" | "productName" | "commissionEstimate" | "sourceContext">>;
 
 export interface CreatedLinkFilters {
-  /** Khop MOT PHAN user_id / product_name / original_url. */
+  /** Khop MOT PHAN user_id / product_name / original_url / sub_id. */
   search?: string;
   platform?: Platform;
   /** undefined = lay ca luot thanh cong lan luot loi. */
@@ -25,8 +25,10 @@ export interface CreatedLinkFilters {
   /** Khop CHINH XAC - dung khi bam tu /admin/users sang, khong duoc keo theo user co id chua chuoi tuong tu. */
   userId?: string;
   /**
-   * Khoang ngay, dang "YYYY-MM-DD" theo GIO VN, CA HAI dau deu tinh vao. Bo trong 1 dau = khong
-   * gioi han dau do.
+   * Khoang thoi gian theo GIO VN, CA HAI dau deu tinh vao. Bo trong 1 dau = khong gioi han dau do.
+   * Nhan 2 dang: "YYYY-MM-DD" (ca ngay: tu 00:00 / den het 23:59) hoac "YYYY-MM-DDTHH:mm" (2026-10-10,
+   * dang cua <input type="datetime-local">): "tu" tinh tu giay :00 cua phut do, "den" tinh HET phut do
+   * (ke ca giay :59) - chon "den 23:59" phai giu luot luc 23:59:30.
    */
   fromDate?: string;
   toDate?: string;
@@ -53,6 +55,19 @@ function likePattern(raw: string): string {
  */
 const VN_DAY_EXPR = "date(timestamp, '+7 hours')";
 
+/**
+ * Thoi diem cua luot, doi sang gio VN, dang "YYYY-MM-DD HH:MM:SS" (da cat phan le giay). So sanh voi
+ * moc cung dang nay - sap xep chuoi dung thu tu thoi gian, va khong phu thuoc timestamp luu co phan
+ * ms/"Z" hay khong. KHONG so sanh thang tren chuoi ISO: "...00Z" > "...00.000Z" theo tu dien.
+ */
+const VN_DATETIME_EXPR = "datetime(timestamp, '+7 hours')";
+
+/** Dau khoang -> moc "YYYY-MM-DD HH:MM:SS" gio VN. Chi ngay thi "tu" = 00:00:00, "den" = 23:59:59. */
+function vnBound(value: string, edge: "from" | "to"): string {
+  if (value.length === 10) return `${value} ${edge === "from" ? "00:00:00" : "23:59:59"}`;
+  return `${value.replace("T", " ")}:${edge === "from" ? "00" : "59"}`;
+}
+
 function buildCreatedLinksWhere(filters?: CreatedLinkFilters): {
   where: string;
   params: (string | number)[];
@@ -72,22 +87,23 @@ function buildCreatedLinksWhere(filters?: CreatedLinkFilters): {
     conditions.push("user_id = ?");
     params.push(filters.userId);
   }
-  // So sanh truc tiep tren chuoi "YYYY-MM-DD" - dinh dang nay sap xep tu dien trung sap xep thoi gian.
+  // So sanh truc tiep tren chuoi "YYYY-MM-DD HH:MM:SS" gio VN - dinh dang nay sap xep tu dien trung
+  // sap xep thoi gian. `datetime()` cat phan le giay nen "den HH:mm:59" gom ca luot luc HH:mm:59.999.
   if (filters?.fromDate) {
-    conditions.push(`${VN_DAY_EXPR} >= ?`);
-    params.push(filters.fromDate);
+    conditions.push(`${VN_DATETIME_EXPR} >= ?`);
+    params.push(vnBound(filters.fromDate, "from"));
   }
   if (filters?.toDate) {
-    conditions.push(`${VN_DAY_EXPR} <= ?`);
-    params.push(filters.toDate);
+    conditions.push(`${VN_DATETIME_EXPR} <= ?`);
+    params.push(vnBound(filters.toDate, "to"));
   }
   const search = filters?.search?.trim();
   if (search) {
     conditions.push(
-      `(user_id LIKE ? ESCAPE '\\' OR product_name LIKE ? ESCAPE '\\' OR original_url LIKE ? ESCAPE '\\')`
+      `(user_id LIKE ? ESCAPE '\\' OR product_name LIKE ? ESCAPE '\\' OR original_url LIKE ? ESCAPE '\\' OR sub_id LIKE ? ESCAPE '\\')`
     );
     const pattern = likePattern(search);
-    params.push(pattern, pattern, pattern);
+    params.push(pattern, pattern, pattern, pattern);
   }
 
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };

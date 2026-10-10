@@ -234,6 +234,7 @@ export class LedgerStore {
         tax_percent REAL,
         platform_fee_percent REAL,
         user_share_percent REAL,
+        commission_overridden_at TEXT,
         completed_at TEXT,
         available_from TEXT,
         status TEXT NOT NULL,
@@ -253,6 +254,8 @@ export class LedgerStore {
     this.migrateAddRatePercentColumns();
     // DB tao truoc 2026-10-08 (truoc khi co tinh nang giam tien don to) se thieu 2 cot nay.
     this.migrateAddPayoutHoldColumns();
+    // DB tao truoc 2026-10-10 (truoc khi admin sua tay duoc hoa hong goc) se thieu cot nay.
+    this.migrateAddCommissionOverrideColumn();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawal_requests (
         id TEXT PRIMARY KEY,
@@ -696,6 +699,19 @@ export class LedgerStore {
   }
 
   /**
+   * Cot danh dau don da bi admin sua tay hoa hong goc (2026-10-10). Nullable, khong DEFAULT: don cu
+   * chua tung bi sua nen NULL la dung.
+   */
+  private migrateAddCommissionOverrideColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(commission_entries)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((col) => col.name === "commission_overridden_at")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN commission_overridden_at TEXT");
+    }
+  }
+
+  /**
    * 2 cot cua tinh nang giam tien don to (2026-10-08, xem payoutHold.ts). Nullable, khong DEFAULT,
    * KHONG backfill: bao cao da import khong luu lai nen khong suy lai duoc ngay giao hang cua don cu.
    * De NULL -> don cu kha dung ngay, tuc KHONG giam hoi to (tien da hua roi).
@@ -916,6 +932,7 @@ export class LedgerStore {
       taxPercent: input.taxPercent,
       platformFeePercent: input.platformFeePercent,
       userSharePercent: input.userSharePercent,
+      commissionOverriddenAt: null,
       status,
       withdrawalId: null,
       note: input.note ?? null,
@@ -947,10 +964,13 @@ export class LedgerStore {
     }
     const existing = rowToCommissionEntry(row);
 
+    // Don admin da sua tay hoa hong thi GIU so do, bo qua so cua bao cao (xem commissionOverriddenAt).
+    const commissionAmount =
+      existing.commissionOverriddenAt !== null ? existing.commissionAmount : input.commissionAmount;
     const maxPlausibleCommission = (input.orderAmount * input.maxCommissionRatioPercent) / 100;
-    if (input.commissionAmount > maxPlausibleCommission) {
+    if (commissionAmount > maxPlausibleCommission) {
       throw new ImplausibleCommissionAmountError(
-        input.commissionAmount,
+        commissionAmount,
         input.orderAmount,
         input.maxCommissionRatioPercent
       );
@@ -958,7 +978,7 @@ export class LedgerStore {
 
     const percents = effectivePercents(existing, input.fallbackPercents);
     const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
-      commissionAmount: input.commissionAmount,
+      commissionAmount,
       ...percents,
     });
     const productName = input.productName ?? existing.productName;
@@ -972,7 +992,7 @@ export class LedgerStore {
       )
       .run(
         input.orderAmount,
-        input.commissionAmount,
+        commissionAmount,
         taxAmount,
         platformFeeAmount,
         afterTaxAmount,
@@ -990,7 +1010,7 @@ export class LedgerStore {
     return {
       ...existing,
       orderAmount: input.orderAmount,
-      commissionAmount: input.commissionAmount,
+      commissionAmount,
       taxAmount,
       platformFeeAmount,
       afterTaxAmount,
@@ -998,6 +1018,92 @@ export class LedgerStore {
       ...percents,
       productName,
     };
+  }
+
+  /**
+   * Admin SUA TAY hoa hong goc cua 1 don "pending" (2026-10-10). Tinh lai 4 cot tien bang CHINH ty le
+   * da chot cua don (effectivePercents), khong dung % hien hanh, roi KHOA so nay: cac lan import sau
+   * (updatePendingEntry/confirmPendingEntry) giu nguyen no thay vi lay so cua bao cao Shopee.
+   * Chi don pending - don da Kha dung la tien user co the dang rut.
+   */
+  overrideCommissionAmount(
+    entryId: string,
+    input: { commissionAmount: number; fallbackPercents: RatePercents; maxCommissionRatioPercent: number }
+  ): CommissionEntry {
+    const existing = this.requirePendingEntry(entryId);
+    if (!Number.isFinite(input.commissionAmount) || input.commissionAmount < 0) {
+      throw new Error("Hoa hong goc phai la so >= 0.");
+    }
+    const maxPlausibleCommission = (existing.orderAmount * input.maxCommissionRatioPercent) / 100;
+    if (input.commissionAmount > maxPlausibleCommission) {
+      throw new ImplausibleCommissionAmountError(
+        input.commissionAmount,
+        existing.orderAmount,
+        input.maxCommissionRatioPercent
+      );
+    }
+
+    const percents = effectivePercents(existing, input.fallbackPercents);
+    const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
+      commissionAmount: input.commissionAmount,
+      ...percents,
+    });
+    const overriddenAt = new Date().toISOString();
+
+    this.db
+      .prepare(
+        `UPDATE commission_entries SET commission_amount = ?, tax_amount = ?, platform_fee_amount = ?,
+          after_tax_amount = ?, user_share_amount = ?, tax_percent = ?, platform_fee_percent = ?,
+          user_share_percent = ?, commission_overridden_at = ?
+         WHERE id = ? AND status = 'pending'`
+      )
+      .run(
+        input.commissionAmount,
+        taxAmount,
+        platformFeeAmount,
+        afterTaxAmount,
+        userShareAmount,
+        percents.taxPercent,
+        percents.platformFeePercent,
+        percents.userSharePercent,
+        overriddenAt,
+        entryId
+      );
+
+    return {
+      ...existing,
+      commissionAmount: input.commissionAmount,
+      taxAmount,
+      platformFeeAmount,
+      afterTaxAmount,
+      userShareAmount,
+      ...percents,
+      commissionOverriddenAt: overriddenAt,
+    };
+  }
+
+  /**
+   * Bo khoa hoa hong goc (2026-10-10): chi go dau khoa, KHONG tu doi so tien - lan import ke tiep
+   * moi lay lai so cua Shopee. Cho admin go duong lui khi khoa nham.
+   */
+  clearCommissionOverride(entryId: string): CommissionEntry {
+    const existing = this.requirePendingEntry(entryId);
+    this.db
+      .prepare(`UPDATE commission_entries SET commission_overridden_at = NULL WHERE id = ? AND status = 'pending'`)
+      .run(entryId);
+    return { ...existing, commissionOverriddenAt: null };
+  }
+
+  private requirePendingEntry(entryId: string): CommissionEntry {
+    const row = this.db.prepare(`SELECT * FROM commission_entries WHERE id = ?`).get(entryId);
+    if (!row) {
+      throw new Error(`Khong tim thay commission entry voi id "${entryId}"`);
+    }
+    const entry = rowToCommissionEntry(row);
+    if (entry.status !== "pending") {
+      throw new EntryNotPendingError();
+    }
+    return entry;
   }
 
   /**
@@ -1028,10 +1134,13 @@ export class LedgerStore {
     }
     const existing = rowToCommissionEntry(row);
 
+    // Don admin da sua tay hoa hong thi GIU so do, bo qua so cua bao cao (xem commissionOverriddenAt).
+    const commissionAmount =
+      existing.commissionOverriddenAt !== null ? existing.commissionAmount : input.commissionAmount;
     const maxPlausibleCommission = (input.orderAmount * input.maxCommissionRatioPercent) / 100;
-    if (input.commissionAmount > maxPlausibleCommission) {
+    if (commissionAmount > maxPlausibleCommission) {
       throw new ImplausibleCommissionAmountError(
-        input.commissionAmount,
+        commissionAmount,
         input.orderAmount,
         input.maxCommissionRatioPercent
       );
@@ -1039,7 +1148,7 @@ export class LedgerStore {
 
     const percents = effectivePercents(existing, input.fallbackPercents);
     const { taxAmount, platformFeeAmount, afterTaxAmount, userShareAmount } = computeCommissionBreakdown({
-      commissionAmount: input.commissionAmount,
+      commissionAmount,
       ...percents,
     });
     const productName = input.productName ?? existing.productName;
@@ -1064,7 +1173,7 @@ export class LedgerStore {
       )
       .run(
         input.orderAmount,
-        input.commissionAmount,
+        commissionAmount,
         taxAmount,
         platformFeeAmount,
         afterTaxAmount,
@@ -1082,7 +1191,7 @@ export class LedgerStore {
       ...existing,
       status: "confirmed",
       orderAmount: input.orderAmount,
-      commissionAmount: input.commissionAmount,
+      commissionAmount,
       taxAmount,
       platformFeeAmount,
       afterTaxAmount,
@@ -1420,6 +1529,11 @@ export class LedgerStore {
     debtRemaining: number;
     /** So admin PHAI CHUYEN cua yeu cau dang cho (da tru no) - khac pendingBalance cua getUserSummary. */
     pendingBalance: number;
+    /**
+     * Phan user SE nhan cua cac don dang "pending" (cho Shopee duyet), 2026-10-10. KHAC pendingBalance
+     * o tren: do la tien user DA bam rut va cho admin chuyen khoan, day la tien chua thanh Kha dung.
+     */
+    pendingConfirmationBalance: number;
     paidTotal: number;
     ordersCount: number;
     /** % hoa hong rieng dang cau hinh cho user nay, null neu dung % chung. */
@@ -1457,6 +1571,7 @@ export class LedgerStore {
               WHERE wr.platform = k.platform AND wr.user_id = k.user_id AND wr.status = 'requested'), 0) AS pending,
             COALESCE((SELECT SUM(wr.amount) FROM withdrawal_requests wr
               WHERE wr.platform = k.platform AND wr.user_id = k.user_id AND wr.status = 'paid'), 0) AS paid,
+            COALESCE(SUM(CASE WHEN ce.status = 'pending' THEN ce.user_share_amount ELSE 0 END), 0) AS pending_confirmation,
             COUNT(ce.order_id) AS orders_count,
             uco.user_share_percent AS override_percent,
             uco.start_date AS override_start_date,
@@ -1477,6 +1592,7 @@ export class LedgerStore {
       held: number;
       debt_remaining: number;
       pending: number;
+      pending_confirmation: number;
       paid: number;
       orders_count: number;
       override_percent: number | null;
@@ -1494,6 +1610,7 @@ export class LedgerStore {
       heldBalance: r.held,
       debtRemaining: r.debt_remaining,
       pendingBalance: r.pending,
+      pendingConfirmationBalance: r.pending_confirmation,
       paidTotal: r.paid,
       ordersCount: r.orders_count,
       // override_percent CO THE la 0 (chu bot giu toan bo) - phai kiem tra null, khong dung falsy.
@@ -2515,7 +2632,7 @@ export class LedgerStore {
  *
  * Chi lui ve fallback cho entry ghi TRUOC khi co 3 cot % (null) - xem migrateAddRatePercentColumns.
  */
-function effectivePercents(existing: CommissionEntry, fallback: RatePercents): RatePercents {
+export function effectivePercents(existing: CommissionEntry, fallback: RatePercents): RatePercents {
   return {
     taxPercent: existing.taxPercent ?? fallback.taxPercent,
     platformFeePercent: existing.platformFeePercent ?? fallback.platformFeePercent,
@@ -2563,6 +2680,7 @@ function rowToCommissionEntry(row: unknown): CommissionEntry {
     taxPercent: (r.tax_percent as number | null) ?? null,
     platformFeePercent: (r.platform_fee_percent as number | null) ?? null,
     userSharePercent: (r.user_share_percent as number | null) ?? null,
+    commissionOverriddenAt: (r.commission_overridden_at as string | null) ?? null,
     status: r.status as CommissionStatus,
     withdrawalId: (r.withdrawal_id as string | null) ?? null,
     note: (r.note as string | null) ?? null,

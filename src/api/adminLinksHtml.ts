@@ -1,4 +1,4 @@
-import type { LinkSourceContext, Platform, RequestLogEntry, RequestOutcome } from "../core/types.js";
+import type { LinkSourceContext, RequestLogEntry, RequestOutcome } from "../core/types.js";
 import type { CreatedLinkFilters, CreatedLinksTotals } from "../core/logStore.js";
 import { getMerchantConfig } from "../core/merchants.js";
 import { formatVnd } from "../core/money.js";
@@ -6,8 +6,6 @@ import { copyIconButton, escapeHtml, formatDateTimeParts } from "./htmlHelpers.j
 import {
   FIELD_CLASS,
   FIELD_LABEL_CLASS,
-  PLATFORM_LABELS,
-  PLATFORM_OPTIONS,
   SELECT_CHEVRON_CLASS,
   adminShell,
   icon,
@@ -16,7 +14,6 @@ import {
   merchantChipClass,
   nameKey,
   paginationItems,
-  platformChip,
   selectOptions,
   userAvatar,
 } from "./adminHtml.js";
@@ -100,10 +97,18 @@ function commissionCell(amount: number | null, outcome: RequestOutcome): string 
 }
 
 /** Dung lai URL /admin/links giu NGUYEN bo loc, chi doi so trang. */
+/**
+ * Gia tri cho <input type="datetime-local">, dang "YYYY-MM-DDTHH:mm". Link cu chi co ngay thi "tu" =
+ * 00:00 va "den" = 23:59 - dung nghia cua bo loc ngay cu, de o khong bi trong khi trang van dang loc.
+ */
+function dateTimeInputValue(value: string | undefined, edge: "from" | "to"): string {
+  if (!value) return "";
+  return value.length === 10 ? `${value}T${edge === "from" ? "00:00" : "23:59"}` : value;
+}
+
 function linksPageHref(filters: CreatedLinkFilters, page: number): string {
   const params = new URLSearchParams();
   if (filters.search) params.set("q", filters.search);
-  if (filters.platform) params.set("platform", filters.platform);
   if (filters.outcome) params.set("outcome", filters.outcome);
   if (filters.fromDate) params.set("from", filters.fromDate);
   if (filters.toDate) params.set("to", filters.toDate);
@@ -178,6 +183,17 @@ export function renderLinksPage(
           ? linkCell(e.affiliateUrl, shortenUrl(e.affiliateUrl), `Sao chép link affiliate ${e.affiliateUrl}`)
           : `<span class="text-slate-400">—</span>`;
 
+      // Sub_id (2026-10-10): khoa de doi chieu voi Sub_id1-5 cua bao cao Shopee. Cat gon bang CSS
+      // (`truncate`) chu KHONG cat chuoi: doan cuoi (random) moi la phan phan biet cac luot, va
+      // title + nut copy luon giu nguyen chuoi day du. Cot cat o ~140px de khong day cot "Hoa hong
+      // uoc tinh" ra ngoai man hinh (xem chu thich o dau file ve do rong bang).
+      const subIdBlock = e.subId
+        ? `<div class="flex items-center gap-1.5">
+    <span class="block max-w-[140px] truncate font-mono text-[11px] text-slate-600" title="${escapeHtml(e.subId)}">${escapeHtml(e.subId)}</span>
+    ${copyIconButton(e.subId, `Sao chép Sub_id ${e.subId}`)}
+  </div>`
+        : `<span class="text-slate-400">—</span>`;
+
       const productBlock = e.productName
         ? `<span class="block truncate font-medium text-slate-700" title="${escapeHtml(e.productName)}">${escapeHtml(
             e.productName
@@ -198,7 +214,6 @@ export function renderLinksPage(
   <td class="max-w-[180px] px-4 py-3.5">${nameBlock}</td>
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-1.5">
-      ${platformChip(e.platform)}
       ${sourceChip(e.sourceContext)}
     </div>
     ${merchantChip ? `<div class="mt-1">${merchantChip}</div>` : ""}
@@ -209,6 +224,7 @@ export function renderLinksPage(
     `Sao chép link gốc ${e.originalUrl}`
   )}</td>
   <td class="px-4 py-3.5">${affiliateBlock}</td>
+  <td class="px-4 py-3.5">${subIdBlock}</td>
   <td class="max-w-[200px] px-4 py-3.5">${productBlock}</td>
   ${commissionCell(e.commissionEstimate, e.outcome)}
 </tr>`;
@@ -264,16 +280,8 @@ export function renderLinksPage(
       <label class="${FIELD_LABEL_CLASS}" for="links-q">Tìm kiếm</label>
       <div class="relative">
         ${icon("search", "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400")}
-        <input type="search" id="links-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Tìm theo tên sản phẩm, user ID hoặc link..." class="${FIELD_CLASS} pl-9">
+        <input type="search" id="links-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Tìm theo tên sản phẩm, user ID, link hoặc Sub_id..." class="${FIELD_CLASS} pl-9">
       </div>
-    </div>
-    <div class="w-full sm:w-40">
-      <label class="${FIELD_LABEL_CLASS}" for="links-platform">Kênh</label>
-      <select id="links-platform" name="platform" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
-        PLATFORM_OPTIONS,
-        (v: Platform) => PLATFORM_LABELS[v],
-        filters.platform
-      )}</select>
     </div>
     <div class="w-full sm:w-40">
       <label class="${FIELD_LABEL_CLASS}" for="links-outcome">Kết quả</label>
@@ -283,17 +291,17 @@ export function renderLinksPage(
         filters.outcome
       )}</select>
     </div>
-    <div class="w-full sm:w-36">
-      <label class="${FIELD_LABEL_CLASS}" for="links-from">Từ ngày</label>
-      <input type="date" id="links-from" name="from" value="${escapeHtml(filters.fromDate ?? "")}" max="${escapeHtml(
-        filters.toDate ?? ""
-      )}" class="${FIELD_CLASS}">
+    <div class="w-full sm:w-56">
+      <label class="${FIELD_LABEL_CLASS}" for="links-from">Từ lúc</label>
+      <input type="datetime-local" id="links-from" name="from" value="${escapeHtml(
+        dateTimeInputValue(filters.fromDate, "from")
+      )}" max="${escapeHtml(dateTimeInputValue(filters.toDate, "to"))}" class="${FIELD_CLASS}">
     </div>
-    <div class="w-full sm:w-36">
-      <label class="${FIELD_LABEL_CLASS}" for="links-to">Đến ngày</label>
-      <input type="date" id="links-to" name="to" value="${escapeHtml(filters.toDate ?? "")}" min="${escapeHtml(
-        filters.fromDate ?? ""
-      )}" class="${FIELD_CLASS}">
+    <div class="w-full sm:w-56">
+      <label class="${FIELD_LABEL_CLASS}" for="links-to">Đến lúc</label>
+      <input type="datetime-local" id="links-to" name="to" value="${escapeHtml(
+        dateTimeInputValue(filters.toDate, "to")
+      )}" min="${escapeHtml(dateTimeInputValue(filters.fromDate, "from"))}" class="${FIELD_CLASS}">
     </div>
   </div>
   ${filters.userId ? `<input type="hidden" name="userId" value="${escapeHtml(filters.userId)}">` : ""}
@@ -303,7 +311,7 @@ export function renderLinksPage(
 </form>`;
 
   const hasFilter = Boolean(
-    filters.search || filters.platform || filters.outcome || filters.userId || filters.fromDate || filters.toDate
+    filters.search || filters.outcome || filters.userId || filters.fromDate || filters.toDate
   );
   const emptyState = `<div class="px-5 py-14 text-center">
   <div class="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">${icon(
@@ -336,6 +344,7 @@ export function renderLinksPage(
           <th class="${thClass}">Nơi gửi</th>
           <th class="${thClass}">Link gốc</th>
           <th class="${thClass}">Link đã chuyển đổi</th>
+          <th class="${thClass}">Sub_id</th>
           <th class="${thClass}">Tên sản phẩm</th>
           <th class="${thClass} !text-right">Hoa hồng ước tính</th>
         </tr>

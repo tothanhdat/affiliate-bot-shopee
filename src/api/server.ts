@@ -7,6 +7,7 @@ import {
   adminShell,
   ORDERS_PAGE_SIZE,
   renderAdminLoginPage,
+  renderEditCommissionPage,
   renderOrdersPage,
   renderRecordOrdersPage,
   renderReverseConfirmPage,
@@ -21,8 +22,9 @@ import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js"
 import { renderHandbookPage } from "./handbookHtml.js";
 import { LINKS_PAGE_SIZE, renderLinksPage } from "./adminLinksHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
-import { AppError } from "../core/errors.js";
-import type { LedgerStore } from "../core/ledgerStore.js";
+import { AppError, EntryNotPendingError } from "../core/errors.js";
+import { effectivePercents, type LedgerStore } from "../core/ledgerStore.js";
+import { computeCommissionBreakdown } from "../core/commissionMath.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
 import type { CreatedLinkFilters, LogStore } from "../core/logStore.js";
 import { MERCHANTS, type MerchantId } from "../core/merchants.js";
@@ -83,10 +85,13 @@ function parseStatusFilter(raw: unknown): CommissionStatus[] {
  * loc sai van tot hon la loc ra bang rong roi de ho tuong he thong mat du lieu.
  */
 function parseIsoDateParam(value: unknown): string | undefined {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  // Date() tu "cuon" ngay khong co that (31/02 -> 03/03) nen phai doi chieu lai chinh chuoi goc.
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? undefined : value;
+  // Nhan "YYYY-MM-DD" (link cu / go tay) hoac "YYYY-MM-DDTHH:mm" (o datetime-local, 2026-10-10).
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(value)) return undefined;
+  const parsed = new Date(`${value.length === 10 ? `${value}T00:00` : value}:00.000Z`);
+  // Date() tu "cuon" ngay/gio khong co that (31/02 -> 03/03, 25:00 -> 01:00 hom sau) nen phai doi
+  // chieu lai chinh chuoi goc.
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().slice(0, value.length) === value ? value : undefined;
 }
 
 function parsePageParam(raw: unknown): number {
@@ -803,11 +808,8 @@ export function createServer(
    * ben ledgerStore) nen phai gop trong JS - khong JOIN duoc qua 2 ket noi SQLite.
    */
   app.get("/admin/links", requireAdminAuth, (req: Request, res: Response) => {
+    // Khong con loc theo kenh (2026-10-10, yeu cau user: chi kinh doanh tren Zalo) - ?platform= cu bi bo qua.
     const filters: CreatedLinkFilters = {
-      platform:
-        typeof req.query.platform === "string" && VALID_PLATFORMS.includes(req.query.platform as Platform)
-          ? (req.query.platform as Platform)
-          : undefined,
       outcome:
         req.query.outcome === "success" || req.query.outcome === "error"
           ? (req.query.outcome as RequestOutcome)
@@ -876,6 +878,145 @@ export function createServer(
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
       res.status(422).type("html").send(renderReverseConfirmPage(entry, displayName, message, navPendingWithdrawals()));
+    }
+  });
+
+  // Sua tay hoa hong goc cua don "pending" (2026-10-10) - tien khach/chu bot tinh lai theo ty le DA CHOT
+  // cua don, so duoc KHOA khong cho import bao cao Shopee ghi de. Xem LedgerStore.overrideCommissionAmount.
+  const NOT_PENDING_COMMISSION_MESSAGE =
+    'Chỉ sửa được hoa hồng gốc của đơn đang ở trạng thái "Chờ xác nhận" - đơn đã "Khả dụng" (hoặc đã rút/đã huỷ) là tiền đã chốt với user.';
+
+  /** So thap phan khong am (toi da 2 chu so le), tra null neu khong hop le. Khong doan dinh dang "50.000". */
+  function parseCommissionAmountInput(raw: unknown): number | null {
+    if (typeof raw !== "string") return null;
+    const text = raw.trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+    return Number(text);
+  }
+
+  const commissionFallbackPercents = () => ({
+    taxPercent: orderConfig.taxPercent,
+    platformFeePercent: orderConfig.platformFeePercent,
+    userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+  });
+
+  app.get("/admin/orders/:id/commission", requireAdminAuth, (req: Request, res: Response) => {
+    const entry = ledgerStore.getEntryById(req.params.id);
+    if (!entry) {
+      res.redirect(303, "/admin/orders");
+      return;
+    }
+    const displayName = ledgerStore.getDisplayNamesMap().get(`${entry.platform}:${entry.userId}`) ?? null;
+    const pendingWithdrawals = navPendingWithdrawals();
+    if (entry.status !== "pending") {
+      res
+        .type("html")
+        .send(
+          renderEditCommissionPage({ entry, displayName, blockedMessage: NOT_PENDING_COMMISSION_MESSAGE, pendingWithdrawals })
+        );
+      return;
+    }
+
+    // ?commissionAmount= = nut "Xem truoc": chi tinh, KHONG ghi gi.
+    const rawAmount = req.query.commissionAmount;
+    if (typeof rawAmount !== "string") {
+      res.type("html").send(renderEditCommissionPage({ entry, displayName, pendingWithdrawals }));
+      return;
+    }
+    const amount = parseCommissionAmountInput(rawAmount);
+    if (amount === null) {
+      res
+        .status(422)
+        .type("html")
+        .send(
+          renderEditCommissionPage({
+            entry,
+            displayName,
+            errorMessage: "Hoa hồng gốc phải là số không âm (ví dụ 50000).",
+            inputValue: rawAmount,
+            pendingWithdrawals,
+          })
+        );
+      return;
+    }
+    if (amount > (entry.orderAmount * orderConfig.maxCommissionRatioPercent) / 100) {
+      res
+        .status(422)
+        .type("html")
+        .send(
+          renderEditCommissionPage({
+            entry,
+            displayName,
+            errorMessage: `Hoa hồng ${formatVnd(amount)} vượt quá ${orderConfig.maxCommissionRatioPercent}% giá trị đơn (${formatVnd(entry.orderAmount)}), có thể gõ nhầm.`,
+            inputValue: rawAmount,
+            pendingWithdrawals,
+          })
+        );
+      return;
+    }
+    const percents = effectivePercents(entry, commissionFallbackPercents());
+    const breakdown = computeCommissionBreakdown({ commissionAmount: amount, ...percents });
+    res
+      .type("html")
+      .send(
+        renderEditCommissionPage({
+          entry,
+          displayName,
+          preview: { commissionAmount: amount, percents, breakdown },
+          inputValue: rawAmount,
+          pendingWithdrawals,
+        })
+      );
+  });
+
+  app.post("/admin/orders/:id/commission", requireAdminAuth, (req: Request, res: Response) => {
+    const entry = ledgerStore.getEntryById(req.params.id);
+    if (!entry) {
+      res.redirect(303, "/admin/orders");
+      return;
+    }
+    const displayName = ledgerStore.getDisplayNamesMap().get(`${entry.platform}:${entry.userId}`) ?? null;
+    const pendingWithdrawals = navPendingWithdrawals();
+    const rawAmount = typeof req.body?.commissionAmount === "string" ? req.body.commissionAmount : "";
+    const fail = (message: string) =>
+      res
+        .status(422)
+        .type("html")
+        .send(
+          renderEditCommissionPage({
+            entry,
+            displayName,
+            ...(entry.status === "pending" ? { errorMessage: message } : { blockedMessage: message }),
+            inputValue: rawAmount,
+            pendingWithdrawals,
+          })
+        );
+
+    try {
+      if (req.body?.action === "unlock") {
+        ledgerStore.clearCommissionOverride(entry.id);
+        res.redirect(303, "/admin/orders");
+        return;
+      }
+      const amount = parseCommissionAmountInput(rawAmount);
+      if (amount === null) {
+        fail("Hoa hồng gốc phải là số không âm (ví dụ 50000).");
+        return;
+      }
+      ledgerStore.overrideCommissionAmount(entry.id, {
+        commissionAmount: amount,
+        fallbackPercents: commissionFallbackPercents(),
+        maxCommissionRatioPercent: orderConfig.maxCommissionRatioPercent,
+      });
+      res.redirect(303, "/admin/orders");
+    } catch (err) {
+      fail(
+        err instanceof EntryNotPendingError
+          ? NOT_PENDING_COMMISSION_MESSAGE
+          : err instanceof AppError
+            ? err.userMessage
+            : "Lỗi không xác định, vui lòng thử lại sau."
+      );
     }
   });
 

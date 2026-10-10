@@ -41,6 +41,7 @@ function entry(overrides: Partial<CommissionEntry>): CommissionEntry {
     taxPercent: 10,
     platformFeePercent: 1,
     userSharePercent: 80,
+    commissionOverriddenAt: null,
     status: "pending",
     withdrawalId: null,
     note: null,
