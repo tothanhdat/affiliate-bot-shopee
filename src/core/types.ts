@@ -101,6 +101,13 @@ export interface CommissionEntry {
    */
   orderDate: string | null;
   /**
+   * Gio phut giay user DAT don, dang "HH:mm:ss" gio VN (2026-10-10), cung cot "Thời Gian Đặt Hàng" voi
+   * orderDate. null cho don ghi truoc khi he thong luu gio: se duoc bu khi don do xuat hien lai trong
+   * mot bao cao import sau (Shopee liet ke lai ca lich su) - xem LedgerStore.backfillOrderTime().
+   * Khong bao gio doan gio (khong dien 00:00:00).
+   */
+  orderTime: string | null;
+  /**
    * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang ("YYYY-MM-DD" gio VN, 2026-10-08), doc tu cot
    * "Thời gian hoàn thành" cua bao cao. null khi bao cao khong co gia tri (don ghi tay, bao cao cu).
    * Day la moc Shopee dem 15 ngay duoc tra hang - xem payoutHold.ts.

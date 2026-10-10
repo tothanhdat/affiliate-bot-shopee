@@ -1933,7 +1933,12 @@ test("route sua hoa hong yeu cau dang nhap admin", async () => {
 // --- Toggle kieu thoi gian o cot "Ma don & thoi gian" cua /admin/orders (2026-10-10) ---
 // OFF (mac dinh) = thoi diem IMPORT vao he thong (createdAt); ON (?time=order) = NGAY DAT HANG (order_date).
 
-function recordWithOrderDate(ledgerStore: LedgerStore, orderId: string, orderDate: string | null) {
+function recordWithOrderDate(
+  ledgerStore: LedgerStore,
+  orderId: string,
+  orderDate: string | null,
+  orderTime: string | null = null
+) {
   return ledgerStore.recordConversion({
     subId: "telegram-user-a-1",
     platform: "telegram",
@@ -1949,6 +1954,7 @@ function recordWithOrderDate(ledgerStore: LedgerStore, orderId: string, orderDat
     holdConfig: { thresholdVnd: 0, holdDays: 0 },
     status: "pending",
     orderDate,
+    orderTime,
   });
 }
 
@@ -2033,6 +2039,101 @@ test("toggle giu nguyen bo loc dang ap khi bam doi che do", async () => {
     assert.match(toggle, /q=DH/);
     assert.match(toggle, /status=pending/);
     assert.match(toggle, /time=order/);
+  } finally {
+    cleanup();
+  }
+});
+
+
+test("che do ngay dat hien CA gio phut giay khi co (cung dinh dang thoi gian import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-GIO", "2026-09-28", "21:15:42");
+    recordWithOrderDate(ledgerStore, "DH-CHI-NGAY", "2026-10-02", null);
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    const rows = tbodyOf(html).split("<tr");
+    const gio = rows.find((r) => r.includes("DH-GIO")) ?? "";
+    const chiNgay = rows.find((r) => r.includes("DH-CHI-NGAY")) ?? "";
+    assert.match(gio, /21:15:42 • 28\/09\/2026/);
+    // Chua co gio thi chi hien ngay, KHONG bia 00:00:00.
+    assert.match(chiNgay, /02\/10\/2026/);
+    assert.doesNotMatch(chiNgay, /\d{2}:\d{2}:\d{2}/);
+  } finally {
+    cleanup();
+  }
+});
+
+// Cot "San" cua /admin/orders (2026-10-10, yeu cau user): chi kinh doanh tren Zalo nen bo chip kenh
+// "Zalo" - cot chi con chip san. Bo loc "Kenh" tren thanh loc van giu nguyen.
+test("/admin/orders: cot San KHONG con chip kenh Zalo, tieu de la 'San', khong con o chon Kenh", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.recordConversion({
+      subId: "zalo-user-z-1",
+      platform: "zalo",
+      userId: "user-z",
+      merchant: "shopee",
+      orderId: "DH-ZALO",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+      status: "pending",
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    const tbody = tbodyOf(html);
+    assert.doesNotMatch(tbody, /Zalo/);
+    assert.match(tbody, /Shopee/);
+    assert.match(html, /<th[^>]*>Sàn<\/th>/);
+    assert.doesNotMatch(html, /Sàn \/ Kênh/);
+    // O chon "Kenh" da bi go (2026-10-10): khong con <select name="platform"> tren thanh loc.
+    assert.doesNotMatch(html, /<select[^>]*name="platform"/);
+    assert.doesNotMatch(html, /for="orders-platform"/);
+  } finally {
+    cleanup();
+  }
+});
+
+
+// ?platform= van la tham so HIEU DUOC (nut "Xem don" o /admin/users dan sang bang ?platform=&userId=):
+// chi bo o chon tren giao dien, khong bo tham so - bo thi userId trung giua 2 kenh se lan don.
+test("/admin/orders?platform=&userId= (tu nut Xem don) van loc dung va GIU qua nut Loc + phan trang", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const mk = (platform: "zalo" | "telegram", orderId: string) =>
+      ledgerStore.recordConversion({
+        subId: `${platform}-same-1`,
+        platform,
+        userId: "same-id",
+        merchant: "shopee",
+        orderId,
+        orderAmount: 500_000,
+        commissionAmount: 50_000,
+        taxPercent: 0,
+        platformFeePercent: 0,
+        userSharePercent: 80,
+        maxCommissionRatioPercent: 1000,
+        holdConfig: { thresholdVnd: 0, holdDays: 0 },
+        status: "pending",
+      });
+    mk("zalo", "DH-ZALO-1");
+    mk("telegram", "DH-TELE-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders?platform=zalo&userId=same-id`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(tbodyOf(html), /DH-ZALO-1/);
+    assert.doesNotMatch(tbodyOf(html), /DH-TELE-1/);
+    assert.match(html, /<input type="hidden" name="platform" value="zalo">/);
+    assert.match(html, /<input type="hidden" name="userId" value="same-id">/);
+    // Khong co ?platform= thi khong sinh input an.
+    const plain = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.doesNotMatch(plain, /name="platform"/);
   } finally {
     cleanup();
   }

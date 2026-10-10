@@ -196,3 +196,56 @@ test("clearCommissionOverride chi cho don pending", () => {
     store.close();
   }
 });
+
+// The KPI "Loi nhuan chu bot" o /admin/orders (2026-10-10, yeu cau user): doi cung cong thuc voi the
+// o Tong quan (hoa hong - thue - phan chia user, KHONG tru phi 1%) + so "truoc thue". Cot "Chu bot nhan"
+// trong bang KHONG doi (van after_tax_amount - user_share_amount) nen chi test o muc tong.
+function recordRealRates(s: LedgerStore, orderId: string, status: "pending" | "confirmed" = "confirmed") {
+  return s.recordConversion({
+    subId: `k-user-a-${orderId}`,
+    platform: "zalo",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 1_000_000,
+    commissionAmount: 100_000,
+    taxPercent: 10,
+    platformFeePercent: 1,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    status,
+  });
+}
+
+test("getOrdersFilterTotals: ownerShareTotal KHONG tru phi 1%, them ownerShareBeforeTaxTotal", () => {
+  const s = new LedgerStore(":memory:");
+  try {
+    // 100.000 -> thue 10.000 -> 90.000 -> phi 900 -> 89.100 -> user 71.280.
+    recordRealRates(s, "A1");
+    const t = s.getOrdersFilterTotals();
+    assert.equal(t.userShareTotal, 71_280);
+    assert.equal(t.ownerShareTotal, 18_720, "100.000 - 10.000 thue - 71.280 user (phi 900 o lai trong loi nhuan)");
+    assert.equal(t.ownerShareBeforeTaxTotal, 28_720, "100.000 - 71.280 user");
+  } finally {
+    s.close();
+  }
+});
+
+test("getOrdersFilterTotals: cong don pending, bo don da huy, ton trong bo loc", () => {
+  const s = new LedgerStore(":memory:");
+  try {
+    recordRealRates(s, "A1");
+    recordRealRates(s, "A2", "pending");
+    const toReverse = recordRealRates(s, "A3", "pending");
+    s.reverseCommissionEntry(toReverse.id, "test");
+    const all = s.getOrdersFilterTotals();
+    assert.equal(all.ownerShareTotal, 2 * 18_720);
+    assert.equal(all.ownerShareBeforeTaxTotal, 2 * 28_720);
+    const onlyPending = s.getOrdersFilterTotals({ statuses: ["pending"] });
+    assert.equal(onlyPending.ownerShareTotal, 18_720, "A3 da huy khong tinh");
+    assert.equal(onlyPending.ownerShareBeforeTaxTotal, 28_720);
+  } finally {
+    s.close();
+  }
+});

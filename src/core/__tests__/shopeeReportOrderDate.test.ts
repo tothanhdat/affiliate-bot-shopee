@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LedgerStore } from "../ledgerStore.js";
 import { LogStore } from "../logStore.js";
-import { importShopeeReport, parseShopeeReportDay } from "../shopeeReportImport.js";
+import { importShopeeReport, parseShopeeReportDay, parseShopeeReportTime } from "../shopeeReportImport.js";
 
 /**
  * Ngay dat don THAT lay tu cot "Thời Gian Đặt Hàng" cua bao cao Shopee (2026-10-01) - truoc do
@@ -580,4 +580,164 @@ test("import lai sau khi doi setting hold KHONG dich ngay mo khoa da chot", () =
     before,
     "ngay mo khoa phai GIU NGUYEN - khong keo dai thoi gian giam cua don user da mua"
   );
+});
+
+
+// ---------------------------------------------------------------------------
+// Gio phut giay dat don (order_time, 2026-10-10) - truoc do bo phan gio, chi giu ngay
+// ---------------------------------------------------------------------------
+
+test("parseShopeeReportTime: dinh dang that cua Shopee -> 'HH:mm:ss'", () => {
+  assert.equal(parseShopeeReportTime("2026-09-30 13:07:34"), "13:07:34");
+  assert.equal(parseShopeeReportTime("2026-09-30 00:05:04"), "00:05:04");
+  assert.equal(parseShopeeReportTime("  2026-10-01 23:59:59  "), "23:59:59");
+  assert.equal(parseShopeeReportTime("2026-09-30T08:01:02"), "08:01:02");
+});
+
+test("parseShopeeReportTime: khong co gio / gio sai / thieu -> null, KHONG doan 00:00:00", () => {
+  assert.equal(parseShopeeReportTime("2026-09-30"), null);
+  assert.equal(parseShopeeReportTime(""), null);
+  assert.equal(parseShopeeReportTime(undefined), null);
+  assert.equal(parseShopeeReportTime("2026-09-30 25:00:00"), null);
+  assert.equal(parseShopeeReportTime("2026-09-30 10:61:00"), null);
+  assert.equal(parseShopeeReportTime("2026-09-30 10:00"), null);
+  assert.equal(parseShopeeReportTime("hom qua 10:00:00"), null);
+});
+
+const importOne = (logStore: LogStore, ledgerStore: LedgerStore, rows: RowInput[]) =>
+  importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv(rows));
+
+test("importShopeeReport: ghi order_time cung order_date khi don moi (ca pending lan confirmed)", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "k-user-a-t1");
+    importOne(logStore, ledgerStore, [
+      { orderId: "T1", orderTime: "2026-09-29 13:07:34", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Hoàn thành", subId: "k-user-a-t1" },
+      { orderId: "T2", orderTime: "2026-09-29 21:15:42", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Đang chờ xử lý", subId: "k-user-a-t1" },
+    ]);
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "T1")?.orderTime, "13:07:34");
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "T2")?.orderTime, "21:15:42");
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "T2")?.orderDate, "2026-09-29");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("importShopeeReport: don gop nhieu dong lay GIO cua dong dat SOM NHAT (cung dong voi order_date)", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "k-user-a-t3");
+    importOne(logStore, ledgerStore, [
+      { orderId: "T3", orderTime: "2026-09-29 18:00:00", orderAmount: 500_000, commissionAmount: 25_000, status: "Hoàn thành", subId: "k-user-a-t3" },
+      { orderId: "T3", orderTime: "2026-09-29 08:30:15", orderAmount: 500_000, commissionAmount: 25_000, status: "Hoàn thành", subId: "k-user-a-t3" },
+      { orderId: "T3", orderTime: "2026-09-30 07:00:00", orderAmount: 500_000, commissionAmount: 25_000, status: "Hoàn thành", subId: "k-user-a-t3" },
+    ]);
+    const entry = ledgerStore.getEntryByOrderId("shopee", "T3");
+    assert.equal(entry?.orderDate, "2026-09-29");
+    assert.equal(entry?.orderTime, "08:30:15", "gio phai la gio cua CHINH dong som nhat, khong tron gio dong khac");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("importShopeeReport: entry da co order_date nhung chua co gio duoc BU gio o lan import sau", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "k-user-a-t4");
+    // Mo phong don ghi truoc khi co cot gio: co ngay, khong co gio.
+    const old = ledgerStore.recordConversion({
+      subId: "k-user-a-t4", platform: "zalo", userId: "user-a", merchant: "shopee", orderId: "T4",
+      orderAmount: 1_000_000, commissionAmount: 50_000, orderDate: "2026-09-28",
+      taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 }, status: "pending",
+    });
+    assert.equal(old.orderTime, null);
+
+    importOne(logStore, ledgerStore, [
+      { orderId: "T4", orderTime: "2026-09-28 09:12:13", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Đang chờ xử lý", subId: "k-user-a-t4" },
+    ]);
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "T4")?.orderTime, "09:12:13");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("order_time da chot KHONG bi ghi de; gio cua NGAY KHAC khong duoc gan vao don", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "k-user-a-t5");
+    importOne(logStore, ledgerStore, [
+      { orderId: "T5", orderTime: "2026-09-28 09:00:00", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Đang chờ xử lý", subId: "k-user-a-t5" },
+    ]);
+    // Bao cao sau ghi gio khac -> khong ghi de gio da chot.
+    importOne(logStore, ledgerStore, [
+      { orderId: "T5", orderTime: "2026-09-28 23:00:00", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Đang chờ xử lý", subId: "k-user-a-t5" },
+    ]);
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "T5")?.orderTime, "09:00:00");
+
+    // Entry co ngay 2026-09-20, bao cao lai bao ngay khac (2026-09-21 05:05:05): khong gan gio cua ngay khac.
+    const e6 = ledgerStore.recordConversion({
+      subId: "k-user-a-t5", platform: "zalo", userId: "user-a", merchant: "shopee", orderId: "T6",
+      orderAmount: 1_000_000, commissionAmount: 50_000, orderDate: "2026-09-20",
+      taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 }, status: "pending",
+    });
+    importOne(logStore, ledgerStore, [
+      { orderId: "T6", orderTime: "2026-09-21 05:05:05", orderAmount: 1_000_000, commissionAmount: 50_000, status: "Đang chờ xử lý", subId: "k-user-a-t5" },
+    ]);
+    const after = ledgerStore.getEntryById(e6.id)!;
+    assert.equal(after.orderDate, "2026-09-20");
+    assert.equal(after.orderTime, null);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("migration: DB cu CHUA co cot order_time van mo duoc, tu them cot, du lieu cu khong mat", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { DatabaseSync } = await import("node:sqlite");
+  const dir = mkdtempSync(join(tmpdir(), "order-time-migration-"));
+  const dbPath = join(dir, "ledger.db");
+  try {
+    // Tao DB theo schema HIEN TAI roi go cot order_time -> mo phong DB production truoc khi co tinh nang.
+    const first = new LedgerStore(dbPath);
+    first.recordConversion({
+      subId: "k-user-a-m1", platform: "zalo", userId: "user-a", merchant: "shopee", orderId: "OLD-1",
+      orderAmount: 1_000_000, commissionAmount: 50_000, orderDate: "2026-09-28",
+      taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 }, status: "pending",
+    });
+    first.close();
+    const raw = new DatabaseSync(dbPath);
+    raw.exec("ALTER TABLE commission_entries DROP COLUMN order_time");
+    raw.close();
+
+    const reopened = new LedgerStore(dbPath);
+    try {
+      const old = reopened.getEntryByOrderId("shopee", "OLD-1");
+      assert.equal(old?.orderDate, "2026-09-28");
+      assert.equal(old?.orderTime, null);
+      const fresh = reopened.recordConversion({
+        subId: "k-user-a-m2", platform: "zalo", userId: "user-a", merchant: "shopee", orderId: "NEW-1",
+        orderAmount: 1_000_000, commissionAmount: 50_000, orderDate: "2026-10-09", orderTime: "21:15:42",
+        taxPercent: 0, platformFeePercent: 0, userSharePercent: 80, maxCommissionRatioPercent: 1000,
+        holdConfig: { thresholdVnd: 0, holdDays: 0 }, status: "pending",
+      });
+      assert.equal(reopened.getEntryById(fresh.id)?.orderTime, "21:15:42");
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

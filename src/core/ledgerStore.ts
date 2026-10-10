@@ -40,6 +40,17 @@ import type { UserCommissionOverride } from "./userCommissionOverride.js";
  * Shopee) nen dung thang; created_at luu ISO UTC nen phai +7 gio TRUOC khi cat lay ngay - thieu
  * buoc nay thi don tao tu 00:00 den 07:00 gio VN bi dem sang ngay hom truoc.
  */
+/**
+ * Loi nhuan chu bot cua trang Tong quan (2026-10-10, yeu cau truc tiep cua user): hoa hong - THUE - phan
+ * chia user. KHONG tru phi 1% (platform_fee_amount): khoan do la phi van hanh chu bot TU thu them tu user,
+ * khong phai phi Shopee/san nen khong duoc tru khoi loi nhuan - no nam LAI trong loi nhuan. Khac cot "Chu
+ * bot nhan" cua /admin/orders (van la after_tax_amount - user_share_amount, tru ca phi) - 2 noi dung khac
+ * dinh nghia, xem CLAUDE.md.
+ */
+const OWNER_PROFIT_SQL = "COALESCE(SUM(commission_amount - tax_amount - user_share_amount), 0)";
+/** Loi nhuan chu bot CHUA tru thue (hoa hong - phan chia user) - hien nho ben canh so chinh. */
+const OWNER_PROFIT_BEFORE_TAX_SQL = "COALESCE(SUM(commission_amount - user_share_amount), 0)";
+
 const DAY_EXPR = "COALESCE(order_date, date(created_at, '+7 hours'))";
 
 /**
@@ -89,6 +100,8 @@ export interface RecordConversionInput {
    * do moi thong ke se tu lui ve created_at. KHONG bao gio doan ngay.
    */
   orderDate?: string | null;
+  /** Gio phut giay dat don "HH:mm:ss" gio VN (2026-10-10), cung nguon voi orderDate. null/bo trong = khong biet. */
+  orderTime?: string | null;
   /**
    * Ngay Shopee ghi don "Hoan thanh" ("YYYY-MM-DD" gio VN, tu cot "Thời gian hoàn thành"). null hoac
    * bo trong = nguon khong cho biet (ghi don le bang tay, bao cao cu) -> moc giam lui ve HOM NAY.
@@ -203,8 +216,14 @@ export interface OrdersFilterTotals {
   pendingEntries: number;
   /** Tong tien user nhan, KHONG tinh don da huy. */
   userShareTotal: number;
-  /** Tong phan con lai cua chu bot (sau thue/phi san), KHONG tinh don da huy. */
+  /**
+   * Loi nhuan chu bot cua the KPI (2026-10-10): hoa hong - thue - phan chia user, KHONG tru phi 1% (xem
+   * OWNER_PROFIT_SQL). KHAC tong cot "Chu bot nhan" trong bang (after_tax - user_share, da tru phi).
+   * KHONG tinh don da huy.
+   */
   ownerShareTotal: number;
+  /** Nhu ownerShareTotal nhung CHUA tru thue (hoa hong - phan chia user) - hien nho ben canh so chinh. */
+  ownerShareBeforeTaxTotal: number;
 }
 
 export class LedgerStore {
@@ -250,6 +269,8 @@ export class LedgerStore {
     this.migrateAddTaxColumns();
     // DB tao truoc 2026-10-01 (truoc khi doc cot ngay dat don cua bao cao Shopee) se thieu cot nay.
     this.migrateAddOrderDateColumn();
+    // DB tao truoc 2026-10-10 (truoc khi luu gio phut giay dat don) se thieu cot order_time.
+    this.migrateAddOrderTimeColumn();
     // DB tao truoc 2026-10-01 (truoc khi ty le duoc CHOT theo tung don) se thieu 3 cot nay.
     this.migrateAddRatePercentColumns();
     // DB tao truoc 2026-10-08 (truoc khi co tinh nang giam tien don to) se thieu 2 cot nay.
@@ -698,6 +719,17 @@ export class LedgerStore {
     }
   }
 
+  /** Cot gio phut giay dat don (2026-10-10). Nullable, khong DEFAULT, khong backfill duoc luc migrate
+   * (bao cao da import khong con luu) - se duoc bu dan khi don xuat hien lai trong bao cao import sau. */
+  private migrateAddOrderTimeColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(commission_entries)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((col) => col.name === "order_time")) {
+      this.db.exec("ALTER TABLE commission_entries ADD COLUMN order_time TEXT");
+    }
+  }
+
   /**
    * Cot danh dau don da bi admin sua tay hoa hong goc (2026-10-10). Nullable, khong DEFAULT: don cu
    * chua tung bi sua nen NULL la dung.
@@ -875,13 +907,14 @@ export class LedgerStore {
       this.db
         .prepare(
           `INSERT INTO commission_entries
-            (id, created_at, order_date, completed_at, available_from, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, tax_percent, platform_fee_percent, user_share_percent, status, withdrawal_id, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+            (id, created_at, order_date, order_time, completed_at, available_from, platform, user_id, merchant, sub_id, order_id, product_name, order_amount, commission_amount, tax_amount, platform_fee_amount, after_tax_amount, user_share_amount, tax_percent, platform_fee_percent, user_share_percent, status, withdrawal_id, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
         )
         .run(
           id,
           createdAt,
           input.orderDate ?? null,
+          input.orderTime ?? null,
           completedAt,
           availableFrom,
           input.platform,
@@ -915,6 +948,7 @@ export class LedgerStore {
       id,
       createdAt,
       orderDate: input.orderDate ?? null,
+      orderTime: input.orderTime ?? null,
       completedAt,
       availableFrom,
       platform: input.platform,
@@ -1780,7 +1814,8 @@ export class LedgerStore {
            COUNT(*) AS total_entries,
            COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_entries,
            COALESCE(SUM(CASE WHEN status != 'reversed' THEN user_share_amount ELSE 0 END), 0) AS user_share_total,
-           COALESCE(SUM(CASE WHEN status != 'reversed' THEN after_tax_amount - user_share_amount ELSE 0 END), 0) AS owner_share_total
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN commission_amount - tax_amount - user_share_amount ELSE 0 END), 0) AS owner_share_total,
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN commission_amount - user_share_amount ELSE 0 END), 0) AS owner_share_before_tax_total
          FROM commission_entries ${where}`
       )
       .get(...params) as {
@@ -1788,12 +1823,14 @@ export class LedgerStore {
       pending_entries: number;
       user_share_total: number;
       owner_share_total: number;
+      owner_share_before_tax_total: number;
     };
     return {
       totalEntries: row.total_entries,
       pendingEntries: row.pending_entries,
       userShareTotal: row.user_share_total,
       ownerShareTotal: row.owner_share_total,
+      ownerShareBeforeTaxTotal: row.owner_share_before_tax_total,
     };
   }
 
@@ -2399,12 +2436,19 @@ export class LedgerStore {
   getDashboardMoneyTotals(
     fromKey: string,
     toKey: string
-  ): { commission: number; ownerProfit: number; userShare: number; orderCount: number } {
+  ): {
+    commission: number;
+    ownerProfit: number;
+    ownerProfitBeforeTax: number;
+    userShare: number;
+    orderCount: number;
+  } {
     const row = this.db
       .prepare(
         `SELECT
            COALESCE(SUM(commission_amount), 0) AS commission,
-           COALESCE(SUM(after_tax_amount - user_share_amount), 0) AS owner_profit,
+           ${OWNER_PROFIT_SQL} AS owner_profit,
+           ${OWNER_PROFIT_BEFORE_TAX_SQL} AS owner_profit_before_tax,
            COALESCE(SUM(user_share_amount), 0) AS user_share,
            COUNT(*) AS order_count
          FROM commission_entries
@@ -2414,6 +2458,7 @@ export class LedgerStore {
     return {
       commission: row.commission,
       ownerProfit: row.owner_profit,
+      ownerProfitBeforeTax: row.owner_profit_before_tax,
       userShare: row.user_share,
       orderCount: row.order_count,
     };
@@ -2447,7 +2492,7 @@ export class LedgerStore {
       .prepare(
         `SELECT ${DAY_EXPR} AS day,
            COALESCE(SUM(commission_amount), 0) AS commission,
-           COALESCE(SUM(after_tax_amount - user_share_amount), 0) AS owner_profit
+           ${OWNER_PROFIT_SQL} AS owner_profit
          FROM commission_entries
          WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?
          GROUP BY day`
@@ -2581,6 +2626,17 @@ export class LedgerStore {
       .run(orderDate, entryId);
   }
 
+  /**
+   * Bu gio dat don cho entry (2026-10-10). CHI ghi khi dang NULL (khong ghi de gio da chot - Shopee
+   * liet ke lai ca lich su o moi lan import) VA khi ngay luu trong DB TRUNG ngay cua gio nay: gan gio
+   * cua ngay khac vao don thi hien ra "gio:phut:giay • ngay" sai ma khong ai phat hien duoc.
+   */
+  backfillOrderTime(entryId: string, orderDate: string, orderTime: string): void {
+    this.db
+      .prepare(`UPDATE commission_entries SET order_time = ? WHERE id = ? AND order_time IS NULL AND order_date = ?`)
+      .run(orderTime, entryId, orderDate);
+  }
+
   recordImportHistory(input: {
     actionType: ImportActionType;
     newOrderIds: string[];
@@ -2663,6 +2719,7 @@ function rowToCommissionEntry(row: unknown): CommissionEntry {
     id: r.id as string,
     createdAt: r.created_at as string,
     orderDate: (r.order_date as string | null) ?? null,
+    orderTime: (r.order_time as string | null) ?? null,
     completedAt: (r.completed_at as string | null) ?? null,
     availableFrom: (r.available_from as string | null) ?? null,
     platform: r.platform as Platform,

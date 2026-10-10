@@ -1569,7 +1569,6 @@ const STATUS_LABELS: Record<CommissionStatus, string> = {
   paid: "Đã rút",
   reversed: "Đã huỷ",
 };
-export const PLATFORM_OPTIONS: Platform[] = ["telegram", "zalo", "http"];
 
 export function selectOptions<T extends string>(
   options: readonly T[],
@@ -1692,6 +1691,11 @@ export function kpiCard(input: {
   valueClass: string;
   iconClass: string;
   /**
+   * So phu nho hon dat BEN CANH so chinh (2026-10-10: the "Loi nhuan chu bot" - so truoc thue). Chuoi
+   * da dinh dang san, KHONG escape o day (giong `value`). Khong truyen = layout y het cu.
+   */
+  sub?: string;
+  /**
    * "alert" = vien cam + nen cam rat nhat: the dang bao CO VIEC PHAI LAM NGAY (vd tien user dang
    * cho chuyen khoan). Chi dung cho the that su can hanh dong - to mau de "cho noi bat" se lam mat
    * tac dung canh bao cua no.
@@ -1710,7 +1714,11 @@ export function kpiCard(input: {
   return `<div class="flex items-center justify-between gap-3 rounded-xl border ${shell} p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
     <div class="min-w-0">
       <div class="text-xs font-medium text-slate-500">${input.label}</div>
-      <div class="mt-1 text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</div>
+      ${
+        input.sub
+          ? `<div class="mt-1 flex flex-wrap items-baseline gap-x-2"><span class="text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</span><span class="text-xs font-medium tabular-nums text-slate-500">${input.sub}</span></div>`
+          : `<div class="mt-1 text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</div>`
+      }
       ${note}
     </div>
     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${input.iconClass}">${icon(
@@ -1870,16 +1878,19 @@ export function renderOrdersPage(
       const lockedShare = e.userSharePercent === null ? `<span class="muted">—</span>` : `${e.userSharePercent}%`;
       const displayName = displayNames.get(nameKey(e.platform, e.userId));
       const when = formatDateTimeParts(e.createdAt);
-      // Dong thoi gian duoi ma don (2026-10-10): theo toggle. Che do "ngay dat" chi co NGAY (order_date
-      // la "YYYY-MM-DD", khong co gio). Don ghi truoc 2026-10-01 khong co order_date -> "—", KHONG lui ve
-      // ngay import: o che do nay admin dang hoi "khach dat luc nao", tra loi bang ngay import la noi sai.
+      // Dong thoi gian duoi ma don (2026-10-10): theo toggle. Che do "ngay dat" hien "gio:phut:giay • ngay"
+      // CUNG dinh dang voi thoi gian import (yeu cau user). Don chua co gio (ghi truoc khi he thong luu
+      // gio, chua xuat hien lai trong bao cao nao) chi hien ngay, KHONG bia 00:00:00; don khong co ca ngay
+      // (truoc 2026-10-01) hien "—", KHONG lui ve ngay import: o che do nay admin dang hoi "khach dat
+      // luc nao", tra loi bang thoi diem import la noi sai.
+      const orderDateDdMmYyyy = e.orderDate ? e.orderDate.split("-").reverse().join("/") : null;
       const timeLine =
         filters.timeMode === "order"
-          ? e.orderDate
-            ? `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Ngày khách đặt hàng">Đặt ${escapeHtml(
-                e.orderDate.split("-").reverse().join("/")
-              )}</div>`
-            : `<div class="mt-0.5 text-[11px] text-slate-400" title="Đơn này ghi nhận trước khi hệ thống lưu ngày đặt hàng">Đặt —</div>`
+          ? orderDateDdMmYyyy
+            ? `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="${
+                e.orderTime ? "Thời điểm khách đặt hàng" : "Ngày khách đặt hàng (chưa có giờ)"
+              }">${escapeHtml(e.orderTime ? `${e.orderTime} • ${orderDateDdMmYyyy}` : orderDateDdMmYyyy)}</div>`
+            : `<div class="mt-0.5 text-[11px] text-slate-400" title="Đơn này ghi nhận trước khi hệ thống lưu ngày đặt hàng">—</div>`
           : `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Thời điểm import vào hệ thống">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>`;
       // Don da huy: 2 cot tien van hien SO THAT (admin con doi soat voi bao cao Shopee) nhung phai
       // gach ngang + lam mo. De nguyen kieu thuong thi hang "Đã huỷ" doc ra thanh "khach nhan 5đ"
@@ -1943,7 +1954,6 @@ export function renderOrdersPage(
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-1.5">
       <span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(e.merchant)}">${getMerchantConfig(e.merchant).displayName}</span>
-      ${platformChip(e.platform)}
     </div>
   </td>
   <td class="max-w-[200px] px-4 py-3.5">${product}</td>
@@ -2020,6 +2030,10 @@ export function renderOrdersPage(
     kpiCard({
       label: "Lợi nhuận chủ bot",
       value: formatVnd(totals.ownerShareTotal),
+      // Cung cong thuc voi the o Tong quan (hoa hong - thue - phan chia user, KHONG tru phi 1%) + so
+      // truoc thue ben canh (2026-10-10). COT "Chu bot nhan" trong bang van la after_tax - user_share
+      // (da tru phi) - user chi yeu cau doi the, nen tong cot do se nho hon the dung bang phi cac don.
+      sub: `trước thuế ${formatVnd(totals.ownerShareBeforeTaxTotal)}`,
       note: "không tính đơn đã huỷ",
       icon: "trending-up",
       valueClass: "text-indigo-600",
@@ -2048,14 +2062,6 @@ export function renderOrdersPage(
       </div>
     </div>
     <div class="w-full sm:w-40">
-      <label class="${FIELD_LABEL_CLASS}" for="orders-platform">Kênh</label>
-      <select id="orders-platform" name="platform" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
-        PLATFORM_OPTIONS,
-        (v) => PLATFORM_LABELS[v],
-        filters.platform
-      )}</select>
-    </div>
-    <div class="w-full sm:w-40">
       <label class="${FIELD_LABEL_CLASS}" for="orders-merchant">Sàn</label>
       <select id="orders-merchant" name="merchant" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
         MERCHANTS.map((m) => m.id),
@@ -2077,6 +2083,13 @@ export function renderOrdersPage(
     </div>
   </div>
   ${filters.userId ? `<input type="hidden" name="userId" value="${escapeHtml(filters.userId)}">` : ""}
+  ${
+    // O chon "Kenh" da bi go (2026-10-10, chi kinh doanh tren Zalo) nhung ?platform= VAN duoc hieu: nut
+    // "Xem don" o /admin/users dan sang bang ?platform=&userId=, va userId chi duy nhat TRONG 1 kenh. Giu
+    // qua nut Loc bang input an giong userId, neu khong bam Loc se doi tu "don cua user Zalo X" sang
+    // "don cua moi user co id X".
+    filters.platform ? `<input type="hidden" name="platform" value="${escapeHtml(filters.platform)}">` : ""
+  }
   ${filters.timeMode === "order" ? `<input type="hidden" name="time" value="order">` : ""}
   <button type="submit" class="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
     ${icon("search", "h-3.5 w-3.5")} Lọc
@@ -2098,7 +2111,7 @@ export function renderOrdersPage(
      }"></span></a>
   <span class="font-medium text-slate-700">Hiển thị theo ngày đặt hàng</span>
   <span class="text-slate-400">${
-    timeOn ? "Đang hiện ngày khách đặt đơn." : "Đang hiện thời điểm import vào hệ thống."
+    timeOn ? "Đang hiện thời điểm khách đặt đơn." : "Đang hiện thời điểm import vào hệ thống."
   }</span>
 </div>`;
 
@@ -2134,7 +2147,7 @@ export function renderOrdersPage(
         <tr>
           <th class="${thClass}">Mã đơn &amp; thời gian</th>
           <th class="${thClass}">Khách hàng</th>
-          <th class="${thClass}">Sàn / Kênh</th>
+          <th class="${thClass}">Sàn</th>
           <th class="${thClass}">Sản phẩm</th>
           <th class="${thClass} !text-right" title="Hoa hồng Shopee trả, trước khi trừ thuế/phí và chia %">Hoa hồng gốc</th>
           <th class="${thClass} !text-right">% chốt</th>

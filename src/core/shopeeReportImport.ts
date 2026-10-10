@@ -156,10 +156,25 @@ export function parseShopeeReportDay(raw: string | undefined): string | null {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Gio phut giay cua mot o thoi gian Shopee ("2026-09-30 13:07:34" -> "13:07:34"), 2026-10-10. null khi o
+ * khong co gio (chi co ngay), gio sai, hoac thieu giay - KHONG doan 00:00:00: hien mot gio bia nhu that
+ * la noi sai ve thoi diem khach dat don.
+ */
+export function parseShopeeReportTime(raw: string | undefined): string | null {
+  const match = /^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw?.trim() ?? "");
+  if (!match) return null;
+  const [, hh, mm, ss] = match;
+  if (Number(hh) > 23 || Number(mm) > 59 || Number(ss) > 59) return null;
+  return `${hh}:${mm}:${ss}`;
+}
+
 interface ShopeeReportRow {
   orderId: string;
   /** "YYYY-MM-DD" gio VN, null khi bao cao khong co cot ngay hoac gia tri hong. */
   orderDate: string | null;
+  /** "HH:mm:ss" gio VN cua cung o do (2026-10-10), null khi o chi co ngay hoac hong. */
+  orderTime: string | null;
   /**
    * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang, tu cot "Thời gian hoàn thành" (2026-10-08).
    * CHI dong "Hoàn thành" moi co gia tri nay - dong pending va dong huy deu de trong (da doi chieu
@@ -183,6 +198,7 @@ function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
     return {
       orderId: row["ID đơn hàng"]?.trim() ?? "",
       orderDate: parseShopeeReportDay(row["Thời Gian Đặt Hàng"]),
+      orderTime: parseShopeeReportTime(row["Thời Gian Đặt Hàng"]),
       completedAt: parseShopeeReportDay(row["Thời gian hoàn thành"]),
       productName: row["Tên Item"]?.trim() ?? "",
       orderAmount: Number(row["Giá trị đơn hàng (₫)"]),
@@ -210,6 +226,8 @@ interface MergedOrder {
   orderId: string;
   /** Ngay dat SOM NHAT trong cac dong cua don - don gop nhieu san pham co the lech gio nhau. */
   orderDate: string | null;
+  /** Gio cua CHINH dong dat som nhat (cung dong voi orderDate), 2026-10-10. */
+  orderTime: string | null;
   /**
    * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang, tu cot "Thời gian hoàn thành" (2026-10-08).
    * CHI dong "Hoàn thành" moi co gia tri nay - dong pending va dong huy deu de trong (da doi chieu
@@ -263,10 +281,15 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
 
   // Ngay dat cua ca don = ngay SOM NHAT trong cac dong doc duoc (dong qua tang/mua kem co the ghi
   // gio khac). Lay tu TAT CA cac dong cua don, ke ca dong bi huy - don van duoc dat vao ngay do.
-  const orderDate = rows
-    .map((r) => r.orderDate)
-    .filter((d): d is string => d !== null)
-    .sort()[0] ?? null;
+  // Gio lay tu CHINH dong do (khong tron gio dong khac). Cung ngay thi dong co gio xep truoc dong chi
+  // co ngay, de khong bo mat gio khi chi mot trong cac dong co.
+  const earliest =
+    rows
+      .filter((r): r is typeof r & { orderDate: string } => r.orderDate !== null)
+      .sort((a, b) => `${a.orderDate} ${a.orderTime ?? "99:99:99"}`.localeCompare(`${b.orderDate} ${b.orderTime ?? "99:99:99"}`))[0] ??
+    null;
+  const orderDate = earliest?.orderDate ?? null;
+  const orderTime = earliest?.orderTime ?? null;
 
   const active = counted.filter((c) => c.status !== "reversed");
 
@@ -302,6 +325,7 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
     order: {
       orderId,
       orderDate,
+      orderTime,
       completedAt,
       subId,
       productName,
@@ -395,6 +419,8 @@ export function importShopeeReport(
     // khi dang trong (xem backfillOrderDate), nen bao cao sau khong ghi de ngay da chot.
     if (existing && order.orderDate) {
       ledgerStore.backfillOrderDate(existing.id, order.orderDate);
+      // Gio (2026-10-10): bu SAU khi ngay da chot de dieu kien "cung ngay" trong backfillOrderTime dung.
+      if (order.orderTime) ledgerStore.backfillOrderTime(existing.id, order.orderDate, order.orderTime);
     }
 
     // % user nhan cho RIENG don nay: uu dai % theo tung user tinh theo ngay user DAT don (khong phai
@@ -471,6 +497,7 @@ export function importShopeeReport(
             orderAmount: order.orderAmount,
             commissionAmount: order.commissionAmount,
             orderDate: order.orderDate,
+            orderTime: order.orderTime,
             taxPercent: recordOrderConfig.taxPercent,
             platformFeePercent: recordOrderConfig.platformFeePercent,
             userSharePercent,
@@ -652,6 +679,7 @@ export function importShopeeReport(
         completedAt: order.completedAt,
         holdConfig: recordOrderConfig.holdConfig,
         orderDate: order.orderDate,
+        orderTime: order.orderTime,
         status: "pending",
         note: "Nhap tu bao cao Shopee - dang cho xu ly",
       });
