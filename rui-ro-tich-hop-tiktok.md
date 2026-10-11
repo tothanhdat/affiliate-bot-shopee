@@ -4,7 +4,7 @@ Rà soát ngày 2026-10-09, dựa trên **gọi API thật** bằng key của ch
 và đọc tài liệu chính thức `https://data.addlivetag.com/tiktok/` — không phải suy đoán quy trình.
 Hồ sơ kỹ thuật/business đầy đủ: `docs/riohub-tiktok.md`.
 
-Trạng thái tích hợp: **đường TẠO LINK đã xong và đang chạy thật trên production** (10/10/2026, chưa thông báo cho user). Đường **đối soát đơn chưa làm** — đó là nơi phần lớn rủi ro còn lại nằm.
+Trạng thái tích hợp: **đường TẠO LINK đã xong và đang chạy thật trên production** (10/10/2026, chưa thông báo cho user). Đường **đối soát đơn đã làm** (2026-10-11, bấm tay — `.claude/rules/doi-soat-don-tiktok.md`) nhưng mới chạy trên 4 đơn chưa quyết toán: phần lớn rủi ro còn lại là những thứ CHƯA TỪNG QUAN SÁT.
 
 Quy ước trạng thái:
 - **CHỜ DỮ LIỆU** — chỉ thời gian mới giải được, không đọc thêm tài liệu nào ra.
@@ -54,22 +54,7 @@ nào không** — câu đó quyết định cách đọc `shared_with_partner` c
 
 Khi có, phải dựng bảng quyết định đủ ca **trước khi** viết nhánh import, không vừa viết vừa đoán.
 
-### 2. `time_delivered_iso` luôn `null` — cơ chế giam đơn không có mốc để đếm
-
-**Trạng thái: CHỜ DỮ LIỆU.**
-
-Field có trong schema nhưng cả 2 đơn đều `null`, kể cả đơn đã `To-SETTLE`. Đây chính là mốc mà
-`resolveAvailableFrom()` đếm 7 ngày từ đó (với Shopee là cột "Thời gian hoàn thành").
-
-Nếu nó không bao giờ được điền thì chỉ còn hai lối, **cả hai đều tệ**:
-
-- **Bỏ giam đơn cho TikTok** → một đơn to bị trả hàng là xoá sạch lợi nhuận tháng. Số liệu thật từ
-  báo cáo Shopee 01/10/2026: **2 trong 46 dòng chiếm 35,8% hoa hồng cả tháng**.
-- **Đếm từ `time_created`** → giam sớm hơn thực tế, và **không giải thích được cho user**: cả lập
-  luận trên trang `/so-tay` đang dựa vào "mốc 15 ngày của Shopee, user kiểm chứng được". Lấy ngày
-  đặt hàng làm mốc thì không tương ứng với quy định nào của TikTok cả.
-
-**Giải bằng**: đơn `586494603346282174` khi giao hàng xong. Vài ngày nữa.
+**Cập nhật 2026-10-11:** chủ bot chọn KHÔNG chờ — bảng quyết định đã dựng (spec `2026-10-11-doi-soat-don-tiktok-design.md` mục 5.3) và có test, nhưng **6 ca vẫn chưa quan sát lần nào**: `status=2`, `status=3`, `actual_commission` có giá trị, `status` lạ, đơn nhiều SKU, hoàn một phần cùng SKU (mục 5.8 của spec). Nhánh `reversed` dựng từ tài liệu + loại suy Shopee. Có một đèn báo rẻ cho ca cuối: dòng có `refunded_quantity > 0` mà `status ≠ 3` đẩy một dòng vào `errors`. **Lần huỷ/hoàn thật đầu tiên vẫn phải soi tay.**
 
 ### 3. `shared_with_partner` — MCN có thể giữ phần hoa hồng, và field này là sự thật cuối cùng
 
@@ -96,6 +81,8 @@ Hai hệ quả phải nhớ khi viết code:
   **cao hơn thực nhận**. Đúng hướng sai nguy hiểm mà Shopee đã dạy.
 
 **Việc phải làm**: đơn `SETTLED` đầu tiên — kiểm `shared_with_partner` **TRƯỚC MỌI THỨ KHÁC**.
+
+**Cập nhật 2026-10-11:** đã có cơ chế cảnh báo (`tiktok_mcn_cut` khi `shared_with_partner ≠ 0`; `tiktok_actual_below_assumed` khi `actual` thấp hơn số đã trả trừ biên 2%) và khối "Số liệu đã quyết toán" trên trang đồng bộ. **Còn CHỜ DỮ LIỆU: bản thân giá trị `shared_with_partner`/`pit`.** Giới hạn đã biết: cảnh báo nổ SAU khi tiền mấy đơn đầu đã trả user (đơn vào Khả dụng lúc giao hàng, quyết toán đến sau ~15 ngày) — nó chặn lỗ âm thầm kéo dài, không hoàn lại được tiền đã trả. Chủ bot chọn chỉ cảnh báo, không tự khoá đồng bộ.
 
 ### 4. Phụ thuộc runtime vào RioHub trên đường sống — ĐÃ CÓ SỰ CỐ THẬT, 2 lần trong 11 ngày
 
@@ -214,19 +201,6 @@ khi viết lớp tra hoa hồng.
 ⚠️ Thêm một chỗ tài liệu sai: `403` mà tài liệu mô tả ("creator không thuộc tài khoản của API key")
 **không tái hiện được** — creator của người khác cũng ra `404 not_found` y hệt creator không tồn tại.
 Không phân biệt được hai ca này từ phía client.
-
-> **Ghi chú kỹ thuật giữ lại từ mục 7 (đã xoá 2026-10-10)**: `sub3`/`sub4` của đơn không có subId là **chuỗi rỗng, không phải `null`** → phân biệt bằng `sub_id !== ""`, dùng `=== null` là sai. Cần đến khi viết đường đối soát đơn.
-
-### 8. Webhook — chưa verify một dòng nào
-
-**Trạng thái: CẦN QUYẾT ĐỊNH (chỉ khi chọn hướng webhook).**
-
-Thuật toán ký `X-Riohub-Signature`, trường nào được đưa vào chữ ký, hành vi retry (tối đa 6 lần,
-phải trả 2xx trong 5 giây) — **tất cả đều là chép từ tài liệu**, chưa chạm vào.
-
-Đánh đổi so với polling: webhook cần mở một route công khai nhận POST và verify chữ ký đúng; còn
-polling 20 phút/lần thì gần như không có gì để hỏng. Với quy mô hiện tại, polling nhiều khả năng là
-lựa chọn đúng — nhưng chưa quyết.
 
 ---
 

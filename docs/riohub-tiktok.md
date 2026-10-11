@@ -109,6 +109,8 @@ bot. Con số hiển thị vẫn nhất quán với nhau nên user không thấy
 **Hệ quả kỹ thuật tốt**: `computeCommissionBreakdown()` **giữ nguyên**, không cần nhánh riêng theo
 merchant, không cần đổi `taxPercent`. Đây là lý do chính của quyết định.
 
+**Cập nhật 2026-10-11 (đối soát đơn):** đầu vào của đường tiền KHÔNG phải `actual_commission` như bảng số trên giả định, mà là `est_commission × 0,9` (`TIKTOK_PIT_RETAINED_RATIO`, `src/core/tiktokCommission.ts`). Lý do: đơn vào Khả dụng lúc **giao hàng**, lúc đó chỉ có `est` (số thô, chưa trừ `pit`); `actual` phải chờ ~15 ngày. Kết quả cho user giống bảng trên (hoa hồng gốc 1.922đ thay vì 2.136đ ⇒ user nhận 1.370đ), nhưng nguồn số và lý do khác. Xem `.claude/rules/doi-soat-don-tiktok.md`.
+
 ## 1.4 Rút tiền phía user — không đổi gì cả
 
 User gửi link Shopee hay TikTok đều cộng vào **cùng một số dư**, rút ở **cùng `/d/:token`**, admin
@@ -642,12 +644,12 @@ TikTok đi qua `GET /orders`.
 `RETIRED_MERCHANTS` (`src/core/merchants.ts`).
 
 Nên khi đơn TikTok được ghi vào `commission_entries` với `merchant='tiktokshop'`, nó **tự động hiện**
-ở `/admin/dashboard`, `/admin/orders`, `/admin/links` và dashboard user. Việc cần làm:
+ở `/admin/dashboard`, `/admin/orders` và dashboard user (`/admin/links` đọc từ bảng `requests`, tức dữ liệu lúc tạo link). Trạng thái (2026-10-11):
 
-- chuyển `tiktokshop` từ `RETIRED_MERCHANTS` về `MERCHANTS`;
-- viết provider mới implement `AffiliateProvider`, đăng ký trong `src/core/providers/index.ts`;
-- thêm màu chip "TikTok Shop" trong `merchantChipClass()`;
-- `dashboardHtml.ts` hiện chỉ tô màu riêng cho `shopee`, merchant khác về màu trung tính — không vỡ.
+- ✅ `tiktokshop` về `MERCHANTS` khi `TIKTOK_ENABLED=true` (`buildMerchantRegistry`);
+- ✅ provider tạo link (`TiktokAffiliateProvider`);
+- ✅ **đối soát đơn**: `orderStatusApply` (dùng chung với Shopee) → `tiktokOrderImport` → nút "Đồng bộ ngay" ở `/admin/record-orders`;
+- `dashboardHtml.ts` chỉ tô màu riêng cho `shopee`, merchant khác về màu trung tính — không vỡ.
 
 ⚠️ Lưu ý `RETIRED_MERCHANTS` vẫn phải giữ Lazada: ledger thật còn entry `merchant='lazada'` và
 `getMerchantConfig()` phải trả được, thiếu là crash `/admin/orders` khi render đơn cũ.
@@ -700,17 +702,25 @@ Khi thêm một tham số mới, **luôn kiểm bằng giá trị mà kết qu�
 | 2026-10-10 | Gọi `/orders` thiếu tiền tố `/partner/tiktok/affiliate` | **`404 not_found`, dễ tưởng nhầm sai key** — đường đúng trả `401` khi key sai |
 | 2026-10-10 | **Đơn thật qua link BOT tạo** (`586502233699747518`) | ✅ `sub_id` 4 đoạn về NGUYÊN VẸN `k-9053348487804998642-mv16nixs-f85f8a`, `trace_type: SPECIFIC` → **rủi ro 7 đóng** |
 | 2026-10-10 | Đối chiếu ước tính bot hứa với `est_commission` thật | `est=2136đ` → thuế 10% → phí 1% → user 80% = **1.522đ**, khớp từng đồng câu bot đã gửi |
+| 2026-10-11 | `GET /orders` sau khi user đặt thêm đơn qua link bot | 4 đơn; **đơn thứ 2 từ link bot** (`…-mv19z39z-acc5c0`, `trace_type: SPECIFIC`) cũng về nguyên văn |
+| 2026-10-11 | Một đơn đã giao (`586474851567371966`, giao 10/10 07:49Z) | ✅ **`time_delivered_iso` có giá trị thật**, nhưng `status` vẫn `1`, `settlement_status` vẫn `To-SETTLE`, `actual/pit/shared_with_partner` vẫn `null` → giao hàng và có số thật cách nhau rất xa → chốt đơn theo mốc giao hàng, không chờ `SETTLED` |
+| 2026-10-11 | Đơn bot đầu tiên (`586502233699747518`) được giao 11/10 04:16:50Z | Vẫn `status=1`/`To-SETTLE` — đúng như đơn trên. Ledger sẽ ghi `pending` giam 1 ngày (đơn nhỏ) rồi vào Khả dụng ở lần đồng bộ kế tiếp |
+| 2026-10-11 | ⚠️ Hai đơn KHÔNG liên quan (bot + ngoài) cùng `time_delivered_iso = 04:16:50Z` đúng từng giây | Trông như thời điểm RioHub **phát hiện** giao hàng chứ không phải giờ giao thật của TikTok. Hướng sai an toàn: giam lâu hơn chút, không bao giờ sớm hơn. CHƯA khẳng định — cần thêm đơn để xem |
+| 2026-10-11 | Smoke `importTiktokOrders` trên JSON thật (DB bộ nhớ, không ghi gì) | Field thật khớp giả định (không thiếu field nào; tiền là string, `status` là number, `actual/pit/shared` là `null`). Đơn `…731` → hoa hồng gốc **2871** (3190×0,9), `…518` → **1922** (2136×0,9); giờ đặt đổi UTC→VN đúng (`08:47:28Z` → `15:47:28`) |
+| 2026-10-11 | Dựng xong đường đối soát đơn (bấm tay) | `orderStatusApply` → `tiktokOrderImport`; xem `.claude/rules/doi-soat-don-tiktok.md` |
 
 ## Việc còn treo
 
-- [ ] Đơn thật đi hết vòng đời → chốt `time_delivered_iso`, `pit`, `settlement_status`
+- [x] ~~`time_delivered_iso` có được điền không~~ ✅ 2026-10-11 (xem nhật ký — nhưng chú ý nghi vấn về nguồn của mốc đó)
+- [ ] `pit`, `shared_with_partner`, `actual_commission`, `status=2/3` — chờ đơn quyết toán đầu tiên
+- [ ] **Đối chiếu `TIKTOK_PIT_RETAINED_RATIO = 0,9` với `pit` thật** ngay khi đơn đầu tiên quyết toán (cảnh báo `tiktok_actual_below_assumed` là thứ bắt được lúc đó)
 - [x] ~~Đơn qua link **có sub_id** → chốt mắt xích link → đơn~~ ✅ 2026-10-09
 - [x] ~~Chạy lại với sub_id **4 đoạn** của bot qua một đơn thật~~ ✅ 2026-10-10 — đơn `586502233699747518`, sub_id về nguyên vẹn, ước tính khớp từng đồng
 - [ ] Xem `commission_bonus_rate` trên một đơn đã **`SETTLED`** (tại lúc tạo đơn thì đã đo: vẫn `0`)
 - [x] ~~Hỏi RioHub tên 3 miền dự phòng~~ ✅ 2026-10-09 (mục 2.1, kèm quy tắc failover phải bắt cả lỗi TLS)
 - [ ] Rotate API key trước khi lên production
-- [ ] Quyết định nhịp đồng bộ (tự động vs bấm tay) — trần kỹ thuật đã rõ: 15–30 phút/lần
-- [ ] Cân nhắc webhook thay polling; nếu dùng thì verify chữ ký `X-Riohub-Signature` (mục 2.2)
+- [x] ~~Quyết định nhịp đồng bộ~~ ✅ 2026-10-11: **bấm tay trước**, tự động sau khi bảng quyết định chạy đúng qua vài đơn thật (trần kỹ thuật: 15–30 phút/lần)
+- [x] ~~Cân nhắc webhook thay polling~~ ✅ 2026-10-11: chọn polling (webhook chưa verify chữ ký, nhiều thứ để hỏng hơn)
 - [ ] Tìm tên đúng của tham số lọc theo **ngày tạo** (`create_time_start` bị nuốt)
-- [ ] Quyết định mốc giam đơn nếu `time_delivered_iso` không bao giờ được điền
+- [x] ~~Mốc giam đơn nếu `time_delivered_iso` không được điền~~ ✅ 2026-10-11: field có giá trị; thiếu thì `resolveConfirmPlan()` lùi về hôm nay
 - [ ] Xem lại điều khoản trước 08/04/2027

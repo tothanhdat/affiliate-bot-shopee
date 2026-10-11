@@ -135,19 +135,19 @@ dạng dữ liệu khác hẳn, và mốc giao hàng thì Shopee không có tư�
 ```ts
 /** Một đơn có thể sinh HAI việc (huỷ yêu cầu rút *và* reverse) nên trả mảng. */
 export type OrderStatusOutcome =
-  | { kind: "confirmed-new"; entry: CommissionEntry; wasPending: boolean; held: boolean }
+  | { kind: "confirmed-new"; entry: CommissionEntry; wasPending: boolean; newOrder: boolean; held: boolean }
   | { kind: "confirmed-duplicate" }
-  | { kind: "small-hold-deferred" }
+  | { kind: "small-hold-deferred"; newOrder: boolean }
   | { kind: "pending-new" }
   | { kind: "pending-updated" }
-  | { kind: "reversed"; from: CommissionStatus }
+  | { kind: "reversed"; from: "pending" | "confirmed" }
   | { kind: "reversed-unseen" }
   | { kind: "debt-created"; platform: Platform; userId: string; orderId: string; amount: number }
   | {
       kind: "withdrawal-cancelled";
       platform: Platform;
       userId: string;
-      withdrawalId: number;
+      withdrawalId: string;
       amount: number;
       orderId: string;
     }
@@ -168,10 +168,12 @@ export interface OrderStatusApplyInput {
   completedAt: string | null;
   /** Câu ghi vào lịch sử khi reverse — mỗi sàn tự diễn đạt theo nhãn nguồn của nó. */
   reverseReason: string;
-  /** Ghi vào `note` của entry mới. Vd "Nhap tu bao cao Shopee (file CSV admin upload)". */
-  sourceNote: string;
-  /** Tên nguồn trong câu cảnh báo hoa hồng bị khoá. Vd "Bao cao Shopee" / "RioHub". */
+  /** `note` của entry mới, tách theo trạng thái vì hai nhánh từng ghi hai câu khác nhau. */
+  notes: { confirmed: string; pending: string };
+  /** Tên nguồn trong câu cảnh báo hoa hồng bị khoá. Vd "Shopee" / "RioHub". */
   sourceLabel: string;
+  /** Cụm "nguồn nói đơn đã hoàn tất" trong cảnh báo entry reversed. Vd 'Bao cao Shopee ghi "Hoan thanh"'. */
+  confirmedClaim: string;
 }
 
 export function applyOrderStatusToLedger(
@@ -503,6 +505,7 @@ hữu ích lâu dài chứ không chỉ một lần.
   `.claude/rules/admin-ui-nen-tang.md`: 3 màu có nghĩa trong khu `/admin` đã kín (cam = chờ xác
   nhận/lợi nhuận chủ bot, xanh lá = khả dụng, xanh dương = Zalo) — mở màu thứ tư là làm loãng nghĩa
   của chúng.
+- Lỗi kéo đơn (RioHub từ chối / không với tới) hiện trên chính thẻ TikTok qua `describeRiohubSyncError()`, phân biệt `401` (sai key) với `404` (sai đường dẫn — thiếu tiền tố `/partner/tiktok/affiliate`) và luôn nhắc "đơn Shopee không bị ảnh hưởng".
 - Tin **"đơn về"** cho user: dùng nguyên `buildOrdersConfirmedNotification()`, đơn TikTok vào **ảnh
   chung** với đơn Shopee. Đúng mục 1.4 của `docs/riohub-tiktok.md`: với user việc thêm TikTok là vô hình.
 - **KHÔNG** gửi tin vào group Zalo sau khi đồng bộ TikTok. Tin hằng ngày đó thuộc nhịp import Shopee
@@ -526,6 +529,8 @@ export interface TiktokOrderImportResult {
   skippedSubIdNotFound: number;
   skippedForeignMerchant: number;  // ◀ chốt cách ly (1), Shopee không có
   skippedUnknownStatus: number;
+  /** Đơn còn sống mà không dòng nào có est_commission — không có gì để ghi. */
+  skippedNoEstimate: number;
   smallHoldDeferred: number;
   heldCount: number;
   debtCreatedCount: number;
@@ -533,7 +538,7 @@ export interface TiktokOrderImportResult {
   cancelledWithdrawals: Array<{
     platform: Platform;
     userId: string;
-    withdrawalId: number;
+    withdrawalId: string;
     amount: number;
     orderId: string;
   }>;
@@ -553,6 +558,11 @@ export interface TiktokOrderImportResult {
     /** Muc 7.1b — so don co actual thap hon so da dung de tra user. > 0 la phai xem ngay. */
     shortfallCount: number;
   };
+  /**
+   * Cảnh báo cần đẩy cho admin qua notifyAdmin, ĐÃ GỘP theo key. Import trả về chứ không tự gửi (giữ
+   * `core` thuần); tầng route lọc qua `AlertThrottle`. Cùng nội dung cũng nằm trong `errors`.
+   */
+  alerts: Array<{ key: "tiktok_mcn_cut" | "tiktok_actual_below_assumed"; message: string }>;
   errors: string[];
 }
 ```

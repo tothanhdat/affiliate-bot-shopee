@@ -10,7 +10,7 @@ Bot nhận link sản phẩm Shopee qua **Telegram** và **Zalo** (tự động 
 
 Những điều đúng ở mọi nơi trong repo (chi tiết + lý do: `.claude/rules/quyet-dinh-san-pham.md`):
 
-- **Shopee là nguồn affiliate thật duy nhất**, đi qua cơ chế `an_redir` chính thức — KHÔNG cần Open API (Shopee đã từ chối cấp cho tài khoản cá nhân 2 lần, 2026-08-17 và 2026-09-30, đừng hỏi lại). TikTok Shop đang được tích hợp qua RioHub, xem `docs/riohub-tiktok.md`.
+- **Shopee là nguồn affiliate thật duy nhất**, đi qua cơ chế `an_redir` chính thức — KHÔNG cần Open API (Shopee đã từ chối cấp cho tài khoản cá nhân 2 lần, 2026-08-17 và 2026-09-30, đừng hỏi lại). TikTok Shop đã tích hợp qua RioHub (tạo link đã chạy thật; đối soát đơn: `.claude/rules/doi-soat-don-tiktok.md`), xem `docs/riohub-tiktok.md`.
 - **Tỉ lệ chia hoa hồng được CHỐT theo từng đơn** tại thời điểm ghi nhận (3 cột `*_percent` trong `commission_entries`). Đổi % ở `/admin/settings` **không** áp ngược cho đơn `pending` — đơn pending là đơn user ĐÃ MUA.
 - **Admin sửa được % hoa hồng, ngưỡng rút và toàn bộ template tin nhắn bot ngay tại runtime** qua `/admin/settings` (xem `SETTINGS_REGISTRY`); `.env` chỉ còn là giá trị khởi tạo/fallback.
 - **Giá trị đã lưu trong DB ĐÈ lên default trong code**: sửa default của template/FAQ rồi deploy là CHƯA XONG — phải vào `/admin/settings` của **từng instance** sửa tay. Đây là cái bẫy bị dính nhiều lần nhất.
@@ -43,6 +43,7 @@ src/core/                       logic nghiệp vụ, KHONG biet gi ve Telegram/H
   commissionLookup                                      -> tra-hoa-hong-truoc.md
   logStore                                              -> logstore.md
   shopeeReportImport                                    -> import-bao-cao-shopee.md
+  orderStatusApply tiktokOrderImport tiktokCommission   -> doi-soat-don-tiktok.md
   orderImage/ vietQr                                    -> anh-don-ve.md
   faq/                                                  -> faq-zalo-dm.md
   dashboardStats                                        -> admin-dashboard.md
@@ -84,6 +85,7 @@ src/index.ts  wiring + notifyUser/notifyAdmin/notifyZaloGroup -> server-va-wirin
 | `tra-hoa-hong-truoc.md` | Sửa `commissionLookup.ts` hoặc nguồn dữ liệu hoa hồng báo trước cho user |
 | `logstore.md` | Sửa `logStore.ts`, bảng `requests`/`short_links`, thống kê đọc từ DB log |
 | `import-bao-cao-shopee.md` | Sửa `shopeeReportImport.ts`, cách đọc cột báo cáo Shopee, bảng quyết định trạng thái đơn |
+| `doi-soat-don-tiktok.md` | Sửa `tiktokOrderImport.ts`, `tiktokCommission.ts`, `orderStatusApply.ts`, `riohubOrdersSource.ts`, nút đồng bộ đơn TikTok; đổi mốc chốt đơn hoặc cách tính hoa hồng TikTok |
 | `admin-ui-nen-tang.md` | **Trước khi sửa giao diện bất kỳ trang `/admin/*`** — 4 cái bẫy Tailwind không-preflight đã dính thật nằm ở đây |
 | `admin-ui-tung-trang.md` | Sửa `/admin/orders`, `/admin/users`, `/admin/withdrawals`, `/admin/record-orders`, `/admin/settings`, `/admin/links` |
 | `admin-dashboard.md` | Sửa `/admin/dashboard`, chart, màu trạng thái, `dashboardStats.ts`, công thức lợi nhuận chủ bot |
