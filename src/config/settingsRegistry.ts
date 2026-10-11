@@ -98,7 +98,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
     helpText:
-      "Dùng khi DM chào mừng bị Zalo từ chối vì user bật 'không nhận tin nhắn từ người lạ' — bot nhắn vào group và gửi luôn lời mời kết bạn. Placeholder hợp lệ: {{name}} (tên người mới, bot tự tag @, đừng tự thêm dấu @), {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay).",
+      "Dùng khi DM chào mừng bị Zalo từ chối vì user bật 'không nhận tin nhắn từ người lạ' — bot nhắn vào group và gửi luôn lời mời kết bạn. Placeholder hợp lệ: {{name}} (tên người mới, bot tự tag @, đừng tự thêm dấu @), {{handbookUrl}} (link trang Sổ tay hoàn tiền của bot, /so-tay) và {{san}} (danh sách sàn bot đang hỗ trợ, tự đổi theo cấu hình).",
   },
   {
     key: SETTINGS_KEYS.friendRequestMessage,

@@ -9,7 +9,8 @@ import { RateLimiter } from "../../../core/rateLimiter.js";
 import { MockAffiliateProvider } from "../../../core/providers/mockProvider.js";
 import { FaqService } from "../../../core/faq/faqService.js";
 import { GROUP_JOIN_WELCOME_TEMPLATE_DEFAULT } from "../../shared/replyText.js";
-import { faqAnswerKey } from "../../../core/settingsKeys.js";
+import { faqAnswerKey, SETTINGS_KEYS } from "../../../core/settingsKeys.js";
+import { supportedMerchantNames } from "../../../core/merchants.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -600,6 +601,30 @@ test("Zalo group join: DM bi chan -> chao bu trong group kem mention @ten nguoi 
     assert.equal(mentions[0].uid, "user-9");
     assert.equal(mentions[0].pos, body.indexOf("@Tô Diễm"));
     assert.equal(mentions[0].len, "@Tô Diễm".length);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group join: {{san}} dung TRUOC {{name}} trong template van tag dung vi tri @ten", async () => {
+  const { sent, ledgerStore, handleGroupEvent, setDirectMessageError, cleanup } = setup();
+  try {
+    // {{san}} sinh ra chuoi DAI HON placeholder, nam TRUOC ten: offset mention phai tinh SAU khi render.
+    ledgerStore.setSetting(
+      SETTINGS_KEYS.groupJoinBlockedReplyTemplate,
+      "Em hỗ trợ {{san}} nhé. Chào {{name}} nha."
+    );
+    setDirectMessageError(new Error(BLOCKED_ERROR_MESSAGE));
+
+    await handleGroupEvent(makeJoinEvent([{ id: "user-9", dName: "Tô Diễm" }]));
+
+    const body = bodyOf(sent[0]);
+    assert.ok(body.includes(supportedMerchantNames()), "{{san}} phai duoc thay");
+    assert.ok(!body.includes("{{"));
+    const mentions = (sent[0].payload as { mentions?: { pos: number; uid: string; len: number }[] }).mentions;
+    assert.ok(mentions !== undefined);
+    assert.equal(mentions[0].pos, body.indexOf("@Tô Diễm"));
+    assert.equal(body.slice(mentions[0].pos, mentions[0].pos + mentions[0].len), "@Tô Diễm");
   } finally {
     cleanup();
   }

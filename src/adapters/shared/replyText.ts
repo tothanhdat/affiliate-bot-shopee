@@ -437,7 +437,7 @@ export const GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT =
   `Bạn có thể xem qua Sổ tay hoàn tiền ở đây có ghi rõ chính sách và cách sử dụng nhen: {{handbookUrl}}`;
 
 export function formatGroupJoinBlockedGroupReply(template: string, name: string, handbookUrl: string): string {
-  return renderTemplate(template, { name, handbookUrl });
+  return renderTemplate(template, { name, handbookUrl, san: supportedMerchantNames() });
 }
 
 /**

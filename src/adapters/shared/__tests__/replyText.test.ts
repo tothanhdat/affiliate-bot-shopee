@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { supportedMerchantNames } from "../../../core/merchants.js";
 import {
   formatPayoutDebtNotice,
   PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
@@ -226,6 +227,26 @@ test("formatGroupJoinBlockedGroupReply: thay ca {{name}} lan {{handbookUrl}}", (
     "https://bot.example.com/so-tay"
   );
   assert.equal(body, "Chào @Tô Diễm, xem https://bot.example.com/so-tay nha.");
+});
+
+test("formatGroupJoinBlockedGroupReply: dien {{san}} theo danh sach san bot dang ho tro", () => {
+  const body = formatGroupJoinBlockedGroupReply(
+    "Chào {{name}}, em hỗ trợ {{san}} nha.",
+    "@Tô Diễm",
+    "https://bot.example.com/so-tay"
+  );
+  assert.equal(body, `Chào @Tô Diễm, em hỗ trợ ${supportedMerchantNames()} nha.`);
+  assert.ok(!body.includes("{{"), "khong duoc con placeholder chua thay the");
+});
+
+test("formatGroupJoinBlockedGroupReply: template cu KHONG co {{san}} chay y nhu cu", () => {
+  const body = formatGroupJoinBlockedGroupReply(
+    GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT,
+    "@Tô Diễm",
+    "https://bot.example.com/so-tay"
+  );
+  assert.ok(!body.includes("{{"));
+  assert.ok(!GROUP_JOIN_BLOCKED_REPLY_TEMPLATE_DEFAULT.includes("{{san}}"), "default KHONG duoc tu them {{san}}");
 });
 
 test("formatGroupJoinBlockedGroupReply: template default co {{name}} va link So tay", () => {
