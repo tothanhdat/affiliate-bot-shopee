@@ -62,7 +62,8 @@ test("uu tien observed_commission hon commission.rate", async () => {
   const out = await p.createAffiliateLink(BASE_INPUT);
   // 6,00% (observed) cua 5.000d (dau thap) = 300d, khong phai 5% = 250d
   assert.equal(out.commissionEstimate?.ratePercent, 6);
-  assert.equal(out.commissionEstimate?.estimatedAmount, 300);
+  // 0,9 = TIKTOK_PIT_RETAINED_RATIO (spec 2.2b)
+  assert.equal(out.commissionEstimate?.estimatedAmount, 270);
   assert.equal(out.productName, "Khan lau kinh");
 });
 
@@ -78,7 +79,8 @@ test("khong co observed_commission -> lui ve commission.rate", async () => {
   );
   const out = await p.createAffiliateLink(BASE_INPUT);
   assert.equal(out.commissionEstimate?.ratePercent, 12);
-  assert.equal(out.commissionEstimate?.estimatedAmount, 12000);
+  // 0,9 = TIKTOK_PIT_RETAINED_RATIO (spec 2.2b)
+  assert.equal(out.commissionEstimate?.estimatedAmount, 10800);
 });
 
 test("gia dang KHOANG -> lay dau THAP (hua it hon tra)", async () => {
@@ -89,7 +91,8 @@ test("gia dang KHOANG -> lay dau THAP (hua it hon tra)", async () => {
     })
   );
   const out = await p.createAffiliateLink(BASE_INPUT);
-  assert.equal(out.commissionEstimate?.estimatedAmount, 500);
+  // 0,9 = TIKTOK_PIT_RETAINED_RATIO (spec 2.2b)
+  assert.equal(out.commissionEstimate?.estimatedAmount, 450);
 });
 
 test("product_error co mat -> VAN tra link, chi bo phan uoc tinh", async () => {

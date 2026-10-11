@@ -6,6 +6,7 @@ import {
   type AppError,
 } from "../errors.js";
 import { getMerchantConfig, type MerchantId } from "../merchants.js";
+import { estimateTiktokNetCommission } from "../tiktokCommission.js";
 import type {
   AffiliateProvider,
   CommissionEstimate,
@@ -118,10 +119,11 @@ function estimateFrom(product: RiohubProduct | null | undefined): CommissionEsti
   if (price === null) return null;
 
   // TikTok KHONG co tran hoa hong nhu Shopee (40k) nen nhan tay la hop le - khac han quy tac cung
-  // cua Shopee la phai lay thang field `commission`.
+  // cua Shopee la phai lay thang field `commission`. Nhung price x rate la hoa hong THO (chua tru
+  // `pit` TikTok khau tru tai nguon) - phai qua estimateTiktokNetCommission de khop so ghi vao ledger.
   return {
     ratePercent,
-    estimatedAmount: Math.round((price * ratePercent) / 100),
+    estimatedAmount: estimateTiktokNetCommission((price * ratePercent) / 100),
     currency: "VND",
   };
 }
