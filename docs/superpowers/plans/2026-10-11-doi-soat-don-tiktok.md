@@ -1484,11 +1484,14 @@ test("don TO giao hom nay -> confirmed nhung bi giam 7 ngay (available_from), de
   }
 });
 
-test("status 2 (da quyet toan) KHONG co time_delivered -> van confirmed, completedAt null", () => {
-  const t = run([row({ status: 2, actual_commission: "2700.00" })]);
+test("status 2 (da quyet toan) KHONG co time_delivered -> van di nhanh confirmed, completedAt null", () => {
+  // Dung don TO: don nho khong biet ngay giao lui ve HOM NAY roi bi giu 1 ngay o pending (dung
+  // resolveConfirmPlan), nen khong thay duoc "confirmed" - khong phai loi.
+  const t = run([row({ status: 2, est_commission: "150000.00", commission_gmv: "3000000.00", actual_commission: "135000.00" })]);
   try {
     assert.equal(t.entry()?.status, "confirmed");
     assert.equal(t.entry()?.completedAt, null);
+    assert.equal(t.entry()?.availableFrom, addDaysToVnIso(TODAY, 7), "lui ve hom nay + 7 ngay giam don to");
   } finally {
     t.done();
   }
@@ -1518,7 +1521,7 @@ test("hoa hong ghi vao ledger KHONG doi khi don chuyen pending -> confirmed -> q
 
 test("don nhieu SKU: dong da huy (status 3) bi LOAI khoi tong tien; mergedMultiSku dem 1", () => {
   const t = run([
-    row({ sku_id: "S1", status: 2, est_commission: "1000.00", commission_gmv: "10000.00" }),
+    row({ sku_id: "S1", status: 2, est_commission: "1000.00", commission_gmv: "10000.00", time_delivered_iso: iso(2) }),
     row({ sku_id: "S2", status: 3, est_commission: "5000.00", commission_gmv: "50000.00" }),
   ]);
   try {
@@ -1712,7 +1715,7 @@ test("shared_with_partner khac 0 -> canh bao tiktok_mcn_cut, ghi ro ma don va he
     const mcn = t.result.alerts.filter((a) => a.key === "tiktok_mcn_cut");
     assert.equal(mcn.length, 1);
     assert.match(mcn[0].message, /O1/);
-    assert.match(mcn[0].message, /cao hơn thực nhận/);
+    assert.match(mcn[0].message, /CAO hơn thực nhận/);
     assert.ok(t.result.errors.some((e) => /tiktok_mcn_cut|MCN/.test(e)), "cung hien tren trang ket qua");
   } finally {
     t.done();
