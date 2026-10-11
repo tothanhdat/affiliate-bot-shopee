@@ -457,3 +457,63 @@ test("dashboard: cau no hoan tra khong goi ten san (no co the den tu don TikTok)
   assert.doesNotMatch(text, /Shopee thu lại/);
 });
 
+
+// 2026-10-11 (yeu cau truc tiep cua chu bot): hien nut "Rut tien" MO o moi trang thai CHUA du dieu kien
+// rut. CHI nut - tuyet doi khong hien form nhap STK. Trang thai "da gui yeu cau, dang cho Admin" va
+// "du dieu kien" KHONG co nut mo.
+const DISABLED_BTN = /<button type="button" class="withdraw-disabled" disabled aria-disabled="true">Rút tiền<\/button>/;
+
+function assertDisabledButtonOnly(html: string): void {
+  assert.match(html, DISABLED_BTN, "phai co nut Rut tien mo + disabled");
+  assert.ok(!html.includes('action="/d/tok/withdraw"'), "khong duoc co form rut tien");
+  assert.ok(!html.includes("bankAccountNumber"), "khong duoc hien cac truong ngan hang");
+}
+
+test("nut Rut tien mo: tien dang bi tam giu", () => {
+  assertDisabledButtonOnly(
+    render({
+      availableBalance: 0,
+      heldBalance: 25_000,
+      entries: [entry({ status: "confirmed", userShareAmount: 25_000 })],
+    })
+  );
+});
+
+test("nut Rut tien mo: tien dang cho san xac nhan", () => {
+  assertDisabledButtonOnly(render({ availableBalance: 0, entries: [entry({ userShareAmount: 48_114 })] }));
+});
+
+test("nut Rut tien mo: chua du nguong ('tich luy them')", () => {
+  assertDisabledButtonOnly(render({ availableBalance: 5_000, entries: [] }));
+});
+
+test("nut Rut tien mo: kha dung < no (no la moc chan, khong phai nguong)", () => {
+  assertDisabledButtonOnly(
+    render({
+      availableBalance: 30_000,
+      debtRemaining: 40_000,
+      entries: [entry({ status: "confirmed", userShareAmount: 30_000 })],
+    })
+  );
+});
+
+test("nut Rut tien: du dieu kien -> la FORM that, KHONG co nut mo", () => {
+  const html = render({ availableBalance: 30_000, entries: [entry({ status: "confirmed", userShareAmount: 30_000 })] });
+  assert.ok(html.includes('action="/d/tok/withdraw"'));
+  assert.doesNotMatch(html, /class="withdraw-disabled"/);
+});
+
+test("nut Rut tien: da gui yeu cau dang cho Admin -> KHONG co nut mo (giu nguyen nhu cu)", () => {
+  const html = render({
+    availableBalance: 0,
+    entries: [entry({ status: "confirmed" })],
+    pendingWithdrawal: withdrawal({ amount: 60_000 }),
+  });
+  assert.doesNotMatch(html, /class="withdraw-disabled"/);
+  assert.ok(!html.includes('action="/d/tok/withdraw"'));
+});
+
+test("nut Rut tien mo: nut nam NGOAI moi <form> (go disabled bang DevTools cung khong gui duoc gi)", () => {
+  const html = render({ availableBalance: 5_000, entries: [] });
+  assert.ok(!/<form[\s\S]*withdraw-disabled[\s\S]*<\/form>/.test(html));
+});

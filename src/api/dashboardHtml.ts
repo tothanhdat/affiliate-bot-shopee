@@ -315,6 +315,11 @@ function pageShell(title: string, body: string): string {
     box-shadow: 0 4px 14px oklch(0.75 0.13 300 / 0.35);
   }
   button:hover { filter: brightness(1.08); }
+  .withdraw-action { display: flex; justify-content: flex-end; margin-bottom: 1.25rem; }
+  button:disabled {
+    cursor: not-allowed; opacity: 0.55; box-shadow: none; filter: none;
+  }
+  button:disabled:hover { filter: none; }
 </style>
 </head>
 <body>
@@ -541,9 +546,12 @@ export function renderDashboardPage(input: {
       ? ` Admin sẽ trừ ${formatVnd(pending.debtApplied)} nợ hoàn trả và chuyển cho bạn <strong>${formatVnd(pending.amount)}</strong>.`
       : "";
 
+  // MOT bien duy nhat cho "da du dieu kien rut": form rut va nut mo ben duoi doc CUNG bien nay nen
+  // khong the lech nhau (co form thi khong co nut mo, va nguoc lai).
+  const meetsWithdrawTarget = input.availableBalance >= withdrawTargetVnd;
   const withdrawBlock = input.pendingWithdrawal
     ? notice(`Yêu cầu rút ${formatVnd(input.pendingWithdrawal.amount + input.pendingWithdrawal.debtApplied)} đang chờ xử lý (gửi lúc ${formatDateTime(input.pendingWithdrawal.createdAt)}) tới tài khoản ${escapeHtml(input.pendingWithdrawal.bankAccountNumber)} - ${escapeHtml(input.pendingWithdrawal.bankAccountHolder)} (${escapeHtml(input.pendingWithdrawal.bankName)}).${pendingDebtLine} Thông tin này sẽ được Admin xác nhận lại qua tin nhắn riêng. Vui lòng chờ Admin liên hệ bạn.`, "i")
-    : input.availableBalance >= withdrawTargetVnd
+    : meetsWithdrawTarget
       ? `<form method="POST" action="/d/${input.token}/withdraw" class="withdraw-form" ${confirmOnSubmit(withdrawConfirmText)}>
   ${debtDeductionNote}
   <div class="form-field">
@@ -592,6 +600,16 @@ export function renderDashboardPage(input: {
               debtIsBinding ? "." : ` (tối thiểu ${formatVnd(input.thresholdVnd)}).`
             }`
           );
+
+  // (2026-10-11, yeu cau chu bot) Nut "Rut tien" MO o 3 trang thai chua du dieu kien (tam giu / cho san
+  // xac nhan / chua du nguong). CHI nut, khong form, KHONG nam trong <form> nao nen khong co duong gui.
+  // Ly do chua rut duoc nam trong o thong bao ngay phia tren (khong nhet vao title: dien thoai khong
+  // hover duoc). Backend khong doi: POST /d/:token/withdraw van tu chan o ledger.
+  // "Da gui yeu cau, dang cho Admin" KHONG co nut mo - user o do DU dieu kien, chi la da gui roi.
+  const disabledWithdrawAction =
+    !input.pendingWithdrawal && !meetsWithdrawTarget
+      ? `<div class="withdraw-action"><button type="button" class="withdraw-disabled" disabled aria-disabled="true">Rút tiền</button></div>`
+      : "";
 
   const platformLabel = PLATFORM_LABELS[input.platform];
   const identityLine = input.displayName
@@ -665,6 +683,7 @@ ${settledNotice}
 ${debtNotice}
 ${reversalWarning}
 ${withdrawBlock}
+${disabledWithdrawAction}
 ${table}`;
 
   return pageShell("Hoa hồng của bạn", body);
