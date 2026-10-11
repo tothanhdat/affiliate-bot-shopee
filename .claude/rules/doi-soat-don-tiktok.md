@@ -34,6 +34,12 @@ Admin bấm "Đồng bộ ngay" (thẻ ở `/admin/record-orders`) → `fetchTik
 - **Nhãn ngắn cho admin**: `getMerchantAdminName()` ("TikTok") dùng ở chip sàn `/admin/orders` + `/admin/links`, ô lọc "Sàn", trang huỷ đơn/sửa hoa hồng, nhãn lịch sử. **Tên đầy đủ `displayName` ("TikTok Shop") GIỮ NGUYÊN cho mọi thứ user đọc** (tin nhắn bot, `{{san}}`, dashboard cá nhân `/d/…`) — đổi `displayName` gốc sẽ làm bot nói "Shopee và TikTok" với khách. Thêm sàn mới: chỉ cần `adminName` nếu tên đầy đủ dài.
 - Nhãn tab là `<a>` nên phải có `no-underline` (không nạp preflight, thẻ `<a>` giữ gạch chân mặc định — đúng bẫy trong `admin-ui-nen-tang.md`).
 
+## Thông tin do chủ bot cung cấp (2026-10-11), chưa đối chiếu với TikTok
+
+- Cửa sổ trả hàng của TikTok Shop là **10 ngày** (Shopee 15). Đã ghi vào Sổ tay và helpText của `payout_hold_days`. Số `payout_hold_days` mặc định 7 ngày vẫn áp cho cả hai sàn.
+- Điều kiện được ghi nhận hoa hồng của TikTok **giống Shopee** (đặt hàng trong phiên, không xem video/livestream xen giữa).
+- Lịch vận hành: đồng bộ TikTok **9h30 mỗi ngày giống nhịp import Shopee** (bấm tay, cùng trang `/admin/record-orders`). Với user, Sổ tay ghi "Mỗi ngày" cho cả hai sàn.
+
 ## Bẫy đã biết
 
 - `sub_id` rỗng là chuỗi `""`, không phải `null`.

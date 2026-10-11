@@ -1,4 +1,5 @@
 import { computeCommissionBreakdown } from "../core/commissionMath.js";
+import { MERCHANTS, supportedMerchantNames, type MerchantConfig } from "../core/merchants.js";
 import { formatVnd } from "./htmlHelpers.js";
 
 /**
@@ -29,6 +30,19 @@ export interface HandbookPageData {
    */
   payoutHoldThresholdVnd: number;
   payoutHoldDays: number;
+  /**
+   * Cac san DANG ho tro (2026-10-11). Bo trong = MERCHANTS (theo TIKTOK_ENABLED luc khoi dong) - cung
+   * nguon voi {{san}} trong tin nhan bot, nen bat TikTok o Railway thi bot VA So tay cung bat noi
+   * "co TikTok" mot luc: deploy code khong tu thong bao TikTok voi user. Test truyen tuong minh de
+   * khong phu thuoc env cua may chay.
+   */
+  merchants?: readonly MerchantConfig[];
+}
+
+/** Ten cac san + co co TikTok khong - dung o buildSections() va renderHandbookPage(). */
+function merchantView(data: HandbookPageData): { hasTiktok: boolean; san: string } {
+  const merchants = data.merchants ?? MERCHANTS;
+  return { hasTiktok: merchants.some((m) => m.id === "tiktokshop"), san: supportedMerchantNames(merchants) };
 }
 
 interface HandbookItem {
@@ -84,6 +98,7 @@ function kvRow(label: string, value: string, tone = ""): string {
 }
 
 function buildSections(data: HandbookPageData): HandbookSection[] {
+  const { hasTiktok, san } = merchantView(data);
   const botSharePercent = 100 - data.userSharePercent;
   const example = computeCommissionBreakdown({
     commissionAmount: HANDBOOK_EXAMPLE_COMMISSION_VND,
@@ -131,7 +146,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
               )}</strong> trở lên sẽ được giữ thêm <strong>${
                 data.payoutHoldDays
               } ngày</strong> kể từ ngày bạn nhận hàng, rồi mới chuyển sang "Khả dụng".</li>
-              <li>Lí do: Shopee cho phép trả hàng trong 15 ngày kể từ khi giao thành công. Nếu đơn bị trả lại sau khi tiền đã chuyển đi thì khoản đó phải thu lại — giữ thêm vài ngày giúp phát hiện sớm và không ai phải nợ ai.</li>
+              <li>Lí do: Shopee cho phép trả hàng trong 15 ngày kể từ khi giao thành công${hasTiktok ? " (TikTok Shop là 10 ngày)" : ""}. Nếu đơn bị trả lại sau khi tiền đã chuyển đi thì khoản đó phải thu lại — giữ thêm vài ngày giúp phát hiện sớm và không ai phải nợ ai.</li>
               <li>Đơn nhỏ hơn mức trên không bị giữ theo luật này.</li>
               <li>Dashboard hiện dòng "Đang tạm giữ" kèm ngày mở khoá của từng đơn, và mỗi đơn như vậy cũng mang nhãn "Đang tạm giữ" thay vì "Khả dụng".</li>
             </ul>`,
@@ -146,11 +161,11 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
       title: "Các bước sử dụng",
       lead: `
         <ol class="steps">
-          <li class="step-card" ${searchAttr("Bước 1 Sao chép link sản phẩm Shopee chia sẻ")}>
+          <li class="step-card" ${searchAttr(`Bước 1 Sao chép link sản phẩm ${san} chia sẻ`)}>
             <div class="step-num">1</div>
             <div class="step-body">
               <h3>Sao chép link sản phẩm</h3>
-              <p>Mở app Shopee, tìm sản phẩm bạn muốn mua, bấm "Chia sẻ" và sao chép link sản phẩm.</p>
+              <p>Mở app ${hasTiktok ? "Shopee hoặc TikTok Shop" : "Shopee"}, tìm sản phẩm bạn muốn mua, bấm "Chia sẻ" và sao chép link sản phẩm.</p>
             </div>
           </li>
           <li class="step-card" ${searchAttr("Bước 2 Dán link vào group Zalo Telegram nhiều link cùng lúc 5 link")}>
@@ -172,7 +187,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
             </div>
           </li>
           <li class="step-card" ${searchAttr(
-            "Bước 4 Theo dõi nhận tiền hoàn xemhh dashboard số dư khả dụng rút tiền Shopee mỗi ngày"
+            `Bước 4 Theo dõi nhận tiền hoàn xemhh dashboard số dư khả dụng rút tiền ${san} mỗi ngày`
           )}>
             <div class="step-num">4</div>
             <div class="step-body">
@@ -180,7 +195,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
               <p>Nhắn <strong>"xemhh"</strong> (không phân biệt hoa/thường) trong tin nhắn riêng (DM) cho bot — không phải trong group — để lấy link dashboard cá nhân. Link này cố định, lưu lại dùng dần không cần nhắn lại nhiều lần.</p>
               <p>Trên dashboard bạn xem được: số dư khả dụng, số đang chờ xác nhận, số đang chờ rút, số đã nhận, và danh sách chi tiết từng đơn hàng.</p>
               <p>Khi có đơn được xác nhận <strong>Hoàn thành</strong>, bot sẽ tự động nhắn tin riêng báo cho bạn — bạn không cần chủ động hỏi. Khi số dư "Khả dụng" đạt từ ${threshold} trở lên, bạn có thể bấm yêu cầu rút toàn bộ ngay trên dashboard.</p>
-              <p class="muted-note"><strong>Tần suất cập nhật trạng thái đơn:</strong> Shopee cập nhật <strong>mỗi ngày</strong>, nên đơn mới đặt thường cần vài ngày mới đổi trạng thái.</p>
+              <p class="muted-note"><strong>Tần suất cập nhật trạng thái đơn:</strong> ${hasTiktok ? "Shopee và TikTok Shop đều cập nhật" : "Shopee cập nhật"} <strong>mỗi ngày</strong>, nên đơn mới đặt thường cần vài ngày mới đổi trạng thái.</p>
             </div>
           </li>
         </ol>`,
@@ -194,14 +209,19 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         {
           id: "san-ho-tro",
           title: "Sàn được hỗ trợ",
-          body: `<p>Shopee.</p>`,
+          body: `<p>${san}.</p>`,
         },
         {
           id: "dinh-dang-link",
           title: "Định dạng link nhận được",
           body: `
             <ul>
-              <li><strong>Shopee:</strong> link đầy đủ hoặc link rút gọn (vn.shp.ee, s.shopee.vn...)</li>
+              <li><strong>Shopee:</strong> link đầy đủ hoặc link rút gọn (vn.shp.ee, s.shopee.vn...)</li>${
+                hasTiktok
+                  ? `
+              <li><strong>TikTok Shop:</strong> link sản phẩm chia sẻ từ app, dạng https://www.tiktok.com/t/ZSbtw5xxx/</li>`
+                  : ""
+              }
               <li>Lưu ý bot chỉ nhận đúng link sản phẩm, không nhận link video (sv.shopee.vn)</li>
             </ul>`,
         },
@@ -210,7 +230,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
           title: "Tần suất cập nhật trạng thái đơn",
           body: `
             <div class="kv-list">
-              ${kvRow("Shopee", "Mỗi ngày")}
+              ${kvRow("Shopee", "Mỗi ngày")}${hasTiktok ? kvRow("TikTok Shop", "Mỗi ngày") : ""}
             </div>
             <p>Đơn mới đặt vẫn cần vài ngày mới hiện và đổi trạng thái — không cần sốt ruột kiểm tra dashboard liên tục.</p>`,
         },
@@ -257,7 +277,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
             <ul class="check-list">
               <li>Phải bấm đúng link bot trả về và đặt hàng ngay trong phiên đó.</li>
               <li>Không mở thêm video/livestream của sản phẩm đó trước khi đặt hàng.</li>
-              <li>Không tự mua qua link của chính mình để "rút tiền mặt" hoa hồng — hầu hết chính sách affiliate (kể cả Shopee) cấm hoặc không tính hoa hồng cho hành vi tự mua hàng của chính mình.</li>
+              <li>Không tự mua qua link của chính mình để "rút tiền mặt" hoa hồng — hầu hết chính sách affiliate (kể cả ${san}) cấm hoặc không tính hoa hồng cho hành vi tự mua hàng của chính mình.</li>
             </ul>`,
         },
         {
@@ -278,7 +298,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
           title: "Nếu bạn trả hàng sau khi đã nhận tiền",
           body: `
             <ul>
-              <li>Khi bạn trả hàng, Shopee thu lại hoa hồng của đơn đó — kể cả khi tiền đã được chuyển cho bạn rồi.</li>
+              <li>Khi bạn trả hàng, ${hasTiktok ? "sàn" : "Shopee"} thu lại hoa hồng của đơn đó — kể cả khi tiền đã được chuyển cho bạn rồi.</li>
               <li>Khoản đó được ghi thành <strong>nợ hoàn trả</strong>, tách riêng khỏi số dư "Khả dụng" của bạn. Bạn <strong>không phải chuyển tiền lại</strong> cho bot.</li>
               <li>Nợ chỉ được trừ <strong>khi bạn gửi yêu cầu rút tiền lần sau</strong>: Admin trừ nợ rồi chuyển cho bạn phần còn lại.</li>
               <li>Khi đang nợ, bạn rút được khi số dư "Khả dụng" <strong>ít nhất bằng số nợ</strong>. Dashboard sẽ báo bạn cần tích luỹ thêm bao nhiêu.</li>
@@ -375,6 +395,7 @@ const SEARCH_SCRIPT = `
 `;
 
 export function renderHandbookPage(data: HandbookPageData): string {
+  const { san } = merchantView(data);
   const sections = buildSections(data);
   const threshold = formatVnd(data.withdrawalThresholdVnd);
 
@@ -661,7 +682,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
 <div class="page-content">
   <header class="hero">
     <h1>Sổ tay hoàn tiền</h1>
-    <p class="subtitle">Hướng dẫn dành cho bạn khi dùng bot săn sale hoàn tiền (cashback) trong group Zalo/Telegram khi mua hàng qua Shopee.</p>
+    <p class="subtitle">Hướng dẫn dành cho bạn khi dùng bot săn sale hoàn tiền (cashback) trong group Zalo/Telegram khi mua hàng qua ${san}.</p>
     <div class="chips">
       <div class="chip">
         <div class="chip-label">Bạn nhận</div>
@@ -673,7 +694,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
       </div>
       <div class="chip chip-plain">
         <div class="chip-label">Sàn hỗ trợ</div>
-        <div class="chip-value">Shopee</div>
+        <div class="chip-value">${san}</div>
       </div>
     </div>
   </header>

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HANDBOOK_EXAMPLE_COMMISSION_VND, renderHandbookPage } from "../handbookHtml.js";
 import { computeCommissionBreakdown } from "../../core/commissionMath.js";
+import { buildMerchantRegistry } from "../../core/merchants.js";
 import { formatVnd } from "../htmlHelpers.js";
 
 /**
@@ -89,11 +90,44 @@ test("handbook: vi du voi bo % mac dinh ra dung con so cua ban Google Docs cu", 
   }
 });
 
-test("handbook: khong nhac den san da ngung (Lazada, TikTok Shop)", () => {
-  const html = render();
+test("handbook: TikTok TAT -> khong con dau vet nao cua TikTok, va Lazada thi KHONG BAO GIO co", () => {
+  // Registry truyen tuong minh: ket qua khong phu thuoc TIKTOK_ENABLED cua may chay test.
+  const html = renderHandbookPage({ ...DEFAULTS, merchants: buildMerchantRegistry({ tiktokEnabled: false }).active });
 
   assert.ok(!/lazada/i.test(html), "Lazada da duoc go khoi So tay (quyet dinh 2026-09-28)");
-  assert.ok(!/tiktok/i.test(html), "TikTok Shop da duoc go khoi So tay (quyet dinh 2026-09-29)");
+  assert.ok(!/tiktok/i.test(html), "chua bat TikTok thi So tay khong duoc noi gi ve TikTok (chua thong bao cho user)");
+  // Hanh vi cu giu nguyen khi TikTok tat.
+  assert.match(html, /Shopee thu lại hoa hồng/);
+  assert.match(html, /Shopee cho phép trả hàng trong 15 ngày/);
+});
+
+test("handbook: TikTok BAT -> So tay noi ro san ho tro, cua so tra hang 10 ngay, link vi du, tan suat", () => {
+  const html = renderHandbookPage({ ...DEFAULTS, merchants: buildMerchantRegistry({ tiktokEnabled: true }).active });
+
+  assert.ok(!/lazada/i.test(html));
+  assert.match(html, /Shopee và TikTok Shop/, "o 'San ho tro' + muc 'San duoc ho tro' + dong gioi thieu");
+  assert.match(html, /<p>Shopee và TikTok Shop\.<\/p>/, "muc 'San duoc ho tro'");
+  assert.match(html, /Shopee cho phép trả hàng trong 15 ngày/);
+  assert.match(html, /TikTok Shop là 10 ngày/, "cua so tra hang TikTok 10 ngay (chu bot cung cap 2026-10-11)");
+  assert.ok(html.includes("https://www.tiktok.com/t/ZSbtw5xxx/"), "link vi du TikTok do chu bot chot");
+  assert.match(html, /TikTok Shop<\/(span|div|dt|td|strong)>[\s\S]{0,80}Mỗi ngày/, "tan suat cap nhat TikTok = moi ngay, giong Shopee");
+  assert.match(html, /Mở app Shopee hoặc TikTok Shop/);
+  assert.doesNotMatch(html, /Shopee thu lại hoa hồng/, "khi co nhieu san thi noi chung la 'san thu lai'");
+  assert.match(html, /sàn thu lại hoa hồng/);
+});
+
+test("handbook: TikTok BAT -> o tim kiem cung tim ra muc TikTok (data-search)", () => {
+  const html = renderHandbookPage({ ...DEFAULTS, merchants: buildMerchantRegistry({ tiktokEnabled: true }).active });
+  assert.match(html, /data-search="[^"]*tiktok/i);
+});
+
+test("handbook: TikTok BAT nhung nguong giam don to = 0 -> van an ca muc giam (khong noi luat khong ap dung)", () => {
+  const html = renderHandbookPage({
+    ...DEFAULTS,
+    payoutHoldThresholdVnd: 0,
+    merchants: buildMerchantRegistry({ tiktokEnabled: true }).active,
+  });
+  assert.doesNotMatch(html, /cửa sổ|trả hàng trong 15 ngày/);
 });
 
 test("handbook: co du 3 phan chinh cua ban goc", () => {
