@@ -2,6 +2,7 @@ import { env } from "./config/env.js";
 import { createServer } from "./api/server.js";
 import { createTelegramBot } from "./adapters/telegram/bot.js";
 import { createZaloGroupBot, type ZaloGroupBot } from "./adapters/zalo/bot.js";
+import { createTiktokOrdersFetcher } from "./core/providers/riohubOrdersSource.js";
 import { AdminSessionStore } from "./core/adminAuth.js";
 import { LedgerStore } from "./core/ledgerStore.js";
 import { LogStore } from "./core/logStore.js";
@@ -165,6 +166,10 @@ const syncZaloGroupMembers = async (groupId: string): Promise<void> => {
   await zaloBot.syncGroupMembers(groupId);
 };
 
+// 2026-10-11: dong bo don TikTok qua RioHub. null (TikTok tat / thieu key) -> undefined -> the va route
+// khong ton tai. Cung dieu kien voi createTiktokProvider() nen hai duong TikTok bat/tat CUNG NHAU.
+const syncTiktokOrders = createTiktokOrdersFetcher(env.tiktok) ?? undefined;
+
 const app = createServer(
   resolver,
   logStore,
@@ -185,7 +190,8 @@ const app = createServer(
   notifyUser,
   notifyZaloGroup,
   env.orderImage.enabled,
-  syncZaloGroupMembers
+  syncZaloGroupMembers,
+  syncTiktokOrders
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);

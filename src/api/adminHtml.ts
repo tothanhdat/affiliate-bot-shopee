@@ -5,6 +5,7 @@ import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import { vietQrImageUrl } from "../core/vietQr.js";
 import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
+import type { TiktokOrderImportResult } from "../core/tiktokOrderImport.js";
 import type { UserCommissionOverride } from "../core/userCommissionOverride.js";
 import { SETTINGS_REGISTRY, type SettingFieldConfig } from "../config/settingsRegistry.js";
 import { SETTINGS_KEYS } from "../core/settingsKeys.js";
@@ -2318,7 +2319,17 @@ export interface SingleOrderFormResult {
 const ACTION_TYPE_LABELS: Record<ImportHistoryEntry["actionType"], string> = {
   csv: "Import CSV (báo cáo Shopee)",
   single: "Ghi 1 đơn lẻ (form)",
+  tiktok: "Đồng bộ đơn TikTok Shop",
 };
+
+/**
+ * Trang thai cua the "Dong bo don TikTok Shop". CO mat (khac undefined) = TikTok dang bat va the duoc
+ * ve; undefined = TikTok tat, the KHONG ton tai (chot cach ly 3, spec 6).
+ */
+export interface TiktokCardState {
+  result?: TiktokOrderImportResult | null;
+  error?: string | null;
+}
 
 export function renderRecordOrdersPage(
   history: ImportHistoryEntry[],
@@ -2326,7 +2337,9 @@ export function renderRecordOrdersPage(
   shopeeReportResult?: ShopeeReportImportResult | null,
   shopeeReportError?: string | null,
   /** So yeu cau rut dang cho - chi de hien badge tren muc nav, xem adminShell(). */
-  pendingWithdrawals?: number
+  pendingWithdrawals?: number,
+  /** The "Dong bo don TikTok Shop" - co mat = TikTok dang bat; undefined = the KHONG ton tai. */
+  tiktok?: TiktokCardState
 ): string {
   // Banner thanh cong/loi - cung mot kieu dang dung o withdrawals/orders (vien+nen nhat theo mau,
   // chu dam mau). KHONG dung lai .success/.error cua CSS cu: 2 class do khong co trong .card moi
@@ -2508,6 +2521,86 @@ export function renderRecordOrdersPage(
   </div>
 </div>`;
 
+  // ---- The "Dong bo don TikTok Shop" (spec muc 8). Chi ve khi `tiktok` co mat.
+  const textRow = (label: string, value: string): string =>
+    `<div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+      <dt class="text-slate-500">${label}</dt>
+      <dd class="font-semibold tabular-nums text-slate-800">${escapeHtml(value)}</dd>
+    </div>`;
+
+  const tiktokToast = tiktok?.result
+    ? successToast(
+        tiktok.result.newOrderIds.length > 0 || tiktok.result.statusTransitions.length > 0
+          ? `Đồng bộ thành công: ${tiktok.result.newOrderIds.length} đơn mới, ${tiktok.result.statusTransitions.length} đơn cập nhật trạng thái.`
+          : "Đồng bộ hoàn tất: không có đơn nào thay đổi."
+      )
+    : "";
+
+  const tiktokErrorBlock = tiktok?.error ? banner("error", tiktok.error) : "";
+
+  const tiktokResultBlock = tiktok?.result
+    ? (() => {
+        const r = tiktok.result;
+        const s = r.settledTotals;
+        const money = (v: number | null): string => (v === null ? "—" : formatVnd(v));
+        return `<div class="mt-4 border-t border-slate-100 pt-4">
+    <dl class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+      ${statRow("Số đơn quét được", r.ordersScanned)}
+      ${statRow(`Ghi mới "Khả dụng" (trùng bỏ qua ${r.confirmedDuplicate})`, r.confirmedNew)}
+      ${statRow(`Ghi mới "Chờ xác nhận" (cập nhật lại ${r.pendingUpdated})`, r.pendingNew)}
+      ${statRow(`Đơn nhỏ đang chờ vào "Khả dụng"`, r.smallHoldDeferred)}
+      ${statRow("Đã huỷ / hoàn", r.reversedCount)}
+      ${statRow("Đơn nhiều SKU đã gộp", r.mergedMultiSku)}
+      ${statRow("Bỏ qua - không có sub_id", r.skippedNoSubId)}
+      ${statRow("Bỏ qua - sub_id không khớp user", r.skippedSubIdNotFound)}
+      ${statRow("Bỏ qua - sub_id của sàn khác", r.skippedForeignMerchant)}
+      ${statRow("Bỏ qua - trạng thái lạ", r.skippedUnknownStatus)}
+      ${statRow("Bỏ qua - không có est_commission", r.skippedNoEstimate)}
+    </dl>
+    <h3 class="mt-4 text-xs font-bold text-slate-900">Số liệu đã quyết toán</h3>
+    <p class="mb-2 text-[11px] text-slate-500">Chỉ để đối chiếu — không tham gia tính tiền. Chưa có đơn quyết toán thì hiện —.</p>
+    <dl class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+      ${statRow("Đơn đã quyết toán", s.orderCount)}
+      ${textRow("Tổng ước tính (est)", formatVnd(s.estTotal))}
+      ${textRow("Tổng thực nhận (actual)", money(s.actualTotal))}
+      ${textRow("Thuế pit TikTok khấu trừ", money(s.pitTotal))}
+      ${textRow("MCN giữ (shared_with_partner)", money(s.sharedWithPartnerTotal))}
+      ${statRow("Đơn thực nhận THẤP hơn số đã trả", s.shortfallCount)}
+    </dl>${
+      r.errors.length > 0
+        ? `
+    <ul class="mt-3 max-h-40 list-none space-y-1 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+      ${r.errors.map((e) => `<li class="whitespace-pre-line">• ${escapeHtml(e)}</li>`).join("\n")}
+    </ul>`
+        : ""
+    }
+  </div>`;
+      })()
+    : "";
+
+  const tiktokCard = tiktok
+    ? `<div class="mb-6 rounded-xl border border-slate-200/80 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">T</div>
+      <div>
+        <h2 class="text-sm font-bold text-slate-900">Đồng bộ đơn TikTok Shop</h2>
+        <span class="text-[11px] text-slate-500">Kéo đơn từ RioHub — đơn đã giao vào Khả dụng, áp luật giam như Shopee</span>
+      </div>
+    </div>
+    <form method="POST" action="/admin/record-orders/tiktok-sync" ${confirmOnSubmit(
+      "Đồng bộ đơn TikTok Shop từ RioHub? Sẽ ghi nhận/cập nhật đơn vào hệ thống."
+    )}>
+      <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
+        ${icon("refresh-cw", "h-4 w-4")} Đồng bộ ngay
+      </button>
+    </form>
+  </div>
+  ${tiktokErrorBlock}
+  ${tiktokResultBlock}
+</div>`
+    : "";
+
   // Nhan "Loai" cua 1 lan ghi nhan: cam (Shopee) cho import CSV, trung tinh cho form don le - dung
   // CUNG cap mau da dung lam chip merchant Shopee o /admin/orders (xem merchantChipClass), vi day
   // van la "lien quan Shopee" chu khong phai mot nghia mau moi.
@@ -2639,12 +2732,13 @@ export function renderRecordOrdersPage(
   </span>
 </div>`;
 
-  const body = `${shopeeReportToast}
+  const body = `${shopeeReportToast}${tiktokToast}
 ${supportBadge}
 <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
   ${singleCard}
   ${shopeeReportCard}
 </div>
+${tiktokCard}
 ${historyCard}
 ${pageScript}`;
 

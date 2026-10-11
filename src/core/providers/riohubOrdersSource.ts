@@ -10,7 +10,7 @@
  * MOI so voi cac trang truoc, khong thi nem loi.
  */
 import type { RiohubOrderRecord } from "../tiktokOrderImport.js";
-import { RIOHUB_TIKTOK_PATH_PREFIX, RiohubClient } from "./riohubClient.js";
+import { RIOHUB_TIKTOK_PATH_PREFIX, RiohubApiError, RiohubClient, RiohubUnreachableError } from "./riohubClient.js";
 
 const ORDERS_PATH = `${RIOHUB_TIKTOK_PATH_PREFIX}/orders`;
 const PAGE_SIZE = 200;
@@ -73,4 +73,25 @@ export function createTiktokOrdersFetcher(cfg: {
   if (!cfg.enabled || cfg.apiKey === "" || cfg.creatorUsername === "") return null;
   const client = new RiohubClient({ apiKey: cfg.apiKey, baseUrls: cfg.baseUrls, timeoutMs: cfg.timeoutMs });
   return () => fetchTiktokOrders(client, cfg.creatorUsername);
+}
+
+/**
+ * Cau bao loi cho ADMIN khi keo don that bai. Tach 404 va 401 vi nhin giong nhau ma nguyen nhan khac
+ * han: 404 = sai DUONG DAN (thieu tien to /partner/tiktok/affiliate), 401 = sai KEY (da dinh that 2026-10-10).
+ * Luon nhac Shopee khong bi anh huong - day la thong diep cach ly cho nguoi dang hoang.
+ */
+export function describeRiohubSyncError(err: unknown): string {
+  if (err instanceof RiohubApiError) {
+    const hint =
+      err.httpStatus === 401
+        ? " — API key sai hoặc hết hạn."
+        : err.httpStatus === 404
+          ? " — sai đường dẫn endpoint, KHÔNG phải sai key."
+          : ".";
+    return `RioHub từ chối: HTTP ${err.httpStatus} ${err.code}${hint} Đơn Shopee không bị ảnh hưởng.`;
+  }
+  if (err instanceof RiohubUnreachableError) {
+    return "Không với tới được RioHub ở cả 3 tên miền — thử lại sau vài phút. Đơn Shopee không bị ảnh hưởng.";
+  }
+  return `Lỗi khi đồng bộ đơn TikTok: ${(err as Error).message} Đơn Shopee không bị ảnh hưởng.`;
 }

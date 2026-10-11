@@ -259,7 +259,7 @@ export interface DashboardToken {
  * khong bao gio co statusTransitions vi recordSingleOrder chi INSERT, khong UPDATE entry
  * co san). Xem LedgerStore.recordImportHistory()/listImportHistory().
  */
-export type ImportActionType = "csv" | "single";
+export type ImportActionType = "csv" | "single" | "tiktok";
 
 /** 1 don doi trang thai trong 1 lan import (vd pending -> confirmed) - CHI ghi khi trang thai THAT SU doi, khong ghi khi chi cap nhat lai so lieu (updatePendingEntry, van giu nguyen "pending"). */
 export interface StatusTransition {

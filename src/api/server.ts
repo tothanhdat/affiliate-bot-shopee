@@ -10,6 +10,7 @@ import {
   renderEditCommissionPage,
   renderOrdersPage,
   renderRecordOrdersPage,
+  type TiktokCardState,
   renderReverseConfirmPage,
   renderSettingsPage,
   renderUserCommissionPage,
@@ -32,9 +33,13 @@ import {
   recordSingleOrder,
   type RecordOrderConfig,
   type RecordableOrderStatus,
+  type UserOrderSummary,
 } from "../core/orderIngest.js";
 import type { RateLimiter } from "../core/rateLimiter.js";
 import { importShopeeReport, type ShopeeReportImportResult } from "../core/shopeeReportImport.js";
+import { AlertThrottle } from "../core/alertThrottle.js";
+import { describeRiohubSyncError } from "../core/providers/riohubOrdersSource.js";
+import { importTiktokOrders, type RiohubOrderRecord, type TiktokOrderImportResult } from "../core/tiktokOrderImport.js";
 import type { CommissionStatus, Platform, RequestOutcome } from "../core/types.js";
 import type { NotifyUser } from "../core/notification.js";
 import { buildOrdersConfirmedNotification } from "../core/orderImage/ordersConfirmedNotification.js";
@@ -142,6 +147,13 @@ const proofUpload = multer({
  */
 const adminAssetsDir = resolve(process.cwd(), "public");
 
+/** Phan cua ket qua dong bo don (Shopee hoac TikTok) can de gui thong bao cho user - xem notifyImportOutcomes. */
+interface ImportOutcomesToNotify {
+  confirmedByUser: UserOrderSummary[];
+  debtsByUser: Array<{ platform: Platform; userId: string; orderId: string; amount: number }>;
+  cancelledWithdrawals: Array<{ platform: Platform; userId: string; withdrawalId: string; amount: number; orderId: string }>;
+}
+
 export function createServer(
   resolver: LinkResolverService,
   logStore: LogStore,
@@ -170,7 +182,12 @@ export function createServer(
    * vao, tro vao ZaloGroupBot.syncGroupMembers(). undefined khi ZALO_GROUP_ENABLED=false: luc do
    * khong co bot nao de hoi, roster se duoc dong bo o lan dang nhap ke tiep.
    */
-  syncZaloGroupMembers?: (groupId: string) => Promise<void>
+  syncZaloGroupMembers?: (groupId: string) => Promise<void>,
+  /**
+   * Keo toan bo don TikTok tu RioHub (2026-10-11). undefined khi TikTok tat/thieu cau hinh: luc do the
+   * "Dong bo don TikTok" khong hien va route tra 404 - duong TikTok TRO HOAN TOAN (spec 6, chot 3).
+   */
+  syncTiktokOrders?: () => Promise<RiohubOrderRecord[]>
 ) {
   const app = express();
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
@@ -1029,7 +1046,7 @@ export function createServer(
   // record-shopee-report. Dung chung logic qua core/orderIngest.ts
   // de khong lap lai (tra subId -> platform/userId/merchant -> ledgerStore.recordConversion).
   app.get("/admin/record-orders", requireAdminAuth, (req: Request, res: Response) => {
-    res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, null, navPendingWithdrawals()));
+    res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, null, navPendingWithdrawals(), tiktokView()));
   });
 
   app.post("/admin/record-orders/single", requireAdminAuth, (req: Request, res: Response) => {
@@ -1051,24 +1068,15 @@ export function createServer(
           { ok: false, message: "Thiếu subId/orderId hoặc orderAmount/commissionAmount không phải số." },
           null,
           null,
-          navPendingWithdrawals()
+          navPendingWithdrawals(),
+          tiktokView()
         )
       );
       return;
     }
 
     try {
-      const requestOrderConfig = {
-        ...orderConfig,
-        userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
-        // Doc LUC XU LI chu khong dung gia tri env dong bang luc khoi dong: admin doi nguong/so ngay
-        // giam o /admin/settings phai co hieu luc ngay, khong can restart.
-        holdConfig: {
-          thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
-          holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
-          smallHoldDays: ledgerStore.getPayoutHoldSmallDays(orderConfig.holdConfig.smallHoldDays ?? 0),
-        },
-      };
+      const requestOrderConfig = currentOrderConfig();
       const entry = recordSingleOrder(logStore, ledgerStore, requestOrderConfig, {
         subId,
         orderId,
@@ -1135,12 +1143,13 @@ export function createServer(
           { ok: true, message: `Đã ghi nhận đơn "${entry.orderId}" (${statusLabel}) - ${amountHint}.` },
           null,
           null,
-          navPendingWithdrawals()
+          navPendingWithdrawals(),
+          tiktokView()
         )
       );
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res.status(422).type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }, null, null, navPendingWithdrawals()));
+      res.status(422).type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }, null, null, navPendingWithdrawals(), tiktokView()));
     }
   });
 
@@ -1165,6 +1174,165 @@ export function createServer(
     }
   }
 
+  /**
+   * Cau hinh ghi don DOC LUC XU LI (khong dung gia tri env dong bang luc khoi dong): admin doi
+   * %/nguong/so ngay giam o /admin/settings phai co hieu luc ngay, khong can restart. Dung chung
+   * cho form don le, import Shopee va dong bo TikTok - moi noi tu dung rieng thi se co noi quen
+   * truyen smallHoldDays.
+   */
+  function currentOrderConfig(): RecordOrderConfig {
+    return {
+      ...orderConfig,
+      userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
+      // Doc LUC XU LI chu khong dung gia tri env dong bang luc khoi dong: admin doi nguong/so ngay
+      // giam o /admin/settings phai co hieu luc ngay, khong can restart.
+      holdConfig: {
+        thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
+        holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
+        smallHoldDays: ledgerStore.getPayoutHoldSmallDays(orderConfig.holdConfig.smallHoldDays ?? 0),
+      },
+    };
+  }
+
+  /**
+   * Thong bao sau khi mot lan dong bo ghi don xong: DM 'don ve' gop theo user, thong bao no hoan tra,
+   * thong bao yeu cau rut bi tu huy. Dung CHUNG cho import Shopee va dong bo TikTok - cung mot cau
+   * cho cung mot su kien. KHONG gui vao group Zalo: tin hang ngay thuoc nhip import Shopee 9h30.
+   */
+  function notifyImportOutcomes(result: ImportOutcomesToNotify): void {
+    for (const summary of result.confirmedByUser) {
+      const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
+      const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
+      const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
+      const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(
+        ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT
+      );
+      // So du doc SAU khi importShopeeReport da ghi xong - doc truoc thi anh bao thieu dung
+      // cac don vua import.
+      const held = heldInBatch(
+        summary.platform,
+        summary.userId,
+        new Set(summary.items.map((i) => i.orderId))
+      );
+      // No DOC LAP voi lo don nay - co the den tu mot ma don KHAC trong CUNG lan import nay, hoac tu
+      // mot lan import TRUOC do. Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan.
+      const debtVnd = ledgerStore.getOutstandingDebtTotal(summary.platform, summary.userId);
+      buildOrdersConfirmedNotification({
+        items: summary.items,
+        availableVnd: ledgerStore.getAvailableBalance(summary.platform, summary.userId),
+        withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+        heldVnd: held?.amountVnd ?? 0,
+        heldUnlockDayText: held?.unlockDayText ?? null,
+        debtVnd,
+        fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl, held, debtVnd),
+        captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
+        imageEnabled: orderImageEnabled,
+      })
+        .then((notification) => notifyUser(summary.platform, summary.userId, notification))
+        .catch((notifyErr) => {
+          console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
+        });
+    }
+
+    // Don bi tra hang SAU KHI da tra tien -> no hoan tra. Gui 1 lan cho moi don (bang payout_debts
+    // co UNIQUE(merchant, order_id) nen import lai cung bao cao khong sinh no moi -> khong DM lai).
+    // Best-effort: loi gui khong duoc lam fail response upload, no da ghi trong DB roi.
+    const debtNoticeTemplate = ledgerStore.getPayoutDebtNoticeTemplate(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT);
+    for (const debt of result.debtsByUser) {
+      const { token } = ledgerStore.findOrCreateDashboardToken(debt.platform, debt.userId);
+      notifyUser(debt.platform, debt.userId, {
+        text: formatPayoutDebtNotice(debtNoticeTemplate, {
+          orderId: debt.orderId,
+          amount: debt.amount,
+          dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
+        }),
+      }).catch((notifyErr) => {
+        console.warn("[user-notify] gui thong bao don bi tra hang that bai:", notifyErr);
+      });
+    }
+    // Yeu cau rut BI TU DONG HUY vi mot don trong do bao "Da huy" (2026-10-08, yeu cau truc tiep
+    // cua user - DAO NGUOC quyet dinh brainstorm ban dau "canh bao admin, admin tu quyet"). Dung
+    // LAI dung template/ham da xay cho route huy THU CONG tren /admin/withdrawals (Task 7/12), chi
+    // khac nguon goc (import tu dong thay vi admin bam nut) - cung 1 cau cho user doc, khong tao
+    // thanh 2 kieu tin nhan rieng cho cung 1 su kien "yeu cau rut cua ban bi huy".
+    //
+    // RUI RO DA DUOC NGUOI DUNG CHAP NHAN (xem doc comment cua ShopeeReportImportResult.cancelledWithdrawals):
+    // neu admin DA chuyen khoan tay nhung CHUA bam "Danh dau da tra" truoc khi import nay chay, tien
+    // se bi tinh la "chua chuyen" va quay lai Kha dung cua user - khong co cach nao he thong tu phat
+    // hien duoc dieu nay.
+    const withdrawalCancelledTemplate = ledgerStore.getWithdrawalCancelledTemplate(
+      WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT
+    );
+    for (const cancelled of result.cancelledWithdrawals) {
+      const { token } = ledgerStore.findOrCreateDashboardToken(cancelled.platform, cancelled.userId);
+      notifyUser(cancelled.platform, cancelled.userId, {
+        text: formatWithdrawalCancelledReply(withdrawalCancelledTemplate, {
+          amount: cancelled.amount,
+          reason: "bạn có đơn hàng bị trả lại",
+          dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
+        }),
+      }).catch((notifyErr) => {
+        console.warn("[user-notify] gui thong bao tu dong huy yeu cau rut that bai:", notifyErr);
+      });
+    }
+  }
+
+  // Canh bao admin cua duong TikTok: gop theo key trong 15 phut (xem AlertThrottle). Tin DAU luon gui.
+  const tiktokAlertThrottle = new AlertThrottle(15 * 60 * 1000);
+
+  /** undefined khi TikTok tat → renderRecordOrdersPage khong ve the. */
+  function tiktokView(result: TiktokOrderImportResult | null = null, error: string | null = null): TiktokCardState | undefined {
+    return syncTiktokOrders ? { result, error } : undefined;
+  }
+
+  app.post("/admin/record-orders/tiktok-sync", requireAdminAuth, async (_req: Request, res: Response) => {
+    if (!syncTiktokOrders) {
+      res.status(404).type("text").send("TikTok chua duoc bat (TIKTOK_ENABLED, RIOHUB_API_KEY, RIOHUB_CREATOR_USERNAME).");
+      return;
+    }
+
+    let result: TiktokOrderImportResult;
+    try {
+      const orders = await syncTiktokOrders();
+      result = importTiktokOrders(logStore, ledgerStore, { recordOrderConfig: currentOrderConfig() }, orders);
+    } catch (err) {
+      console.warn("[tiktok-sync] dong bo don that bai:", err);
+      res
+        .status(502)
+        .type("html")
+        .send(
+          renderRecordOrdersPage(
+            ledgerStore.listImportHistory(20),
+            null,
+            null,
+            null,
+            navPendingWithdrawals(),
+            tiktokView(null, describeRiohubSyncError(err))
+          )
+        );
+      return;
+    }
+
+    notifyImportOutcomes(result);
+    for (const alert of result.alerts) {
+      if (tiktokAlertThrottle.shouldSend(alert.key)) {
+        notifyAdmin(alert.message).catch((alertErr) => {
+          console.warn("[tiktok-sync] gui canh bao admin that bai:", alertErr);
+        });
+      }
+    }
+    ledgerStore.recordImportHistory({
+      actionType: "tiktok",
+      newOrderIds: result.newOrderIds,
+      statusTransitions: result.statusTransitions,
+    });
+    res
+      .type("html")
+      .send(
+        renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, null, navPendingWithdrawals(), tiktokView(result))
+      );
+  });
+
   app.post(
     "/admin/record-orders/shopee-report",
     requireAdminAuth,
@@ -1175,103 +1343,19 @@ export function createServer(
           .status(422)
           .type("html")
           .send(
-            renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.", navPendingWithdrawals())
+            renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.", navPendingWithdrawals(), tiktokView())
           );
         return;
       }
 
-      const requestOrderConfig = {
-        ...orderConfig,
-        userSharePercent: ledgerStore.getUserSharePercent(orderConfig.userSharePercent),
-        // Doc LUC XU LI chu khong dung gia tri env dong bang luc khoi dong: admin doi nguong/so ngay
-        // giam o /admin/settings phai co hieu luc ngay, khong can restart.
-        holdConfig: {
-          thresholdVnd: ledgerStore.getPayoutHoldThresholdVnd(orderConfig.holdConfig.thresholdVnd),
-          holdDays: ledgerStore.getPayoutHoldDays(orderConfig.holdConfig.holdDays),
-          smallHoldDays: ledgerStore.getPayoutHoldSmallDays(orderConfig.holdConfig.smallHoldDays ?? 0),
-        },
-      };
+      const requestOrderConfig = currentOrderConfig();
       const result = importShopeeReport(
         logStore,
         ledgerStore,
         { recordOrderConfig: requestOrderConfig },
         req.file.buffer.toString("utf8")
       );
-      for (const summary of result.confirmedByUser) {
-        const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
-        const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
-        const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(
-          ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT
-        );
-        // So du doc SAU khi importShopeeReport da ghi xong - doc truoc thi anh bao thieu dung
-        // cac don vua import.
-        const held = heldInBatch(
-          summary.platform,
-          summary.userId,
-          new Set(summary.items.map((i) => i.orderId))
-        );
-        // No DOC LAP voi lo don nay - co the den tu mot ma don KHAC trong CUNG lan import nay, hoac tu
-        // mot lan import TRUOC do. Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan.
-        const debtVnd = ledgerStore.getOutstandingDebtTotal(summary.platform, summary.userId);
-        buildOrdersConfirmedNotification({
-          items: summary.items,
-          availableVnd: ledgerStore.getAvailableBalance(summary.platform, summary.userId),
-          withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
-          heldVnd: held?.amountVnd ?? 0,
-          heldUnlockDayText: held?.unlockDayText ?? null,
-          debtVnd,
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, summary.items, dashboardUrl, held, debtVnd),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
-          imageEnabled: orderImageEnabled,
-        })
-          .then((notification) => notifyUser(summary.platform, summary.userId, notification))
-          .catch((notifyErr) => {
-            console.warn("[user-notify] gui thong bao gop don moi (bao cao Shopee) that bai:", notifyErr);
-          });
-      }
-
-      // Don bi tra hang SAU KHI da tra tien -> no hoan tra. Gui 1 lan cho moi don (bang payout_debts
-      // co UNIQUE(merchant, order_id) nen import lai cung bao cao khong sinh no moi -> khong DM lai).
-      // Best-effort: loi gui khong duoc lam fail response upload, no da ghi trong DB roi.
-      const debtNoticeTemplate = ledgerStore.getPayoutDebtNoticeTemplate(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT);
-      for (const debt of result.debtsByUser) {
-        const { token } = ledgerStore.findOrCreateDashboardToken(debt.platform, debt.userId);
-        notifyUser(debt.platform, debt.userId, {
-          text: formatPayoutDebtNotice(debtNoticeTemplate, {
-            orderId: debt.orderId,
-            amount: debt.amount,
-            dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
-          }),
-        }).catch((notifyErr) => {
-          console.warn("[user-notify] gui thong bao don bi tra hang that bai:", notifyErr);
-        });
-      }
-      // Yeu cau rut BI TU DONG HUY vi mot don trong do bao "Da huy" (2026-10-08, yeu cau truc tiep
-      // cua user - DAO NGUOC quyet dinh brainstorm ban dau "canh bao admin, admin tu quyet"). Dung
-      // LAI dung template/ham da xay cho route huy THU CONG tren /admin/withdrawals (Task 7/12), chi
-      // khac nguon goc (import tu dong thay vi admin bam nut) - cung 1 cau cho user doc, khong tao
-      // thanh 2 kieu tin nhan rieng cho cung 1 su kien "yeu cau rut cua ban bi huy".
-      //
-      // RUI RO DA DUOC NGUOI DUNG CHAP NHAN (xem doc comment cua ShopeeReportImportResult.cancelledWithdrawals):
-      // neu admin DA chuyen khoan tay nhung CHUA bam "Danh dau da tra" truoc khi import nay chay, tien
-      // se bi tinh la "chua chuyen" va quay lai Kha dung cua user - khong co cach nao he thong tu phat
-      // hien duoc dieu nay.
-      const withdrawalCancelledTemplate = ledgerStore.getWithdrawalCancelledTemplate(
-        WITHDRAWAL_CANCELLED_TEMPLATE_DEFAULT
-      );
-      for (const cancelled of result.cancelledWithdrawals) {
-        const { token } = ledgerStore.findOrCreateDashboardToken(cancelled.platform, cancelled.userId);
-        notifyUser(cancelled.platform, cancelled.userId, {
-          text: formatWithdrawalCancelledReply(withdrawalCancelledTemplate, {
-            amount: cancelled.amount,
-            reason: "bạn có đơn hàng bị trả lại",
-            dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
-          }),
-        }).catch((notifyErr) => {
-          console.warn("[user-notify] gui thong bao tu dong huy yeu cau rut that bai:", notifyErr);
-        });
-      }
+      notifyImportOutcomes(result);
 
       // 2026-09-11 (yeu cau truc tiep cua user): bao CA GROUP biet du lieu hoa hong vua duoc cap nhat,
       // thay vi chi DM rieng tung user co don moi. Gui MOI lan import thanh cong - ke ca khi 0 don moi
@@ -1286,7 +1370,7 @@ export function createServer(
         newOrderIds: result.newOrderIds,
         statusTransitions: result.statusTransitions,
       });
-      res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result, null, navPendingWithdrawals()));
+      res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result, null, navPendingWithdrawals(), tiktokView()));
     }
   );
 
