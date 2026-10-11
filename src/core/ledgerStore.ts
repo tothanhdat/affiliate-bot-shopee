@@ -34,6 +34,7 @@ import { resolveConfirmPlan, type PayoutHoldConfig } from "./payoutHold.js";
 import { resolveUserSharePercent } from "./userCommissionOverride.js";
 import { todayVnIso } from "./vietnamDate.js";
 import type { UserCommissionOverride } from "./userCommissionOverride.js";
+import { entryItemsKey, type CommissionEntryItem, type EntryItemInput, type EntryItemStatus } from "./entryItems.js";
 
 /**
  * Bieu thuc SQL cho "ngay cua 1 don" theo gio VN. order_date da la ngay VN san (doc tu bao cao
@@ -363,6 +364,22 @@ export class LedgerStore {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_debts_order ON payout_debts(merchant, order_id);
       CREATE INDEX IF NOT EXISTS idx_payout_debts_user ON payout_debts(platform, user_id);
+
+      -- Chi tiet tung san pham cua don nhieu mon (2026-10-11), CHI de hien thi. Bang MOI nen khong can
+      -- migration. model_id nam trong khoa vi cung item_id khac model la 2 dong tinh tien rieng.
+      -- commission_amount la REAL va KHONG lam tron: cong cac mon lai phai ra dung so cua don.
+      CREATE TABLE IF NOT EXISTS commission_entry_items (
+        merchant TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        order_amount INTEGER NOT NULL,
+        commission_amount REAL NOT NULL,
+        row_status TEXT NOT NULL,
+        PRIMARY KEY (merchant, order_id, item_id, model_id)
+      );
 
       CREATE TABLE IF NOT EXISTS welcome_messages (
         platform TEXT NOT NULL,
@@ -1890,6 +1907,101 @@ export class LedgerStore {
    * Dung boi shopeeReportImport.ts de tim entry can cap nhat/reverse khi bao cao Shopee doi trang
    * thai cho 1 don da tung ghi nhan truoc do (khong biet truoc id noi bo, chi co orderId).
    */
+  /**
+   * Thay TOAN BO chi tiet san pham cua 1 don (2026-10-11): XOA roi chen lai trong 1 transaction.
+   * Khong dung upsert thuan vi bao cao Shopee liet ke lai ca lich su moi lan import: upsert chong duoc
+   * nhan doi nhung KHONG don duoc dong Shopee da bo khoi bao cao -> de lai "mon ma" trong don.
+   *
+   * 2 dong cung (item_id, model_id) trong 1 don (khac promotion, vd mua le + mua trong combo) duoc
+   * CONG DON thanh 1 mon: tong tien giu nguyen va khong vi pham khoa chinh. Trang thai KHONG huy
+   * thang trang thai huy, de mon con tien that khong bi gach ngang.
+   */
+  replaceEntryItems(merchant: MerchantId, orderId: string, items: readonly EntryItemInput[]): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(`DELETE FROM commission_entry_items WHERE merchant = ? AND order_id = ?`)
+        .run(merchant, orderId);
+      const insert = this.db.prepare(
+        `INSERT INTO commission_entry_items
+           (merchant, order_id, item_id, model_id, product_name, quantity, order_amount, commission_amount, row_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(merchant, order_id, item_id, model_id) DO UPDATE SET
+           quantity = quantity + excluded.quantity,
+           order_amount = order_amount + excluded.order_amount,
+           commission_amount = commission_amount + excluded.commission_amount,
+           row_status = CASE WHEN row_status = 'reversed' THEN excluded.row_status ELSE row_status END`
+      );
+      for (const it of items) {
+        insert.run(
+          merchant,
+          orderId,
+          it.itemId,
+          it.modelId,
+          it.productName,
+          it.quantity,
+          it.orderAmount,
+          it.commissionAmount,
+          it.rowStatus
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
+   * Chi tiet mon cua NHIEU don trong MOT query (khong N+1) - khoa Map la entryItemsKey(merchant,
+   * orderId). Don khong co chi tiet thi vang mat khoi Map. Thu tu mon = thu tu dong trong bao cao.
+   * Dung json_each (1 tham so) thay vi IN (?,?,...) de khong cham tran so tham so khi user co nhieu don.
+   */
+  listEntryItemsFor(
+    keys: ReadonlyArray<{ merchant: MerchantId; orderId: string }>
+  ): Map<string, CommissionEntryItem[]> {
+    const result = new Map<string, CommissionEntryItem[]>();
+    if (keys.length === 0) return result;
+    const rows = this.db
+      .prepare(
+        `SELECT merchant, order_id, item_id, model_id, product_name, quantity, order_amount,
+                commission_amount, row_status
+         FROM commission_entry_items
+         WHERE (merchant, order_id) IN (
+           SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)
+         )
+         ORDER BY rowid`
+      )
+      .all(JSON.stringify(keys.map((k) => [k.merchant, k.orderId]))) as unknown as Array<{
+      merchant: MerchantId;
+      order_id: string;
+      item_id: string;
+      model_id: string;
+      product_name: string;
+      quantity: number;
+      order_amount: number;
+      commission_amount: number;
+      row_status: EntryItemStatus;
+    }>;
+    for (const r of rows) {
+      const key = entryItemsKey(r.merchant, r.order_id);
+      const list = result.get(key) ?? [];
+      list.push({
+        merchant: r.merchant,
+        orderId: r.order_id,
+        itemId: r.item_id,
+        modelId: r.model_id,
+        productName: r.product_name,
+        quantity: r.quantity,
+        orderAmount: r.order_amount,
+        commissionAmount: r.commission_amount,
+        rowStatus: r.row_status,
+      });
+      result.set(key, list);
+    }
+    return result;
+  }
+
   getEntryByOrderId(merchant: MerchantId, orderId: string): CommissionEntry | null {
     const row = this.db
       .prepare(`SELECT * FROM commission_entries WHERE merchant = ? AND order_id = ?`)
