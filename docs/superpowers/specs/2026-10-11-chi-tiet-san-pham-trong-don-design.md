@@ -221,3 +221,11 @@ template cũ (không có `{{san}}`) chạy y như cũ.
 - `.claude/rules/admin-ui-tung-trang.md` — khối `<details>` trong ô "Sản phẩm" của `/admin/orders`.
 - `.claude/rules/trang-cho-user.md` — khối chi tiết món + nút rút tiền mờ.
 - `.claude/rules/settings-va-template.md` — `{{san}}` cho `groupJoinBlockedReplyTemplate`.
+
+## 13. Bổ sung khi lập kế hoạch (2026-10-11)
+
+Ba chỗ plan **tinh chỉnh/bổ sung** so với bản spec ở trên — ghi lại để spec không nói khác code:
+
+1. **Hai dòng cùng `(item_id, model_id)` trong một đơn được cộng dồn** thành một món (mục 4). Có trong dữ liệu thật: đơn `260923SDX2CYF2` có 3 dòng cùng `item_id`+`model_id`, khác promotion. Không xử lý thì vi phạm khoá chính và làm sập cả transaction.
+2. **Dashboard user chỉ hiện danh sách khi cộng lại KHỚP thẻ** (`entryItemsReconcile`), khác với `/admin/orders` luôn hiện kèm ghi chú (mục 6, 7). Spec ban đầu chỉ nói về ghi chú cho admin và bỏ sót trường hợp user xem một đơn đã bị admin khoá hoa hồng tay: lúc đó tổng các món lệch thẻ ngay trước mắt user và phá lời hứa "tự cộng lại ra đúng số".
+3. **Món mua thật hoa hồng 0đ hiện "(chưa có hoa hồng)"** ở cả hai trang — cách nói trung tính, vì từ báo cáo chỉ biết rate 0%, không biết lý do.

@@ -71,3 +71,9 @@ src/core/userCommissionOverride.ts (2026-10-01) % hoa hong RIENG tung user, co h
 ## vietnamDate.ts
 
 **src/core/vietnamDate.ts** — (2026-09-11) formatVnDateDdMm()/yesterdayVnDdMm() + formatVnDateIso()/todayVnIso() (them 2026-10-01, dang "YYYY-MM-DD" dung lam MOC SO SANH ngay cho han uu dai % rieng, khong phai de hien thi) — ngay thang gio VN (Asia/Ho_Chi_Minh) cho NOI DUNG TIN NHAN, khac htmlHelpers.ts (cung logic gio VN nhung nam trong src/api nen core khong import duoc). VN khong co DST nen "tru 24h roi format lai theo gio VN" luon ra dung ngay hom truoc, khong can lib timezone. Tach file rieng de test duoc cac moc de sai: nua dem gio VN KHONG phai nua dem UTC (lech +07), doi thang, doi nam.
+
+## commission_entry_items — chi tiết món của đơn nhiều món (2026-10-11)
+
+Bảng MỚI (không cần migration), **chỉ để hiển thị, không tham gia tính tiền**. Khoá `(merchant, order_id, item_id, model_id)` — `model_id` bắt buộc vì cùng `item_id` khác model là 2 dòng tính tiền riêng (đơn `2610109S28J4XY` có đúng ca này). `order_amount` = cột "Giá trị đơn hàng" của dòng (không phải giá niêm yết) để cộng các món lại ra đúng `orderAmount` của entry; `commission_amount` là `REAL`, **không làm tròn khi lưu** (Shopee trả lẻ tới phần nghìn: 4836,375) — làm tròn chỉ ở `formatVnd`.
+
+`replaceEntryItems()` = **XOÁ rồi chèn lại trong một transaction**, không upsert thuần: upsert chống nhân đôi nhưng không dọn được dòng Shopee đã bỏ khỏi báo cáo (để lại "món ma"). Hai dòng cùng `(item_id, model_id)` trong một đơn được CỘNG DỒN thành một món (tổng giữ nguyên); trạng thái không-huỷ thắng trạng thái huỷ. `listEntryItemsFor()` lấy nhiều đơn trong một query bằng `json_each` (không N+1, không chạm trần số tham số). `entryItemsReconcile()` (`src/core/entryItems.ts`) là điều kiện để hiện danh sách cho user: cộng các món (trừ món huỷ) phải khớp đúng `orderAmount` và `commissionAmount` của entry. `getUserSummary()` trả thêm `entryItems`.

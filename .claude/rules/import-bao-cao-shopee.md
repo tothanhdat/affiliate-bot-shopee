@@ -23,3 +23,14 @@
 ## csv.ts
 
 **src/scripts/csv.ts** — Parser CSV toi gian (khong dung lib ngoai) - parseCsv() dung boi shopeeReportImport.ts de doc file bao cao goc Shopee. DUNG XOA khi don dep CLI: ten file goi y no thuoc ve record-conversions-csv (da xoa) nhung that ra phuc vu duong Shopee.
+
+## Chi tiết từng sản phẩm của đơn nhiều món (2026-10-11)
+
+`mergeOrderRows` trả thêm `items` và `importShopeeReport` ghi chúng qua `ledgerStore.replaceEntryItems()` — **một lời gọi RIÊNG, không nằm trong `orderStatusApply.ts`** (module đó là đường quyết định tiền dùng chung với TikTok; đây là dữ liệu hiển thị thuần tuý, trộn vào là chạm cỗ máy nợ hoàn trả của cả hai sàn). Lỗi khi ghi chi tiết chỉ vào `result.errors` (`"Khong luu duoc chi tiet san pham"`), **không bao giờ chặn việc ghi tiền**.
+
+- **Quà tặng = cột `Giá(₫)` (giá niêm yết) bằng 0. KHÔNG lọc theo hoa hồng = 0.** Đo trên báo cáo 11/10/2026: 0 dòng nào giá 0 mà vẫn ra hoa hồng, nhưng có 3 món user **mua thật** (241k–316k) hoa hồng 0 vì ngành hàng 0% — lọc theo hoa hồng sẽ làm mất đúng những món đó. Cột `Giá(₫)` **vắng** (fixture/báo cáo cũ) ⇒ KHÔNG coi là quà tặng (sai theo hướng hiện nhiều hơn, không bao giờ ẩn món thật). Có test chặn cả hai chiều.
+- **Nhãn `(+N sản phẩm khác)` đếm cùng tiêu chí** (không tính quà tặng). Lệch tiêu chí thì hàng ghi "(+2)" mà mở ra chỉ có 1 món.
+- **Cột "Tổng hoa hồng đơn hàng" Shopee chỉ điền ở MỘT dòng của nhóm**, các dòng còn lại là 0; cột "Tổng hoa hồng sản phẩm" thì đủ ở mọi dòng. Đừng đọc nhầm "mua kèm không có hoa hồng". Đo: 160/160 đơn có Σ hoa hồng sản phẩm = hoa hồng đơn.
+- Dòng Sub_id rỗng/khác Sub_id đơn **không vào items** (hoa hồng gián tiếp của chủ bot, quyết định 2026-08-23 giữ nguyên). Dòng đã huỷ vào items với `rowStatus='reversed'` nhưng không cộng vào tổng đơn. Dòng không có `Item id` bị bỏ khỏi items (không có khoá).
+- **Backfill không có bước riêng**: Shopee liệt kê lại cả lịch sử ở mỗi lần import ⇒ lần import kế tiếp tự điền cho mọi đơn còn trong báo cáo. Đơn ghi tay qua form "Ghi 1 đơn lẻ" không có chi tiết ⇒ hiện như cũ.
+- **Chưa làm cho TikTok** — rule đối soát TikTok ghi "đơn nhiều SKU" chưa quan sát lần nào.
