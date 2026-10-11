@@ -24,22 +24,25 @@ ví CAST của RioHub (dòng tiền riêng, mục 1.3 của tài liệu).
 | # | Quyết định | Lý do |
 |---|---|---|
 | 2.1 | **Bấm tay trước, tự động sau** | Bảng quyết định trạng thái đang dựng trên 2 đơn / 1 trạng thái; vài lần đầu chủ bot phải tận mắt xem nó ghi gì |
-| 2.2 | **Đơn chờ ghi `est_commission`**, đơn quyết toán ghi `actual_commission` | Mỗi giai đoạn báo số thật nhất mà nguồn đang có, không bịa công thức. Chưa ai thấy giá trị `pit` thật nào nên trừ trước là trừ theo giả thiết |
+| 2.2 | **Đơn vào Khả dụng NGAY LÚC GIAO HÀNG**, không chờ RioHub quyết toán | `SETTLED` nằm sau cửa sổ trả hàng 15+ ngày — chờ nó là trải nghiệm rất tệ, user không đợi được. `payoutHold.ts` ghi rõ Shopee cũng bật "Hoàn thành" **ngay lúc giao hàng**, nên `time_delivered_iso` là mốc tương đương, không phải `SETTLED` |
+| 2.2b | **Hoa hồng gốc = `est_commission × 0,9`**, không sửa lại số sau khi đã chốt | Lúc giao hàng chỉ có `est` (số thô, chưa trừ thuế `pit`); `actual_commission` phải chờ ~15 ngày nữa. Hệ số 0,9 giữ đúng bài toán kinh tế 1.3b. Sửa số sau khi entry đã `confirmed` thì tiền user đã thấy và rút được → chạm vào cỗ máy nợ hoàn trả trên **mọi đơn** thay vì ca trả hàng hiếm: đánh đổi quá tệ |
 | 2.3 | **Tách lớp áp ledger dùng chung** với Shopee | Bản sao thứ hai của đường tiền là loại nợ kỹ thuật đắt nhất ở đây; chính đoạn đó lòi ra lỗ hổng nghiêm trọng 08/10/2026 |
 | 2.4 | **Cách ly Shopee ↔ TikTok là ràng buộc hạng nhất** | Yêu cầu trực tiếp của chủ bot: đồng bộ TikTok hỏng, hoặc bỏ hẳn TikTok sau này, đều **không được** ảnh hưởng Shopee |
 | 2.5 | `pit` **không** cảnh báo lặp, `shared_with_partner ≠ 0` **có** | `pit` khác 0 là chuyện đúng-như-dự-kiến vĩnh viễn; báo động nó mỗi ngày sẽ làm nhờn luôn cảnh báo thật |
 
-**Hệ quả đã được chấp nhận của 2.2 — ghi lại bằng số để sau không ai tưởng là bug.** `est_commission`
-là số **thô** (GMV × rate), `actual_commission` đã bị TikTok trừ thuế `pit`. Nên số user nhìn thấy sẽ
-**tụt ~10% đúng lúc đơn chuyển sang Khả dụng**:
+**Hệ quả của 2.2b — ghi lại bằng số để sau không ai tưởng là bug.** Trên đơn thật `est = 2.136đ`:
 
-| | Lúc "Chờ xác nhận" | Lúc vào "Khả dụng" |
-|---|---|---|
-| Nguồn | `est_commission` = 2.136đ | `actual_commission` ≈ 1.922đ |
-| User nhận (80% sau thuế/phí) | **1.522đ** | **1.370đ** |
+| | Hoa hồng gốc ghi vào ledger | User nhận | Chủ bot thực nhận | Chủ bot giữ lại |
+|---|---|---|---|---|
+| Phương án đã chọn (`est × 0,9`) | 1.922đ | **1.370đ** | ~1.922đ | **~552đ** |
+| Phương án đã loại (`est` thô) | 2.136đ | 1.522đ | ~1.922đ | ~400đ |
 
-Đổi lại: số lúc chờ **khớp với câu bot đã gửi** lúc trả link, nên user không thấy mâu thuẫn cho tới
-lúc chốt — đúng lúc hệ thống vốn đã hẹn *"số chốt theo giá thực trả"*.
+Phương án đã chọn giữ nguyên bài toán 1.3b. **Đánh đổi đã được chủ bot chấp nhận, và nó là chỗ căng
+nhất của spec này**: TikTok đã khấu trừ `pit` tại nguồn rồi hệ thống trừ 10% "thuế" lần nữa, nên
+`/so-tay` đang hứa user nhận 71,28% hoa hồng gốc mà user TikTok thực nhận 64,15%. Chính mục 1.3b đã
+ghi nhận chuyện này (*"nhãn thì không đúng bản chất"*) và chấp nhận, vì **mọi số user nhìn thấy đều
+suy ra từ `commission_amount` đã lưu nên không hề mâu thuẫn nhau** — user không có cách nào phát hiện.
+Muốn chuẩn hoá thì sửa câu chữ ở `/so-tay`, **không sửa phép tính**.
 
 Giữ nguyên từ spec trước (mục 1.3b của tài liệu): **TikTok vẫn trừ 10% thuế + 1% phí sàn như Shopee**,
 nên `computeCommissionBreakdown()` **không đổi một dòng**, không có nhánh riêng theo merchant.
@@ -211,7 +214,16 @@ thái khác"*. Rẽ nhánh theo nó là để một chuỗi lạ âm thầm rơi
 | `3` | huỷ / hoàn |
 | khác, hoặc thiếu | **lạ** |
 
-### 5.3 Trạng thái cả đơn
+### 5.3 Trạng thái cả đơn — mốc là GIAO HÀNG, không phải quyết toán
+
+Quyết định 2.2. `status` **một mình không đủ** để quyết định: `status=1` gồm cả đơn chưa giao lẫn đơn
+đã giao đang chờ TikTok quyết toán, mà hai ca đó phải đi hai đường khác nhau. Nên tín hiệu chuyển
+`confirmed` là **`time_delivered_iso !== null`**.
+
+Vì sao đó là mốc đúng chứ không phải mốc tiện: `payoutHold.ts` ghi rõ **Shopee bật "Hoàn thành" cho
+đơn affiliate ngay lúc giao hàng**, chứ không phải sau khi hết hạn trả hàng — cơ chế giam tồn tại
+chính vì thế. Nên `time_delivered_iso` của TikTok **tương đương** "Hoàn thành" của Shopee, còn `SETTLED`
+của RioHub là một mốc khác hẳn và muộn hơn nhiều.
 
 Theo đúng nguyên tắc *"chưa chắc chắn hết thì vẫn pending"* của `mergeOrderRows` bên Shopee:
 
@@ -219,25 +231,68 @@ Theo đúng nguyên tắc *"chưa chắc chắn hết thì vẫn pending"* của
 |---|---|---|
 | có **bất kỳ** dòng `status` lạ | **bỏ qua cả đơn** + cảnh báo | không đoán mò trên tiền — đúng `skippedUnknownStatus` của Shopee |
 | **tất cả** dòng = `3` | `reversed` | |
-| có **bất kỳ** dòng = `1` | `pending` | |
-| còn lại (toàn `2`, hoặc `2` lẫn `3`) | `confirmed` | dòng `3` bị **loại khỏi tổng tiền** (hoàn một phần) |
+| còn dòng không huỷ **chưa giao** và **chưa quyết toán** | `pending` | món cuối chưa về thì cả đơn chưa chắc |
+| còn lại (mọi dòng không huỷ đã giao, hoặc `status=2`) | **`confirmed`** | giam theo `time_delivered_iso`; dòng `3` bị **loại khỏi tổng tiền** (hoàn một phần) |
+
+`status=2` vẫn được nhận là `confirmed` **kể cả khi `time_delivered_iso` rỗng** — đã quyết toán là
+tín hiệu mạnh hơn đã giao, không có lý gì giữ lại. Lúc đó `completedAt` là `null` và
+`resolveConfirmPlan()` tự lùi về hôm nay.
+
+Luật giam dùng **nguyên** `resolveConfirmPlan()`, không sửa một dòng: đơn nhỏ nằm lại `pending` thêm
+`payout_hold_small_days` (mặc định 1) ngày, đơn to vào `confirmed` với `available_from` sau
+`payout_hold_days` (mặc định 7) ngày — cả hai đếm từ `completedAt`, y hệt Shopee.
 
 ### 5.4 Tiền
 
-- `confirmed` → cộng **`actual_commission`** của các dòng không huỷ.
+Hoa hồng gốc ghi vào ledger, **cho cả `pending` lẫn `confirmed`**:
 
-  > ⛔ **Lấy THẲNG field. Tuyệt đối không cộng lại từ 6 thành phần.** `actual_standard_commission` và
-  > `actual_bonus_commission` là số **gộp trước khi trừ**, nên cộng chúng vào là cộng ngược lại phần
-  > đã bị giữ ⇒ **trả thừa ~10 lần** (cảnh báo nguyên văn của nhà cung cấp). Cùng loại luật với
-  > "Shopee lấy thẳng field `commission`, không nhân `rate × price`".
+```
+commissionAmount = round( Σ est_commission(dòng không huỷ) × TIKTOK_PIT_RETAINED_RATIO )
+```
 
-- **Chốt an toàn**: nếu một dòng đáng tính mà `actual_commission` rỗng/`null` → **hạ cả đơn về
-  `pending`** (dùng `est_commission`) + cảnh báo. Confirm bằng con số mình không có là tệ hơn chờ
-  thêm một ngày.
-- `pending` → cộng `est_commission` của các dòng không huỷ (quyết định 2.2).
-- `orderAmount` → cộng `commission_gmv`.
+Một công thức duy nhất cho cả hai trạng thái — đó chính là điều làm **không cần sửa số sau khi chốt**
+(quyết định 2.2b). `actual_commission` **không** tham gia vào việc tính tiền ở bất cứ đâu; nó chỉ được
+đọc để **đối chiếu và cảnh báo** (mục 7).
+
+- `orderAmount` → cộng `commission_gmv` của các dòng không huỷ.
 - Tiền về dạng **string** trong JSON (giữ độ chính xác decimal) → parse qua một helper trả
   `number | null`; chuỗi rỗng và `null` đều ra `null`, **khác** số `0` (0 là giá trị thật).
+- `est_commission` rỗng ở **mọi** dòng không huỷ → bỏ qua cả đơn + cảnh báo (không có gì để ghi).
+
+> ⛔ **Nếu sau này có ai định dùng `actual_commission` để tính tiền: lấy THẲNG field, tuyệt đối không
+> cộng lại từ 6 thành phần.** `actual_standard_commission` và `actual_bonus_commission` là số **gộp
+> trước khi trừ**, nên cộng chúng vào là cộng ngược lại phần đã bị giữ ⇒ **trả thừa ~10 lần** (cảnh
+> báo nguyên văn của nhà cung cấp). Cùng loại luật với "Shopee lấy thẳng field `commission`, không
+> nhân `rate × price`".
+
+### 5.4b `TIKTOK_PIT_RETAINED_RATIO` — một hằng số, hai nơi dùng
+
+`src/core/tiktokCommission.ts` (mới, nhỏ, thuần):
+
+```ts
+/**
+ * Phan hoa hong con lai SAU khi TikTok khau tru thue TNCN tai nguon (field `pit`).
+ *
+ * 0,9 doc tu tai lieu RioHub ("10% phan HH chuan, ap cho ca creator thuong") - CHUA DO duoc tren
+ * don that nao vi ca 4 don hien co deu chua quyet toan. Doi so nay khi thay `pit` that: muc 7 cua
+ * spec co canh bao bat duoc dung luc do.
+ *
+ * Vi sao phai co: `est_commission` va `estimateFrom()` deu la so THO (GMV x rate), chua tru thue.
+ * Dua so tho vao duong tien la hua cao hon thuc nhan tren MOI don - dung cai bay Shopee da day.
+ */
+export const TIKTOK_PIT_RETAINED_RATIO = 0.9;
+
+export function estimateTiktokNetCommission(grossVnd: number): number;
+```
+
+**Hai nơi bắt buộc dùng, lệch nhau là bot nói sai:**
+
+1. `tiktokOrderImport.ts` — hoa hồng gốc ghi vào ledger (mục 5.4).
+2. `tiktokAffiliateProvider.ts` → `estimateFrom()` — câu ước tính bot gửi **lúc trả link**.
+
+Chỗ (2) là **sửa code đang chạy thật**: `estimateFrom()` hiện tính `price × ratePercent`, tức **cùng
+cơ sở thô với `est_commission`**. Để nguyên thì bot hứa 1.522đ mà đơn về 1.370đ — lệch ~11% trên mọi
+đơn, mãi mãi, và lệch về đúng phía nguy hiểm. Có **test chặn hai nơi cùng dùng một hằng số**.
 
 ### 5.5 Ngày
 
@@ -336,6 +391,34 @@ loại sai nguy hiểm mà Shopee đã dạy. Ví dụ trong chính tài liệu 
 Câu cảnh báo phải nói đủ ba thứ: mã đơn, số MCN giữ, và **hệ quả** ("ước tính báo cho user đang cao
 hơn thực nhận").
 
+### 7.1b Gác `actual` thấp hơn số đã trả — quyết định của chủ bot 2026-10-11
+
+`shared_with_partner ≠ 0` là tín hiệu **trực tiếp**, nhưng không phải đường duy nhất để lỗ: `pit` thật
+có thể khác 10%, hoặc `actual_creator_commission_reward_fee` lớn hơn dự kiến. Nên gác thêm bằng chính
+con số cuối cùng.
+
+Mỗi lần đồng bộ, với mọi đơn đã quyết toán (`actual_commission` có giá trị), so:
+
+```
+assumed = round( est_commission × TIKTOK_PIT_RETAINED_RATIO )   ◀ số ĐÃ dùng để trả user
+canh bao khi:  actual_commission < est_commission × (TIKTOK_PIT_RETAINED_RATIO − 0.02)
+```
+
+Biên `0.02` hấp thụ làm tròn và khoản `actual_creator_commission_reward_fee` nhỏ — thứ thật sự cần bắt
+(MCN giữ phần) lệch tới hàng **chục** phần trăm chứ không phải 2%.
+
+Cảnh báo admin qua `AlertThrottle` khoá `tiktok_actual_below_assumed`, kèm mã đơn, `est`, `assumed`,
+`actual`, và **hệ quả bằng số**: đã trả user bao nhiêu trên một đơn thực nhận bấy nhiêu.
+
+> **Hạn chế đã biết và đã chấp nhận**: quyết toán đến sau giao hàng ~15 ngày, mà giam chỉ 1–7 ngày —
+> nên lúc cảnh báo nổ thì tiền của mấy đơn đầu **đã trả user rồi, không lấy lại được**. Giá trị của
+> gác này là **chặn lỗ âm thầm kéo dài**: chủ bot biết để tắt TikTok sau vài đơn chứ không phải sau
+> vài tháng. Chủ bot đã chọn "chỉ cảnh báo", **không** tự động khoá đồng bộ — báo động sai mà tự khoá
+> thì tự làm hỏng dịch vụ đang chạy tốt. Với dung lượng hiện tại (hoa hồng 480–3.190đ/đơn) thiệt hại
+> tối đa của vài đơn là không đáng kể.
+
+Đây cũng là **cơ chế duy nhất** cho biết phải đổi `TIKTOK_PIT_RETAINED_RATIO` khi `pit` thật khác 10%.
+
 ### 7.2 `pit` → không cảnh báo lặp, hiện số trên trang kết quả
 
 `pit` được kỳ vọng khác 0 **vĩnh viễn** — tài liệu: *"10% phần HH chuẩn, áp cho cả creator thường"*.
@@ -401,13 +484,18 @@ export interface TiktokOrderImportResult {
   confirmedByUser: UserOrderSummary[];
   newOrderIds: string[];
   statusTransitions: StatusTransition[];
-  /** Mục 7.2 — null ở field nào nghĩa là chưa quan sát được giá trị nào. */
+  /**
+   * Muc 7.2 — CHI de doi chieu/canh bao, KHONG tham gia tinh tien.
+   * null o field nao nghia la chua quan sat duoc gia tri nao.
+   */
   settledTotals: {
     orderCount: number;
     estTotal: number;
-    actualTotal: number;
+    actualTotal: number | null;
     pitTotal: number | null;
     sharedWithPartnerTotal: number | null;
+    /** Muc 7.1b — so don co actual thap hon so da dung de tra user. > 0 la phai xem ngay. */
+    shortfallCount: number;
   };
   errors: string[];
 }
@@ -422,6 +510,8 @@ Baseline **947 pass / 0 fail** (mục 4.3).
 | `orderStatusApply.test.ts` | Test **trực tiếp** lớp vừa tách: đủ 5 ca huỷ, hoãn đơn nhỏ, duplicate, cảnh báo đơn bị khoá hoa hồng tay, `reversed-unseen` |
 | `tiktokOrderImport.test.ts` | Bảng quyết định 5.3, tiền 5.4, ngày 5.5, quy về user 5.6, gộp SKU 5.1 |
 | `tiktokOrderIsolation.test.ts` | Chốt cách ly (1): đơn TikTok mang `sub_id` của request Shopee → bỏ qua, ledger **không thêm dòng** |
+| `tiktokCommission.test.ts` | Mục 5.4b: `estimateTiktokNetCommission()` làm tròn, và **`estimateFrom()` dùng cùng hằng số** |
+| `vietnamDate.test.ts` (có sẵn) | Thêm ca cho `formatVnTimeHms()`: nửa đêm giờ VN ≠ nửa đêm UTC, đổi tháng, đổi năm |
 | Shopee (4 file hiện có) | Xanh **không sửa một dòng** |
 
 **Fixture**: nền là **4 đơn thật** đã lấy qua `npm run riohub:orders` (JSON thật, gồm 2 đơn từ link bot
@@ -429,7 +519,10 @@ và 1 đơn đã giao có `time_delivered_iso`). Các trạng thái ở 5.8 ph�
 có comment ghi rõ `"dựng từ tài liệu, chưa quan sát"`**, để sau không ai đọc nó như bằng chứng.
 
 Hai chỗ phải có test chặn vì sai là sai tiền:
-- `actual_commission` rỗng ở đơn `status=2` → **hạ về `pending`**, không confirm bằng `est`.
+- Đơn **đã giao mà chưa quyết toán** → vẫn `confirmed` (không chờ `actual_commission`). Đây là test
+  chặn quan trọng nhất của mục 5.3: viết sai là user phải đợi 15 ngày.
+- **Hai nơi dùng `TIKTOK_PIT_RETAINED_RATIO` phải ra cùng một số** cho cùng một hoa hồng gốc —
+  `estimateFrom()` (câu bot gửi) và `importTiktokOrders()` (số ghi ledger). Lệch là bot nói sai.
 - Tiền parse từ **string**: `""` và `null` → `null`; `"0"` và `"0.00"` → số `0` (giá trị thật).
 
 ## 11. Tài liệu phải cập nhật trong cùng đợt
@@ -439,7 +532,9 @@ Theo quy ước `CLAUDE.md`: `.claude/rules/` là nguồn duy nhất cho chi ti�
 - **Mới**: `.claude/rules/doi-soat-don-tiktok.md` + thêm dòng vào bảng tra của `CLAUDE.md`.
 - `.claude/rules/import-bao-cao-shopee.md`: ghi rõ phần áp ledger đã chuyển sang `orderStatusApply.ts`.
 - `docs/riohub-tiktok.md`: nhật ký verify (`time_delivered_iso` đã có giá trị thật 10/10), mục 2.9,
-  danh sách "Việc còn treo".
+  danh sách "Việc còn treo". **Mục 1.3b phải ghi thêm**: đầu vào đường tiền là `est_commission × 0,9`
+  chứ không phải `actual_commission` như bảng số của 1.3b giả định — kết quả cho user giống nhau, nhưng
+  nguồn số khác, và lý do khác (chốt lúc giao hàng nên chưa có `actual`).
 - `rui-ro-tich-hop-tiktok.md` theo **luật giữ file** (giải xong thì **xoá hẳn**, số thứ tự **không**
   đánh lại):
   - **xoá rủi ro 2** — `time_delivered_iso` đã có giá trị thật, cơ chế giam đơn có mốc để đếm;
@@ -450,6 +545,10 @@ Theo quy ước `CLAUDE.md`: `.claude/rules/` là nguồn duy nhất cho chi ti�
 ## 12. Việc còn treo sau đợt này
 
 - [ ] Đơn thật đi hết vòng đời → chốt `pit`, `shared_with_partner`, `status=2`/`3` (mục 5.8)
+- [ ] **Đối chiếu `TIKTOK_PIT_RETAINED_RATIO = 0,9` với `pit` thật** ngay khi đơn đầu tiên quyết toán,
+      đổi hằng số nếu lệch (mục 5.4b). Cảnh báo ở 7.1b là thứ bắt được đúng lúc đó
+- [ ] Nếu đổi `/so-tay` để nói đúng bản chất khoản 10% với đơn TikTok — **sửa câu chữ, không sửa phép
+      tính** (mục 2.2b)
 - [ ] Bật đồng bộ **tự động** sau khi bảng quyết định đã chạy đúng qua vài đơn thật (mục 3.1)
 - [ ] Lọc `update_time_start` khi số đơn lớn lên — **kèm phép thử phân biệt** (mục 3.2)
 - [ ] Xem lại thoả thuận MCN 0% trước **08/04/2027** (rủi ro 11)
