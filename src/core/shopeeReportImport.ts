@@ -1,11 +1,10 @@
 import { parseCsv } from "./csv.js";
-import { AppError, DuplicateConversionError } from "./errors.js";
-import { formatVnd } from "./money.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
+import { applyOrderStatusToLedger } from "./orderStatusApply.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
 import type { Platform, StatusTransition } from "./types.js";
-import { formatVnDateIso, todayVnIso } from "./vietnamDate.js";
+import { todayVnIso } from "./vietnamDate.js";
 
 /**
  * Import file bao cao GOC cua Shopee Affiliate (vd "AffiliateCommissionReport_*.csv" xuat tu
@@ -408,310 +407,92 @@ export function importShopeeReport(
       continue;
     }
 
-    const existing = ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId);
     const importDay = todayVnIso();
 
-    // Chart "Don hang moi" tren dashboard (xem LedgerStore.migrateCreateSeenOrdersTable): ghi "don moi"
-    // TRUOC moi nhanh trang thai ben duoi vi don huy ngay tu lan dau khong bao gio vao
-    // commission_entries nhung van phai dem. Chi lan DAU thang nen bao cao liet ke lai lich su khong
-    // dem lai. Don DA CO trong he thong (ghi qua CLI/form/import cu) thi khong phai don moi hom nay -
-    // ghi theo ngay entry duoc ghi nhan.
-    ledgerStore.recordSeenOrder(
-      requestEntry.merchant,
-      orderId,
-      existing ? (existing.status === "paid" ? "confirmed" : existing.status) : targetStatus,
-      existing ? formatVnDateIso(new Date(existing.createdAt)) : importDay
-    );
-
-    // Bu ngay dat don cho entry da ghi TRUOC khi he thong biet doc cot nay (hoac truoc 2026-10-01).
-    // Dat o day de ap dung cho MOI nhanh trang thai ben duoi - khong chi don duoc confirm. Chi ghi
-    // khi dang trong (xem backfillOrderDate), nen bao cao sau khong ghi de ngay da chot.
-    if (existing && order.orderDate) {
-      ledgerStore.backfillOrderDate(existing.id, order.orderDate);
-      // Gio (2026-10-10): bu SAU khi ngay da chot de dieu kien "cung ngay" trong backfillOrderTime dung.
-      if (order.orderTime) ledgerStore.backfillOrderTime(existing.id, order.orderDate, order.orderTime);
-    }
-
-    // % user nhan cho RIENG don nay: uu dai % theo tung user tinh theo ngay user DAT don (khong phai
-    // ngay import - Shopee bao cao tre vai ngay, xem userCommissionOverride.ts). Bao cao khong cho
-    // biet ngay dat thi lui ve hom nay gio VN, KHONG doan nguoc. Dung cho ca 4 nhanh ben duoi; voi
-    // updatePendingEntry/confirmPendingEntry no chi la FALLBACK cho entry chua co ty le chot.
-    const userSharePercent = ledgerStore.resolveUserSharePercent(
-      requestEntry.platform,
-      requestEntry.userId,
-      order.orderDate ?? todayVnIso(),
-      recordOrderConfig.userSharePercent
-    );
-
-    // Don pending ma admin da SUA TAY hoa hong goc (commissionOverriddenAt): ledgerStore giu so do
-    // chu khong lay so bao cao. Neu Shopee bao so khac thi bao admin - day la cho DUY NHAT phat hien
-    // viec tien tra cho user dang lech voi tien Shopee tra. Khong dung `continue`: van phai cap nhat
-    // trang thai/so lieu khac o nhanh ben duoi.
-    if (
-      existing?.status === "pending" &&
-      existing.commissionOverriddenAt !== null &&
-      targetStatus !== "reversed" &&
-      order.commissionAmount !== existing.commissionAmount
-    ) {
-      result.errors.push(
-        `[${orderId}] Shopee bao hoa hong ${formatVnd(order.commissionAmount)} nhung don dang khoa o ` +
-          `${formatVnd(existing.commissionAmount)} (admin sua tay) - giu so da khoa. Vao Don hang > sua hoa hong > ` +
-          `bo khoa neu muon lay lai so cua Shopee.`
-      );
-    }
-
-    if (targetStatus === "confirmed") {
-      if (existing?.status === "confirmed" || existing?.status === "paid") {
-        // "paid" la trang thai SAU "confirmed" (chi dat duoc qua markWithdrawalPaid, xem ledgerStore.ts)
-        // - bao cao Shopee liet ke lai CA LICH SU nen don da tra tien se tiep tuc hien "Hoan thanh"
-        // o moi lan import sau, day la lap lai binh thuong chu khong phai xung dot, coi nhu duplicate.
-        result.confirmedDuplicate += 1;
-        continue;
-      }
-      if (existing?.status === "reversed") {
-        result.errors.push(
-          `[${orderId}] Bao cao Shopee ghi "Hoan thanh" nhung entry noi bo dang o trang thai "reversed" - can admin kiem tra tay, khong tu dong ghi de.`
-        );
-        continue;
-      }
-
-      try {
-        let entry;
-        const wasPending = existing?.status === "pending";
-        if (existing?.status === "pending") {
-          entry = ledgerStore.confirmPendingEntry(existing.id, {
-            orderAmount: order.orderAmount,
-            commissionAmount: order.commissionAmount,
-            productName: order.productName || undefined,
-            // FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don -
-            // entry moi giu nguyen ty le luc duoc ghi nhan (xem effectivePercents trong ledgerStore).
-            fallbackPercents: {
-              taxPercent: recordOrderConfig.taxPercent,
-              platformFeePercent: recordOrderConfig.platformFeePercent,
-              userSharePercent,
-            },
-            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
-            completedAt: order.completedAt,
-            holdConfig: recordOrderConfig.holdConfig,
-          });
-        } else {
-          entry = ledgerStore.recordConversion({
-            subId,
-            platform: requestEntry.platform,
-            userId: requestEntry.userId,
-            merchant: requestEntry.merchant,
-            orderId,
-            productName: order.productName || undefined,
-            orderAmount: order.orderAmount,
-            commissionAmount: order.commissionAmount,
-            orderDate: order.orderDate,
-            orderTime: order.orderTime,
-            taxPercent: recordOrderConfig.taxPercent,
-            platformFeePercent: recordOrderConfig.platformFeePercent,
-            userSharePercent,
-            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
-            completedAt: order.completedAt,
-            holdConfig: recordOrderConfig.holdConfig,
-            note: "Nhap tu bao cao Shopee (file CSV admin upload)",
-          });
-          result.newOrderIds.push(orderId);
-        }
-
-        // Don NHO con phai cho vai ngay o "Cho xac nhan" truoc khi vao Kha dung (2026-10-11, xem
-        // payoutHold.ts): chua co dong nao kha dung nen KHONG ghi chuyen trang thai (cot "Chuyen Kha
-        // dung" cua /admin/dashboard chua duoc tinh), KHONG gui tin "don ve", KHONG dem confirmedNew.
-        // Don VAN nam trong newOrderIds o tren vi no that su vua duoc ghi moi vao ledger.
-        if (entry.status !== "confirmed") {
-          result.smallHoldDeferred += 1;
-          continue;
-        }
-
-        if (wasPending) {
-          result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
-        }
-        // Don hoa toc (lan dau thay da "Hoan thanh") cung tinh vao cot "Chuyen Kha dung" hom nay.
-        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "confirmed", importDay);
-        result.confirmedNew += 1;
-        // PHAI so voi hom nay chu khong chi kiem `!== null`: don nho vua toi han cung co available_from
-        // (ngay da qua) nhung khong con bi giam - dem no vao day la bao sai so don dang bi giam.
-        if (entry.availableFrom !== null && entry.availableFrom > importDay) result.heldCount += 1;
-        confirmedRows.push({
-          line: 0,
-          subId,
-          orderId,
-          ok: true,
-          detail: "shopee-report-import",
-          platform: entry.platform,
-          userId: entry.userId,
-          userShareAmount: entry.userShareAmount,
-          productName: entry.productName,
-        });
-      } catch (err) {
-        if (err instanceof DuplicateConversionError) {
-          result.confirmedDuplicate += 1;
-        } else {
-          const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-          result.errors.push(`[${orderId}] ${msg}`);
-        }
-      }
-      continue;
-    }
-
-    if (targetStatus === "reversed") {
-      if (!existing) {
-        // Chua tung ghi nhan - khong co tien de huy, nhung van dem vao cot "Da huy" cua chart dashboard
-        // DUNG 1 LAN (ngay dau thay); cac lan import sau van liet ke don nay se bi INSERT OR IGNORE bo qua.
-        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
-        continue;
-      }
-      // BA ca khac nhau HAN nhau ve TIEN, khong duoc gop (xem spec muc 4):
-      //  - confirmed + chua nam trong yeu cau rut: tien con trong tay -> thu hoi TRON, khong no.
-      //    Ke ca don dang bi giam: hold da lam dung viec cua no.
-      //  - confirmed + da nam trong yeu cau rut 'requested': tien CHUA di (yeu cau chi la 'requested',
-      //    chua 'paid') -> TU DONG huy ca yeu cau rut, thu hoi TRON don nay, khong no (2026-10-08, yeu
-      //    cau truc tiep cua user - DAO NGUOC quyet dinh ban dau "canh bao admin, admin tu quyet": xem
-      //    doc comment cua result.cancelledWithdrawals o dau file ve rui ro da duoc chap nhan).
-      //  - paid: tien da di that -> ghi no + DM user. Yeu cau DA 'paid' thi khong con gi de huy.
-      if (existing.status === "reversed") continue;
-
-      if (existing.status === "confirmed") {
-        // existing la SNAPSHOT doc 1 lan dau vong lap nay - KHONG tu refresh sau khi cancelWithdrawal
-        // ghi DB, nen phai dung 1 CO RIENG (released) de biet tien da ve tay chua, khong duoc re-check
-        // existing.withdrawalId (van giu gia tri CU, da dinh bug nay luc viet, xem lai truoc khi sua
-        // logic nay lan nua).
-        let released = existing.withdrawalId === null;
-        if (!released) {
-          const withdrawalId = existing.withdrawalId!;
-          try {
-            const cancelled = ledgerStore.cancelWithdrawal(withdrawalId, reverseReason(order.rawStatusLabel));
-            result.cancelledWithdrawals.push({
-              platform: cancelled.platform,
-              userId: cancelled.userId,
-              withdrawalId,
-              // So user DA YEU CAU rut (W = so net + no se tru) - user chi biet con so nay.
-              amount: cancelled.amount + cancelled.debtApplied,
-              orderId,
-            });
-            released = true;
-          } catch (err) {
-            // WithdrawalNotCancellableError: yeu cau da chuyen sang 'paid' GIUA luc doc existing (hiem,
-            // dua tranh voi admin bam "Danh dau da tra" cung luc). KHONG the reverse an toan nua - tien
-            // CO THE da di that, de nguyen cho nhanh ben duoi xu li o lan import SAU (luc do existing.status
-            // da la 'paid' that trong DB, se di dung vao nhanh ghi no).
-            const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-            result.errors.push(`[${orderId}] Khong huy duoc yeu cau rut ${withdrawalId}: ${msg}`);
-          }
-        }
-
-        if (released) {
-          try {
-            // allowNonPending: entry dang 'confirmed' nen reverseCommissionEntry mac dinh tu choi. An
-            // toan o day vi tien chac chan dang trong tay (chua tung vao yeu cau rut, hoac vua duoc
-            // tha ra tu lenh huy o tren).
-            ledgerStore.reverseCommissionEntry(existing.id, reverseReason(order.rawStatusLabel), {
-              allowNonPending: true,
-            });
-            result.reversedCount += 1;
-            result.statusTransitions.push({ orderId, from: "confirmed", to: "reversed" });
-            ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
-          } catch (err) {
-            const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-            result.errors.push(`[${orderId}] ${msg}`);
-          }
-        }
-        continue;
-      }
-
-      if (existing.status === "paid") {
-        const debt = ledgerStore.recordPayoutDebt({
-          platform: existing.platform,
-          userId: existing.userId,
-          merchant: existing.merchant,
-          orderId,
-          amount: existing.userShareAmount,
-          note: reverseReason(order.rawStatusLabel),
-        });
-        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
-        if (debt) {
-          result.debtCreatedCount += 1;
-          result.debtsByUser.push({
-            platform: existing.platform,
-            userId: existing.userId,
-            orderId,
-            amount: existing.userShareAmount,
-          });
-        }
-        continue;
-      }
-
-      if (existing.status !== "pending") continue;
-      try {
-        ledgerStore.reverseCommissionEntry(
-          existing.id,
-          `Bao cao Shopee ghi trang thai san pham lien ket = "${order.rawStatusLabel}"`
-        );
-        result.reversedCount += 1;
-        result.statusTransitions.push({ orderId, from: "pending", to: "reversed" });
-        ledgerStore.recordOrderStatusEvent(requestEntry.merchant, orderId, "reversed", importDay);
-      } catch (err) {
-        const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-        result.errors.push(`[${orderId}] ${msg}`);
-      }
-      continue;
-    }
-
-    // targetStatus === "pending"
-    if (existing) {
-      if (existing.status === "pending") {
-        try {
-          ledgerStore.updatePendingEntry(existing.id, {
-            orderAmount: order.orderAmount,
-            commissionAmount: order.commissionAmount,
-            productName: order.productName || undefined,
-            // FALLBACK: chi dung cho entry ghi truoc khi he thong chot ty le theo tung don -
-            // entry moi giu nguyen ty le luc duoc ghi nhan (xem effectivePercents trong ledgerStore).
-            fallbackPercents: {
-              taxPercent: recordOrderConfig.taxPercent,
-              platformFeePercent: recordOrderConfig.platformFeePercent,
-              userSharePercent,
-            },
-            maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
-          });
-          result.pendingUpdated += 1;
-        } catch (err) {
-          const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-          result.errors.push(`[${orderId}] ${msg}`);
-        }
-      }
-      continue;
-    }
-    try {
-      ledgerStore.recordConversion({
-        subId,
-        platform: requestEntry.platform,
-        userId: requestEntry.userId,
-        merchant: requestEntry.merchant,
+    // Phan ap trang thai vao ledger dung CHUNG voi moi nguon don khac - xem orderStatusApply.ts.
+    // Shopee chi con lai: gop dong, phan loai nhan tieng Viet, va map outcome ve result cu.
+    const outcomes = applyOrderStatusToLedger(
+      ledgerStore,
+      {
         orderId,
-        productName: order.productName || undefined,
+        targetStatus,
+        subId,
+        requestEntry: { platform: requestEntry.platform, userId: requestEntry.userId, merchant: requestEntry.merchant },
         orderAmount: order.orderAmount,
         commissionAmount: order.commissionAmount,
-        taxPercent: recordOrderConfig.taxPercent,
-        platformFeePercent: recordOrderConfig.platformFeePercent,
-        userSharePercent,
-        maxCommissionRatioPercent: recordOrderConfig.maxCommissionRatioPercent,
-        completedAt: order.completedAt,
-        holdConfig: recordOrderConfig.holdConfig,
+        productName: order.productName || null,
         orderDate: order.orderDate,
         orderTime: order.orderTime,
-        status: "pending",
-        note: "Nhap tu bao cao Shopee - dang cho xu ly",
-      });
-      result.pendingNew += 1;
-      result.newOrderIds.push(orderId);
-    } catch (err) {
-      if (!(err instanceof DuplicateConversionError)) {
-        const msg = err instanceof AppError ? err.userMessage : (err as Error).message;
-        result.errors.push(`[${orderId}] ${msg}`);
+        completedAt: order.completedAt,
+        reverseReason: reverseReason(order.rawStatusLabel),
+        notes: {
+          confirmed: "Nhap tu bao cao Shopee (file CSV admin upload)",
+          pending: "Nhap tu bao cao Shopee - dang cho xu ly",
+        },
+        sourceLabel: "Shopee",
+        confirmedClaim: 'Bao cao Shopee ghi "Hoan thanh"',
+      },
+      recordOrderConfig,
+      importDay
+    );
+
+    for (const o of outcomes) {
+      switch (o.kind) {
+        case "confirmed-duplicate":
+          result.confirmedDuplicate += 1;
+          break;
+        case "warning":
+        case "error":
+          result.errors.push(o.message);
+          break;
+        case "small-hold-deferred":
+          // Don VAN nam trong newOrderIds khi vua duoc ghi moi: no that su vao ledger.
+          if (o.newOrder) result.newOrderIds.push(orderId);
+          result.smallHoldDeferred += 1;
+          break;
+        case "confirmed-new":
+          if (o.newOrder) result.newOrderIds.push(orderId);
+          if (o.wasPending) result.statusTransitions.push({ orderId, from: "pending", to: "confirmed" });
+          result.confirmedNew += 1;
+          if (o.held) result.heldCount += 1;
+          confirmedRows.push({
+            line: 0,
+            subId,
+            orderId,
+            ok: true,
+            detail: "shopee-report-import",
+            platform: o.entry.platform,
+            userId: o.entry.userId,
+            userShareAmount: o.entry.userShareAmount,
+            productName: o.entry.productName,
+          });
+          break;
+        case "pending-new":
+          result.pendingNew += 1;
+          result.newOrderIds.push(orderId);
+          break;
+        case "pending-updated":
+          result.pendingUpdated += 1;
+          break;
+        case "reversed":
+          result.reversedCount += 1;
+          result.statusTransitions.push({ orderId, from: o.from, to: "reversed" });
+          break;
+        case "reversed-unseen":
+          break;
+        case "debt-created":
+          result.debtCreatedCount += 1;
+          result.debtsByUser.push({ platform: o.platform, userId: o.userId, orderId: o.orderId, amount: o.amount });
+          break;
+        case "withdrawal-cancelled":
+          result.cancelledWithdrawals.push({
+            platform: o.platform,
+            userId: o.userId,
+            withdrawalId: o.withdrawalId,
+            amount: o.amount,
+            orderId: o.orderId,
+          });
+          break;
       }
     }
   }
