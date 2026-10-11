@@ -2,6 +2,7 @@ import { parseCsv } from "./csv.js";
 import type { LedgerStore } from "./ledgerStore.js";
 import type { LogStore } from "./logStore.js";
 import { applyOrderStatusToLedger } from "./orderStatusApply.js";
+import type { EntryItemInput } from "./entryItems.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
 import type { Platform, StatusTransition } from "./types.js";
 import { todayVnIso } from "./vietnamDate.js";
@@ -191,8 +192,38 @@ interface ShopeeReportRow {
   productName: string;
   orderAmount: number;
   commissionAmount: number;
+  /** Cot "Item id" - "" khi bao cao thieu cot. Dong khong co item_id khong dinh danh duoc mon -> khong luu chi tiet. */
+  itemId: string;
+  /** Cot "ID Model" - "" khi thieu. */
+  modelId: string;
+  /** Cot "Số lượng". */
+  quantity: number;
+  /**
+   * Cot "Giá(₫)" = gia NIEM YET cua dong (2026-10-11). null khi bao cao khong co cot/gia tri hong.
+   * Chi dung de nhan ra QUA TANG (= 0). KHONG phai "Gia tri don hang" - xem isGiftRow.
+   */
+  listPrice: number | null;
   linkedProductStatus: string;
   subId: string | null;
+}
+
+function parseOptionalNumber(raw: string | undefined): number | null {
+  const text = raw?.trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Dong QUA TANG = gia niem yet bang 0 (2026-10-11, chot voi chu bot). TIEU CHI LA GIA, KHONG PHAI
+ * HOA HONG: do tren bao cao that, 0 dong nao co gia 0 ma van ra hoa hong, nhung co 3 mon user MUA THAT
+ * (gia 241k-316k, nganh hang 0%) co hoa hong 0 - loc theo hoa hong se lam mat dung nhung mon do.
+ *
+ * Cot "Gia" vang/hong (listPrice null) -> KHONG coi la qua tang: sai theo huong hien nhieu hon,
+ * khong bao gio an mat mot mon that.
+ */
+function isGiftRow(row: ShopeeReportRow): boolean {
+  return row.listPrice === 0;
 }
 
 function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
@@ -210,6 +241,10 @@ function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
       productName: row["Tên Item"]?.trim() ?? "",
       orderAmount: Number(row["Giá trị đơn hàng (₫)"]),
       commissionAmount: Number(row["Tổng hoa hồng sản phẩm(₫)"]),
+      itemId: row["Item id"]?.trim() ?? "",
+      modelId: row["ID Model"]?.trim() ?? "",
+      quantity: Number(row["Số lượng"]),
+      listPrice: parseOptionalNumber(row["Giá(₫)"]),
       linkedProductStatus: row["Trạng thái sản phẩm liên kết"]?.trim() ?? "",
       subId: subIdParts.length > 0 ? subIdParts.join("-") : null,
     };
@@ -243,6 +278,11 @@ interface MergedOrder {
   completedAt: string | null;
   subId: string | null;
   productName: string;
+  /**
+   * Chi tiet tung mon (2026-10-11), DA bo qua tang. Chi gom dong cung Sub_id voi don, co item_id.
+   * Dong da huy van co mat (rowStatus 'reversed') nhung khong cong vao orderAmount/commissionAmount.
+   */
+  items: EntryItemInput[];
   orderAmount: number;
   commissionAmount: number;
   status: "confirmed" | "pending" | "reversed";
@@ -317,11 +357,35 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
   const orderAmount = summed.reduce((sum, c) => sum + c.row.orderAmount, 0);
   const commissionAmount = summed.reduce((sum, c) => sum + c.row.commissionAmount, 0);
 
+  // Nhan "(+N san pham khac)" dem CUNG tieu chi voi khoi chi tiet tung mon (items ben duoi): bo qua tang.
+  // Neu khong, hang ghi "(+2 san pham khac)" ma mo ra chi co 1 mon (2026-10-11).
+  const visibleSummed = summed.filter((c) => !isGiftRow(c.row));
   const nameSource = summed.length > 0 ? summed : counted;
-  const mainRow = [...nameSource].sort((a, b) => b.row.commissionAmount - a.row.commissionAmount)[0];
+  const namePool = nameSource.filter((c) => !isGiftRow(c.row));
+  const mainRow = [...(namePool.length > 0 ? namePool : nameSource)].sort(
+    (a, b) => b.row.commissionAmount - a.row.commissionAmount
+  )[0];
   let productName = mainRow?.row.productName ?? "";
-  if (productName && summed.length > 1) {
-    productName = `${productName} (+${summed.length - 1} sản phẩm khác)`;
+  if (productName && visibleSummed.length > 1) {
+    productName = `${productName} (+${visibleSummed.length - 1} sản phẩm khác)`;
+  }
+
+  // Chi tiet tung mon: dong cung Sub_id cua don (counted), bo qua tang, bo dong khong co item_id (khong
+  // dinh danh duoc -> khong co khoa), bo dong co so khong doc duoc. Dong da huy VAN co mat voi
+  // rowStatus 'reversed' (de sau nay hien "mon nay da tra") nhung khong cong vao tong cua don o tren.
+  const items: EntryItemInput[] = [];
+  for (const c of counted) {
+    if (c.status === "unknown" || isGiftRow(c.row) || c.row.itemId === "") continue;
+    if (!Number.isFinite(c.row.orderAmount) || !Number.isFinite(c.row.commissionAmount)) continue;
+    items.push({
+      itemId: c.row.itemId,
+      modelId: c.row.modelId,
+      productName: c.row.productName,
+      quantity: Number.isFinite(c.row.quantity) ? c.row.quantity : 0,
+      orderAmount: c.row.orderAmount,
+      commissionAmount: c.row.commissionAmount,
+      rowStatus: c.status,
+    });
   }
 
   const labelSource = status === "reversed" ? counted : active;
@@ -336,6 +400,7 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
       completedAt,
       subId,
       productName,
+      items,
       orderAmount,
       commissionAmount,
       status,
