@@ -501,6 +501,18 @@ export function importShopeeReport(
       importDay
     );
 
+    // Chi tiet tung san pham (2026-10-11) - thuan HIEN THI, nen o DAY chu KHONG nam trong
+    // orderStatusApply.ts: module do la duong quyet dinh tien dung chung voi TikTok (huy, ghi no, huy
+    // yeu cau rut). Chi ghi khi don that su co entry (don bi bo qua vi trang thai la / loi thi khong
+    // co). Loi o day KHONG duoc chan viec ghi tien phia tren - chi vao danh sach canh bao.
+    if (ledgerStore.getEntryByOrderId(requestEntry.merchant, orderId)) {
+      try {
+        ledgerStore.replaceEntryItems(requestEntry.merchant, orderId, order.items);
+      } catch (err) {
+        result.errors.push(`[${orderId}] Khong luu duoc chi tiet san pham: ${(err as Error).message}`);
+      }
+    }
+
     for (const o of outcomes) {
       switch (o.kind) {
         case "confirmed-duplicate":
