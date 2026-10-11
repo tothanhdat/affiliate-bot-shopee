@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderDashboardPage } from "../dashboardHtml.js";
+import { renderOrdersPage } from "../adminHtml.js";
 import type { CommissionEntry } from "../../core/types.js";
 import { entryItemsKey, type CommissionEntryItem } from "../../core/entryItems.js";
 
@@ -130,4 +131,57 @@ test("dashboard: mon co so luong > 1 hien xN", () => {
     item({ itemId: "2", quantity: 2, orderAmount: 100_000, commissionAmount: 4_000 }),
   ]);
   assert.match(html, /<span class="item-qty">x2<\/span>/);
+});
+
+const PAGINATION = { page: 1, totalPages: 1, totalEntries: 1 };
+const TOTALS = {
+  totalEntries: 1,
+  pendingEntries: 1,
+  userShareTotal: 7_128,
+  ownerShareTotal: 1_782,
+  ownerShareBeforeTaxTotal: 2_000,
+} as Parameters<typeof renderOrdersPage>[4];
+
+function renderAdmin(e: CommissionEntry, items?: CommissionEntryItem[]): string {
+  const map = items ? new Map([[entryItemsKey(e.merchant, e.orderId), items]]) : new Map();
+  return renderOrdersPage([e], {}, new Map(), PAGINATION, TOTALS, 0, new Set(), map);
+}
+
+test("admin: don >= 2 mon -> co <details> ngay trong o San pham, mo ra thay tung mon", () => {
+  const html = renderAdmin(entry(), TWO_ITEMS);
+  assert.match(html, /<details class="details-plain/);
+  assert.match(html, /2 sản phẩm/);
+  assert.ok(html.includes("Mon A") && html.includes("Mon B"));
+});
+
+test("admin: don 1 mon hoac khong co chi tiet -> khong co khoi chi tiet, hang y nhu cu", () => {
+  const one = [item({ orderAmount: 300_000, commissionAmount: 10_000 })];
+  assert.doesNotMatch(renderAdmin(entry(), one), />\d+ sản phẩm<\/summary>/);
+  assert.doesNotMatch(renderAdmin(entry(), undefined), />\d+ sản phẩm<\/summary>/);
+});
+
+test("admin: don admin da KHOA hoa hong tay -> co ghi chu 'sua tay, so Shopee bao'", () => {
+  const html = renderAdmin(entry({ commissionOverriddenAt: "2026-10-10T05:00:00.000Z", commissionAmount: 12_345 }), TWO_ITEMS);
+  assert.match(html, /Hoa hồng đã được sửa tay/);
+  assert.match(html, /số Shopee báo/);
+});
+
+test("admin: tong cac mon khac so tren hang (khong phai do khoa tay) -> ghi chu lech", () => {
+  const html = renderAdmin(entry({ commissionAmount: 12_345 }), TWO_ITEMS);
+  assert.match(html, /Tổng các món bên dưới khác số trên hàng này/);
+  assert.doesNotMatch(html, /Hoa hồng đã được sửa tay/);
+});
+
+test("admin: cong lai khop va khong khoa -> KHONG co ghi chu nao", () => {
+  const html = renderAdmin(entry(), TWO_ITEMS);
+  assert.doesNotMatch(html, /Hoa hồng đã được sửa tay|Tổng các món bên dưới khác/);
+});
+
+test("admin: ten mon la chuoi nguoi la -> bi escape; mon da huy gach ngang", () => {
+  const html = renderAdmin(entry(), [
+    item({ itemId: "1", productName: `<img src=x onerror=alert(1)>`, orderAmount: 200_000, commissionAmount: 6_000 }),
+    item({ itemId: "2", productName: "Mon da tra", orderAmount: 100_000, commissionAmount: 4_000, rowStatus: "reversed" }),
+  ]);
+  assert.ok(!html.includes("<img src=x onerror=alert(1)>"));
+  assert.match(html, /text-slate-400 line-through/);
 });

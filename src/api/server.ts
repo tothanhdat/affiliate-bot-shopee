@@ -818,7 +818,9 @@ export function createServer(
           entries
             .filter((e) => ledgerStore.getDebtByOrder(e.merchant, e.orderId) !== null)
             .map((e) => e.orderId)
-        )
+        ),
+        // Chi tiet tung mon cua 50 don tren trang - MOT query, khong N+1 (2026-10-11).
+        ledgerStore.listEntryItemsFor(entries)
       )
     );
   });

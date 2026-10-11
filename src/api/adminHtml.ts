@@ -1,6 +1,7 @@
 import { adminCssHref } from "./adminAssets.js";
 import type { OrdersFilterTotals, RatePercents } from "../core/ledgerStore.js";
 import type { CommissionBreakdown } from "../core/commissionMath.js";
+import { entryItemsKey, entryItemsReconcile, type CommissionEntryItem } from "../core/entryItems.js";
 import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
 import { getMerchantAdminName, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import { vietQrImageUrl } from "../core/vietQr.js";
@@ -1840,6 +1841,52 @@ function statusSummaryLabel(checked: readonly CommissionStatus[]): string {
   return `${checked.length} trạng thái`;
 }
 
+/**
+ * Chi tiet tung san pham cua don nhieu mon, mo TAI CHO trong o "San pham" (2026-10-11). KHONG them cot
+ * thu 11: bang da 10 cot va px-4 la muc vua du de nut "Huy don" khong bi day ra ngoai man ~1700px.
+ *
+ * <details> native, khong JS. Khu /admin khong nap preflight nen <summary>/<ul> tu reset: `list-none`
+ * cho Chrome/Firefox, class `details-plain` (admin.css) an mui ten cua Safari.
+ * Chi hien khi >= 2 mon. Co ghi chu khi cong lai KHONG khop so tren hang - bat buoc, khong phai trang
+ * tri: thieu no thi lan doi soat sau admin thay tong cac mon khac so tren hang va tuong bang tinh sai.
+ */
+function orderItemsDetails(e: CommissionEntry, items: CommissionEntryItem[] | undefined): string {
+  if (!items || items.length < 2) return "";
+  const active = items.filter((i) => i.rowStatus !== "reversed");
+  const totalAmount = active.reduce((sum, i) => sum + i.orderAmount, 0);
+  const totalCommission = active.reduce((sum, i) => sum + i.commissionAmount, 0);
+  const noteClass = "m-0 mb-1.5 whitespace-normal rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700";
+  const lockedText = "Hoa hồng đã được sửa tay, các số bên dưới là số Shopee báo.";
+  // Don khoa tay LUON co ghi chu "sua tay" (admin co the tinh co nhap dung so Shopee, cong lai van khop
+  // nhung do van la so da bi can thiep). Don khong khoa ma cong lai lech thi noi lech.
+  const note =
+    e.commissionOverriddenAt !== null
+      ? `<p class="${noteClass}">${lockedText}</p>`
+      : entryItemsReconcile(e, items)
+        ? ""
+        : `<p class="${noteClass}">Tổng các món bên dưới khác số trên hàng này.</p>`;
+  const rows = items
+    .map((i) => {
+      const reversed = i.rowStatus === "reversed";
+      const qty = i.quantity > 1 ? ` <span class="text-slate-400">x${i.quantity}</span>` : "";
+      const noCommission =
+        !reversed && i.commissionAmount === 0 ? ` <span class="text-slate-400">· chưa có hoa hồng</span>` : "";
+      return `<li class="border-t border-slate-100 py-1.5 ${reversed ? "text-slate-400 line-through" : "text-slate-600"}">
+        <div class="whitespace-normal break-words">${escapeHtml(i.productName)}${qty}</div>
+        <div class="tabular-nums text-slate-500">${formatVnd(i.orderAmount)} · HH ${formatVnd(i.commissionAmount)}${noCommission}</div>
+      </li>`;
+    })
+    .join("");
+  return `<details class="details-plain mt-1.5 text-[11px]">
+    <summary class="cursor-pointer list-none text-xs font-medium text-indigo-600">${items.length} sản phẩm</summary>
+    <div class="mt-1.5">${note}
+      <ul class="m-0 list-none p-0">${rows}
+        <li class="border-t border-slate-200 py-1.5 font-medium text-slate-700 tabular-nums">Tổng ${formatVnd(totalAmount)} · HH ${formatVnd(totalCommission)}</li>
+      </ul>
+    </div>
+  </details>`;
+}
+
 export function renderOrdersPage(
   entries: CommissionEntry[],
   filters: OrdersFilters,
@@ -1853,7 +1900,9 @@ export function renderOrdersPage(
    * (tien ra khoi tay that, user co sao ke) nen phai co dau hieu rieng, neu khong hang do nhin y het
    * mot don binh thuong.
    */
-  debtOrderIds: Set<string> = new Set()
+  debtOrderIds: Set<string> = new Set(),
+  /** Chi tiet tung mon cua cac don tren trang nay (2026-10-11) - xem orderItemsDetails. */
+  entryItems: Map<string, CommissionEntryItem[]> = new Map()
 ): string {
   const todayVn = todayVnIso();
   const rows = entries
@@ -1969,7 +2018,7 @@ export function renderOrdersPage(
       <span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(e.merchant)}">${getMerchantAdminName(e.merchant)}</span>
     </div>
   </td>
-  <td class="max-w-[200px] px-4 py-3.5">${product}</td>
+  <td class="max-w-[200px] px-4 py-3.5">${product}${orderItemsDetails(e, entryItems.get(entryItemsKey(e.merchant, e.orderId)))}</td>
   <td class="px-4 py-3.5 text-right tabular-nums">${commissionCell}</td>
   <td class="px-4 py-3.5 text-right font-medium text-slate-600 tabular-nums">${lockedShare}</td>
   <td class="px-4 py-3.5 text-right tabular-nums ${userMoneyClass}">${formatVnd(e.userShareAmount)}</td>

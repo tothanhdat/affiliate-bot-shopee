@@ -2219,3 +2219,34 @@ test("/admin/orders?platform=&userId= (tu nut Xem don) van loc dung va GIU qua n
     cleanup();
   }
 });
+
+test("/admin/orders hien chi tiet tung mon cua don nhieu mon trong o San pham", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-multi",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-nhieu-mon",
+      orderAmount: 300_000,
+      commissionAmount: 10_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    ledgerStore.replaceEntryItems("shopee", "order-nhieu-mon", [
+      { itemId: "1", modelId: "1", productName: "Mon chinh ABC", quantity: 1, orderAmount: 200_000, commissionAmount: 6_000, rowStatus: "confirmed" },
+      { itemId: "2", modelId: "1", productName: "Mon mua kem XYZ", quantity: 1, orderAmount: 100_000, commissionAmount: 4_000, rowStatus: "confirmed" },
+    ]);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.match(html, />2 sản phẩm</);
+    assert.ok(html.includes("Mon mua kem XYZ"));
+  } finally {
+    cleanup();
+  }
+});
