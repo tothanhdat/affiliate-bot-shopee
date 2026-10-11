@@ -328,12 +328,14 @@ export function formatWithdrawalPaidReply(template: string, dashboardUrl: string
  * Cau "khong phai chuyen tien lai" la BAT BUOC chu khong phai cho lich su: nhan tin "ban dang no
  * 40.000d" ma khong co cau do thi user tuong phai tra tien ra ngoai.
  *
- * Chu "Shopee" o day la CO Y, khong phai sot cua dot bo hard-code ten san 2026-10-09: no hoan tra
- * CHI sinh ra tu shopeeReportImport, TikTok chua co duong doi soat don. Khi lam doi soat TikTok
- * thi phai doi cau nay sang ten san cua chinh don do.
+ * Ten san la `{{sanDon}}` = ten day du cua san cua CHINH DON bi tra (2026-10-11). Truoc do cau go cung
+ * "Shopee" vi no hoan tra chi sinh tu import Shopee; doi soat TikTok sinh them no tu don TikTok nen
+ * ten san phai di theo don. Day KHAC `{{san}}` (danh sach moi san bot ho tro): tin nay noi ve MOT don.
+ * Instance da luu template cu (go cung "Shopee") phai vao /admin/settings thay bang {{sanDon}} - neu
+ * khong user TikTok van doc "Shopee thu lai".
  */
 export const PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT =
-  `Đơn {{orderId}} đã được trả hàng sau khi bạn đã nhận tiền, nên Shopee thu lại {{amount}} hoa hồng của đơn đó.
+  `Đơn {{orderId}} đã được trả hàng sau khi bạn đã nhận tiền, nên {{sanDon}} thu lại {{amount}} hoa hồng của đơn đó.
 Số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau — bạn không phải chuyển tiền lại cho em nhé.
 Xem chi tiết: {{dashboardUrl}}`;
 
@@ -350,12 +352,23 @@ Tiền vẫn nằm nguyên trong số dư của bạn, bạn gửi lại yêu c�
 /** DM khi 1 don da tra tien bi khach tra hang -> sinh no hoan tra (xem payout_debts). */
 export function formatPayoutDebtNotice(
   template: string,
-  params: { orderId: string; amount: number; dashboardUrl: string }
+  params: {
+    orderId: string;
+    amount: number;
+    dashboardUrl: string;
+    /**
+     * San cua DON bi tra - BAT BUOC chu khong optional: de tuy chon thi cho nao quen truyen se am tham
+     * dien san sai tren mot don khac san (cung ly do voi formatSuccessReply). Bat buoc thi trinh bien dich
+     * bat het moi cho goi.
+     */
+    merchant: MerchantId;
+  }
 ): string {
   return renderTemplate(template, {
     orderId: params.orderId,
     amount: formatVnd(params.amount),
     dashboardUrl: params.dashboardUrl,
+    sanDon: getMerchantConfig(params.merchant).displayName,
   });
 }
 

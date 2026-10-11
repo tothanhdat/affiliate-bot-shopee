@@ -517,7 +517,7 @@ export function renderDashboardPage(input: {
           )
         : input.availableBalance + pendingConfirmationTotal + input.heldBalance >= withdrawTargetVnd
         ? notice(
-            `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ Shopee xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng"${
+            `Bạn đang có ${formatVnd(pendingConfirmationTotal)} chờ sàn xác nhận. Khi đơn được duyệt và chuyển sang "Khả dụng"${
               debtIsBinding ? "" : ` (tối thiểu ${formatVnd(input.thresholdVnd)})`
             } là bạn rút được ngay.`,
             "i"
@@ -566,7 +566,7 @@ export function renderDashboardPage(input: {
               : `${input.debts.length} đơn (${input.debts
                   .map((d) => `<code>${escapeHtml(d.orderId)}</code>`)
                   .join(", ")}) đã được trả hàng`
-          } sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của ${
+          } sau khi bạn đã nhận tiền, nên sàn thu lại hoa hồng của ${
             input.debts.length === 1 ? "đơn đó" : "những đơn đó"
           }. Hiện bạn đang nợ <strong>${formatVnd(uncoveredDebt)}</strong>, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau.`,
           "↩"

@@ -1214,7 +1214,7 @@ export function createServer(
    * thong bao yeu cau rut bi tu huy. Dung CHUNG cho import Shopee va dong bo TikTok - cung mot cau
    * cho cung mot su kien. KHONG gui vao group Zalo: tin hang ngay thuoc nhip import Shopee 9h30.
    */
-  function notifyImportOutcomes(result: ImportOutcomesToNotify): void {
+  function notifyImportOutcomes(result: ImportOutcomesToNotify, merchant: MerchantId): void {
     for (const summary of result.confirmedByUser) {
       const { token } = ledgerStore.findOrCreateDashboardToken(summary.platform, summary.userId);
       const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
@@ -1260,6 +1260,8 @@ export function createServer(
           orderId: debt.orderId,
           amount: debt.amount,
           dashboardUrl: `${dashboardBaseUrl}/d/${token}`,
+          // San cua don bi tra: ca lan dong bo deu thuoc MOT san nen nhan tu route goi (xem 2 cho goi).
+          merchant,
         }),
       }).catch((notifyErr) => {
         console.warn("[user-notify] gui thong bao don bi tra hang that bai:", notifyErr);
@@ -1337,7 +1339,7 @@ export function createServer(
       return;
     }
 
-    notifyImportOutcomes(result);
+    notifyImportOutcomes(result, "tiktokshop");
     for (const alert of result.alerts) {
       if (tiktokAlertThrottle.shouldSend(alert.key)) {
         notifyAdmin(alert.message).catch((alertErr) => {
@@ -1379,7 +1381,7 @@ export function createServer(
         { recordOrderConfig: requestOrderConfig },
         req.file.buffer.toString("utf8")
       );
-      notifyImportOutcomes(result);
+      notifyImportOutcomes(result, "shopee");
 
       // 2026-09-11 (yeu cau truc tiep cua user): bao CA GROUP biet du lieu hoa hong vua duoc cap nhat,
       // thay vi chi DM rieng tung user co don moi. Gui MOI lan import thanh cong - ke ca khi 0 don moi

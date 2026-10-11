@@ -315,3 +315,37 @@ test("NHAN ADMIN: bang admin ghi 'TikTok', khong ghi 'TikTok Shop' (ten day du d
     t.cleanup();
   }
 });
+
+test("don TikTok DA TRA TIEN roi bi huy -> DM no hoan tra goi dung 'TikTok Shop', KHONG noi 'Shopee'", async () => {
+  let orders: RiohubOrderRecord[] = [order()];
+  const t = setup(async () => orders);
+  try {
+    const cookie = await login(t.baseUrl);
+    const sync = () => fetch(`${t.baseUrl}/admin/record-orders/tiktok-sync`, { method: "POST", headers: { cookie } });
+    await sync(); // don da giao -> Kha dung
+    assert.equal(t.ledgerStore.getEntryByOrderId("tiktokshop", "TT-1")?.status, "confirmed");
+
+    // user rut va admin DA tra tien -> entry 'paid'
+    const w = t.ledgerStore.requestWithdrawal("zalo", "user-a", 1_000, {
+      bankName: "Vietcombank",
+      bankAccountNumber: "0123456789",
+      bankAccountHolder: "Nguyen Van A",
+    });
+    t.ledgerStore.markWithdrawalPaid(w.id, null);
+    assert.equal(t.ledgerStore.getEntryByOrderId("tiktokshop", "TT-1")?.status, "paid");
+
+    // TikTok bao don bi huy/hoan SAU khi da tra tien
+    orders = [order({ status: 3 })];
+    await sync();
+    await new Promise((r) => setTimeout(r, 50));
+
+    assert.equal(t.ledgerStore.getOutstandingDebtTotal("zalo", "user-a"), 2160);
+    const debtDm = t.userMessages.find((m) => /thu lại/.test(m));
+    assert.ok(debtDm, "user phai nhan DM no hoan tra");
+    assert.match(debtDm!, /nên TikTok Shop thu lại 2\.160đ/);
+    assert.doesNotMatch(debtDm!, /Shopee/);
+  } finally {
+    t.cleanup();
+  }
+});
+

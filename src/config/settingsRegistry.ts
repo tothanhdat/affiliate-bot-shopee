@@ -115,7 +115,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     helpText:
       "Placeholder hợp lệ: {{link}} và {{commissionLine}}. "
       + "{{commissionLine}} tự đổi theo tình huống: tra được hoa hồng thì thành câu báo số tiền ước tính "
-      + "user nhận được, không tra được thì thành câu hẹn báo sau khi Shopee xác nhận đơn. "
+      + "user nhận được, không tra được thì thành câu hẹn báo sau khi sàn xác nhận đơn. "
       + "GIỮ placeholder này trong template — viết thẳng câu hoa hồng vào đây thì bot sẽ không bao giờ "
       + "hiện được số tiền ước tính nữa.",
   },
@@ -187,7 +187,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     min: 0,
     max: 60,
     helpText:
-      "Đếm từ ngày Shopee ghi đơn là Hoàn thành (= ngày giao hàng), đúng mốc Shopee đếm 15 ngày được trả hàng. Ngày mở khoá được CHỐT lúc đơn chuyển Khả dụng — đổi số này không dịch ngày của đơn đã chốt trước đó. Không có placeholder động.",
+      "Đếm từ ngày giao hàng (Shopee: ngày báo cáo ghi đơn là Hoàn thành; TikTok Shop: ngày RioHub ghi đơn đã giao). Đó là mốc sàn bắt đầu đếm cửa sổ được trả hàng: Shopee 15 ngày, TikTok Shop 10 ngày. Ngày mở khoá được CHỐT lúc đơn chuyển Khả dụng — đổi số này không dịch ngày của đơn đã chốt trước đó. Không có placeholder động.",
   },
   {
     key: SETTINGS_KEYS.payoutHoldSmallDays,
@@ -205,7 +205,7 @@ export const SETTINGS_REGISTRY: SettingFieldConfig[] = [
     type: "textarea",
     default: PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
     helpText:
-      "Gửi 1 lần cho mỗi đơn, khi báo cáo Shopee ghi đơn đã huỷ mà tiền đã chuyển cho user rồi. Khoản đó thành nợ và được trừ khi user gửi yêu cầu rút tiền lần sau. Placeholder hợp lệ: {{orderId}}, {{amount}}, {{dashboardUrl}}.",
+      "Gửi 1 lần cho mỗi đơn, khi sàn (báo cáo Shopee hoặc đồng bộ TikTok) ghi đơn đã huỷ/trả hàng mà tiền đã chuyển cho user rồi. Khoản đó thành nợ và được trừ khi user gửi yêu cầu rút tiền lần sau. Placeholder hợp lệ: {{orderId}}, {{amount}}, {{dashboardUrl}}, {{sanDon}} (tên sàn của CHÍNH đơn bị trả, vd \"Shopee\" hoặc \"TikTok Shop\"). Dùng {{sanDon}} thay vì gõ thẳng tên sàn; template đã lưu từ trước còn chữ \"Shopee\" cứng thì phải sửa tay một lần.",
   },
   {
     key: SETTINGS_KEYS.withdrawalCancelledTemplate,

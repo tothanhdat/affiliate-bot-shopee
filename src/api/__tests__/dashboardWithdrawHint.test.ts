@@ -263,7 +263,7 @@ test("dashboard: dong thong bao no dung NGUYEN VAN cau user yeu cau, nam DUOI ca
   const text = html.replace(/<[^>]+>/g, "");
   assert.match(
     text,
-    /Đơn C2-PAID đã được trả hàng sau khi bạn đã nhận tiền, nên Shopee thu lại hoa hồng của đơn đó\. Hiện bạn đang nợ 85\.536đ, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau/
+    /Đơn C2-PAID đã được trả hàng sau khi bạn đã nhận tiền, nên sàn thu lại hoa hồng của đơn đó\. Hiện bạn đang nợ 85\.536đ, số tiền này sẽ được Admin tự trừ khi bạn gửi yêu cầu Rút tiền lần sau/
   );
   assert.doesNotMatch(html, /trừ dần|tự hết dần|đã trừ khoản này/, "cau cua mo hinh CU");
 });
@@ -434,3 +434,26 @@ test("dashboard: don nho dang cho -> chi thay 'Chờ xác nhận', khong lo ngay
   // Khong co the "Đang tạm giữ" nao o hang the tien (the do chi hien khi heldBalance > 0).
   assert.doesNotMatch(html, /Đang tạm giữ/);
 });
+
+test("dashboard: cau 'cho xac nhan' khong goi ten mot san cu the - user co the dang cho don TikTok", () => {
+  const html = render({
+    availableBalance: 0,
+    entries: [entry({ userShareAmount: 48_114, merchant: "tiktokshop" })],
+  });
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /chờ sàn xác nhận/);
+  assert.doesNotMatch(text, /chờ Shopee xác nhận/);
+});
+
+test("dashboard: cau no hoan tra khong goi ten san (no co the den tu don TikTok)", () => {
+  const html = render({
+    availableBalance: 0,
+    debtRemaining: 40_000,
+    debts: [{ orderId: "TT-PAID", remaining: 40_000 }],
+    entries: [entry({ status: "confirmed", merchant: "tiktokshop" })],
+  });
+  const text = html.replace(/<[^>]+>/g, "");
+  assert.match(text, /nên sàn thu lại hoa hồng/);
+  assert.doesNotMatch(text, /Shopee thu lại/);
+});
+

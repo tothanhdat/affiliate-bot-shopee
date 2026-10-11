@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  formatPayoutDebtNotice,
+  PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT,
   formatUsageText,
   USAGE_TEXT,
   renderTemplate,
@@ -460,3 +462,42 @@ test("formatGroupJoinWelcomeReply: render ca {{handbookUrl}} lan {{san}}", () =>
   assert.match(result, /https:\/\/bot\.test\/so-tay/);
   assert.ok(!result.includes("{{"), `con placeholder chua thay: ${result}`);
 });
+
+// ---- Tin nhan no hoan tra: ten san la cua CHINH DON do (2026-10-11) ----
+// Truoc day cau cung "Shopee thu lai" vi no chi sinh tu import Shopee. Doi soat TikTok sinh them no tu
+// don TikTok, nen ten san phai di theo don - qua placeholder {{sanDon}} de admin sua tay DUNG MOT LAN.
+
+test("formatPayoutDebtNotice: {{sanDon}} la ten day du cua san cua don (Shopee)", () => {
+  const text = formatPayoutDebtNotice(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, {
+    orderId: "SP-1",
+    amount: 40_000,
+    dashboardUrl: "https://x.test/d/tok",
+    merchant: "shopee",
+  });
+  assert.match(text, /nên Shopee thu lại 40\.000đ hoa hồng/);
+  assert.doesNotMatch(text, /\{\{/, "khong con placeholder nao chua dien");
+});
+
+test("formatPayoutDebtNotice: don TikTok -> 'TikTok Shop thu lai', khong con chu Shopee", () => {
+  const text = formatPayoutDebtNotice(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, {
+    orderId: "TT-1",
+    amount: 2_160,
+    dashboardUrl: "https://x.test/d/tok",
+    merchant: "tiktokshop",
+  });
+  assert.match(text, /nên TikTok Shop thu lại 2\.160đ hoa hồng/);
+  assert.doesNotMatch(text, /Shopee/);
+});
+
+test("PAYOUT_DEBT_NOTICE default: dung {{sanDon}}, khong go cung ten san; giu cau rang buoc niem tin", () => {
+  assert.match(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, /\{\{sanDon\}\}/);
+  assert.doesNotMatch(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, /Shopee/);
+  assert.match(PAYOUT_DEBT_NOTICE_TEMPLATE_DEFAULT, /không phải chuyển tiền lại/);
+});
+
+test("formatPayoutDebtNotice: template CU da luu trong DB (go cung 'Shopee', khong co {{sanDon}}) van render nguyen van", () => {
+  const legacy = "Đơn {{orderId}} bị trả, nên Shopee thu lại {{amount}}.";
+  const text = formatPayoutDebtNotice(legacy, { orderId: "A", amount: 1_000, dashboardUrl: "u", merchant: "shopee" });
+  assert.equal(text, "Đơn A bị trả, nên Shopee thu lại 1.000đ.");
+});
+
