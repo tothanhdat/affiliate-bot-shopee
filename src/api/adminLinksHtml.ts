@@ -1,6 +1,6 @@
 import type { LinkSourceContext, RequestLogEntry, RequestOutcome } from "../core/types.js";
 import type { CreatedLinkFilters, CreatedLinksTotals } from "../core/logStore.js";
-import { getMerchantAdminName } from "../core/merchants.js";
+import { MERCHANTS, getMerchantAdminName } from "../core/merchants.js";
 import { formatVnd } from "../core/money.js";
 import { copyIconButton, escapeHtml, formatDateTimeParts } from "./htmlHelpers.js";
 import {
@@ -233,15 +233,34 @@ export function renderLinksPage(
 
   // 3 the KPI tinh tren DUNG bo loc dang ap (getCreatedLinksTotals dung chung menh de WHERE voi
   // bang) - lech la the KPI noi mot so trong khi bang liet ke so khac.
-  const kpiRow = kpiGrid([
+  // The "Tong luot tao link" cu da tach thanh 1 the MOI SAN (2026-10-11, yeu cau user). The TikTok chi
+  // hien khi san dang bat HOAC van con luot cu cua no trong pham vi loc - TikTok tat thi khong de
+  // lai dau vet nao (cung nguyen tac voi /so-tay va tab TikTok cua /admin/record-orders).
+  const shopeeCount = totals.byMerchant.shopee ?? 0;
+  const tiktokCount = totals.byMerchant.tiktokshop ?? 0;
+  const showTiktok = MERCHANTS.some((m) => m.id === "tiktokshop") || tiktokCount > 0;
+  const cards = [
     kpiCard({
-      label: "Tổng lượt tạo link",
-      value: String(totals.total),
+      label: "Lượt tạo link Shopee",
+      value: String(shopeeCount),
       note: "theo bộ lọc đang áp",
       icon: "link",
       valueClass: "text-slate-800",
-      iconClass: "bg-slate-100 text-slate-600",
+      // Cung cap mau voi chip san Shopee o cot "Link goc" (merchantChipClass).
+      iconClass: "bg-orange-50 text-orange-600",
     }),
+    ...(showTiktok
+      ? [
+          kpiCard({
+            label: "Lượt tạo link TikTok Shop",
+            value: String(tiktokCount),
+            note: "theo bộ lọc đang áp",
+            icon: "link",
+            valueClass: "text-slate-800",
+            iconClass: "bg-slate-900 text-white",
+          }),
+        ]
+      : []),
     kpiCard({
       label: "Tạo thành công",
       value: String(totals.success),
@@ -261,7 +280,8 @@ export function renderLinksPage(
     // KHONG co the "Hoa hong uoc tinh" (2026-10-10, yeu cau user): user tao link khong dong nghia voi
     // mua hang, tong hoa hong uoc tinh de doc nham thanh doanh thu du kien. Cot cung ten trong bang
     // van giu - o do la so cua TUNG luot, khong ai cong don len.
-  ], 3);
+  ];
+  const kpiRow = kpiGrid(cards, cards.length === 4 ? 4 : 3);
 
   // Form GET khong co input "page" -> moi lan bam Loc tu dong ve trang 1 (doi bo loc thi so trang
   // cu khong con y nghia). `userId` la input AN: bo loc khop CHINH XAC do /admin/users bam sang,

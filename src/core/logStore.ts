@@ -46,6 +46,8 @@ export interface CreatedLinksTotals {
   success: number;
   errors: number;
   distinctUsers: number;
+  /** So luot (ca thanh cong lan loi) theo tung san, trong pham vi bo loc. San khong co luot nao thi khong co key. */
+  byMerchant: Partial<Record<MerchantId, number>>;
   /** Tong hoa hong GOC uoc tinh cua cac luot THANH CONG trong pham vi bo loc. */
   commissionEstimateTotal: number;
 }
@@ -331,11 +333,18 @@ export class LogStore {
          FROM requests ${where}`
       )
       .get(...params) as Record<string, number>;
+    const merchantRows = this.db
+      .prepare(`SELECT merchant, COUNT(*) AS n FROM requests ${where} GROUP BY merchant`)
+      .all(...params) as { merchant: MerchantId; n: number }[];
+    const byMerchant: Partial<Record<MerchantId, number>> = {};
+    // Row cu co the thieu merchant (NULL): van nam trong `total` nhung khong thuoc san nao.
+    for (const m of merchantRows) if (m.merchant) byMerchant[m.merchant] = m.n;
     return {
       total: row.total,
       success: row.success,
       errors: row.errors,
       distinctUsers: row.distinct_users,
+      byMerchant,
       commissionEstimateTotal: row.commission_estimate_total,
     };
   }

@@ -249,6 +249,22 @@ test("getCreatedLinksTotals tinh tren DUNG bo loc dang ap", () => {
   }
 });
 
+test("getCreatedLinksTotals.byMerchant dem rieng tung san va theo DUNG bo loc", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "a" });
+    recordLink(store, { userId: "b" });
+    recordLink(store, { userId: "c", merchant: "tiktokshop" });
+    recordLink(store, { userId: "d", merchant: "tiktokshop", outcome: "error", errorCode: "E", affiliateUrl: null });
+
+    assert.deepEqual(store.getCreatedLinksTotals().byMerchant, { shopee: 2, tiktokshop: 2 });
+    // Chua co luot nao cua san thi khong co key (caller doc `?? 0`).
+    assert.deepEqual(store.getCreatedLinksTotals({ outcome: "error" }).byMerchant, { tiktokshop: 1 });
+  } finally {
+    store.close();
+  }
+});
+
 test("commissionEstimateTotal KHONG cong luot loi - luot do khong tao ra link nao", () => {
   const store = makeStore();
   try {
