@@ -120,6 +120,11 @@ export interface RecordConversionInput {
 export interface UserLedgerSummary {
   entries: CommissionEntry[];
   /**
+   * Chi tiet tung mon cua cac don trong `entries` (2026-10-11), khoa Map = entryItemsKey(merchant,
+   * orderId). Don khong co chi tiet thi vang mat. Lay trong MOT query cho ca danh sach don.
+   */
+  entryItems: Map<string, CommissionEntryItem[]>;
+  /**
    * Tien don da mo khoa, CHUA nam trong yeu cau rut nao. KHONG tru no hoan tra - no dung rieng o
    * debtRemaining va chi bi tru LUC YEU CAU RUT DUOC DUYET (mo hinh no 2026-10-08, xem requestWithdrawal).
    */
@@ -1373,6 +1378,7 @@ export class LedgerStore {
 
     return {
       entries,
+      entryItems: this.listEntryItemsFor(entries),
       availableBalance: this.getAvailableBalance(platform, userId),
       heldBalance: this.getHeldBalance(platform, userId),
       heldEntries: this.getHeldEntries(platform, userId),

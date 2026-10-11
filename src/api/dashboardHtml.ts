@@ -1,3 +1,4 @@
+import { entryItemsKey, entryItemsReconcile, type CommissionEntryItem } from "../core/entryItems.js";
 import { getMerchantConfig } from "../core/merchants.js";
 import type { CommissionEntry, Platform, WithdrawalRequest } from "../core/types.js";
 import { VIETNAM_BANKS } from "../core/vietnamBanks.js";
@@ -194,6 +195,27 @@ function pageShell(title: string, body: string): string {
   .merchant-shopee { color: var(--shopee); }
   .merchant svg { width: 14px; height: 14px; flex-shrink: 0; }
   .order-card-product { color: var(--text); font-size: 0.9375rem; font-weight: 500; line-height: 1.45; margin: 0 0 1.125rem; }
+  .order-items { margin: -0.5rem 0 1.125rem; }
+  .order-items summary {
+    cursor: pointer; list-style: none; color: var(--accent);
+    font-size: 0.8125rem; font-weight: 600; padding: 0.5rem 0;
+  }
+  .order-items summary::-webkit-details-marker { display: none; }
+  .order-items summary::before { content: "▸ "; }
+  .order-items[open] summary::before { content: "▾ "; }
+  .order-items ul { list-style: none; margin: 0.25rem 0 0; padding: 0; }
+  .order-item { border-top: 1px solid var(--card-border); padding: 0.625rem 0; }
+  .item-name { font-size: 0.875rem; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+  .item-qty { color: var(--text-dim); font-weight: 400; }
+  .item-figures {
+    display: flex; flex-wrap: wrap; gap: 0.125rem 1rem; margin-top: 0.25rem;
+    font-size: 0.8125rem; color: var(--text-muted);
+  }
+  .item-figures b { color: var(--text); font-weight: 600; }
+  .order-item-void .item-name, .order-item-void .item-figures {
+    color: var(--text-dim); text-decoration: line-through; opacity: 0.7;
+  }
+  .order-item-total .item-name { font-weight: 600; }
   .cancel-reason { color: var(--danger); font-size: 0.8125rem; margin-top: 0.875rem; }
   .debt-note { color: var(--warning); font-size: 0.875rem; margin: 0 0 1rem; line-height: 1.5; }
   /* 4 cot tren man rong, 2 cot duoi 560px. Duong ke mo GIUA cac cot (khong bao quanh) de doc
@@ -337,8 +359,49 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   http: "HTTP",
 };
 
+/**
+ * Khoi chi tiet tung san pham cua don nhieu mon (2026-10-11, yeu cau truc tiep cua chu bot). Chi ve
+ * khi >= 2 mon VA cong lai KHOP dung "Gia tri don"/"Hoa hong" tren the: loi hua cua khoi nay la
+ * "tu cong lai ra dung so tren the", khong khop (admin da sua tay hoa hong, don co dong khong doc
+ * duoc) thi AN con hon hien so lech.
+ *
+ * KHONG hien "phan ban nhan" tung mon: chia thue/phi/% roi lam tron tung mon thi tong lech vai dong
+ * so voi o "Ban nhan" - dung cai bay hai-nguon-tinh-tien ma money.ts da phai don mot lan.
+ * Danh sach DOC (khong bang ngang): trang nay chu yeu mo tu dien thoai.
+ */
+function renderOrderItems(e: CommissionEntry, items: CommissionEntryItem[] | undefined): string {
+  if (!items || items.length < 2 || !entryItemsReconcile(e, items)) return "";
+  const active = items.filter((i) => i.rowStatus !== "reversed");
+  const totalAmount = active.reduce((sum, i) => sum + i.orderAmount, 0);
+  const totalCommission = active.reduce((sum, i) => sum + i.commissionAmount, 0);
+  const rows = items
+    .map((i) => {
+      const reversed = i.rowStatus === "reversed";
+      const qty = i.quantity > 1 ? ` <span class="item-qty">x${i.quantity}</span>` : "";
+      const noCommission =
+        !reversed && i.commissionAmount === 0 ? ` <span class="item-qty">(chưa có hoa hồng)</span>` : "";
+      return `<li class="order-item${reversed ? " order-item-void" : ""}">
+      <div class="item-name">${escapeHtml(i.productName)}${qty}</div>
+      <div class="item-figures"><span>Giá trị <b>${formatVnd(i.orderAmount)}</b></span><span>Hoa hồng <b>${formatVnd(i.commissionAmount)}</b>${noCommission}</span></div>
+    </li>`;
+    })
+    .join("\n");
+  return `<details class="order-items">
+    <summary>${items.length} sản phẩm trong đơn</summary>
+    <ul>
+    ${rows}
+    <li class="order-item order-item-total">
+      <div class="item-name">Tổng cộng</div>
+      <div class="item-figures"><span>Giá trị <b>${formatVnd(totalAmount)}</b></span><span>Hoa hồng <b>${formatVnd(totalCommission)}</b></span></div>
+    </li>
+    </ul>
+  </details>`;
+}
+
 export function renderDashboardPage(input: {
   entries: CommissionEntry[];
+  /** Chi tiet tung mon (2026-10-11) - optional de cac cho goi/test cu khong phai doi. Xem renderOrderItems. */
+  entryItems?: Map<string, CommissionEntryItem[]>;
   /** KHONG tru no (mo hinh no 2026-10-08) - no chi bi tru luc yeu cau rut duoc duyet. */
   availableBalance: number;
   /** Tien da duoc Shopee duyet nhung con bi giam (2026-10-08, xem payoutHold.ts). */
@@ -385,6 +448,7 @@ export function renderDashboardPage(input: {
           ? `<div><div class="label">Bằng chứng</div><div class="value"><a class="proof-link" href="/d/${input.token}/withdrawal-proofs/${encodeURIComponent(e.proofImagePath)}" target="_blank" rel="noopener">Xem ảnh</a></div></div>`
           : "";
       const reason = cancelReason(e);
+      const itemsBlock = renderOrderItems(e, input.entryItems?.get(entryItemsKey(e.merchant, e.orderId)));
       const reasonLine = reason
         ? `<div class="cancel-reason"><span class="order-id-label">Lý do huỷ:</span> ${escapeHtml(reason)}</div>`
         : "";
@@ -404,6 +468,7 @@ export function renderDashboardPage(input: {
     </div>
   </div>
   ${product ? `<div class="order-card-product">${product}</div>` : ""}
+  ${itemsBlock}
   <div class="order-stats">
     <div><div class="label">Giá trị đơn</div><div class="value">${formatVnd(e.orderAmount)}</div></div>
     <div><div class="label">Hoa hồng</div><div class="value">${formatVnd(e.commissionAmount)}</div></div>

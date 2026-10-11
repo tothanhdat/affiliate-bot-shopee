@@ -444,3 +444,34 @@ test("GET /d/:token don bi admin sua tay hoa hong: hien so moi nhat quan, khong 
     cleanup();
   }
 });
+
+test("GET /d/:token hien chi tiet tung mon cua don nhieu mon (chi tiet lay tu bang commission_entry_items)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-multi",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-nhieu-mon",
+      orderAmount: 300_000,
+      commissionAmount: 10_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    ledgerStore.replaceEntryItems("shopee", "order-nhieu-mon", [
+      { itemId: "1", modelId: "1", productName: "Mon chinh ABC", quantity: 1, orderAmount: 200_000, commissionAmount: 6_000, rowStatus: "confirmed" },
+      { itemId: "2", modelId: "1", productName: "Mon mua kem XYZ", quantity: 1, orderAmount: 100_000, commissionAmount: 4_000, rowStatus: "confirmed" },
+    ]);
+
+    const html = await (await fetch(`${baseUrl}/d/${token}`)).text();
+    assert.match(html, /2 sản phẩm trong đơn/);
+    assert.ok(html.includes("Mon mua kem XYZ"));
+  } finally {
+    cleanup();
+  }
+});
