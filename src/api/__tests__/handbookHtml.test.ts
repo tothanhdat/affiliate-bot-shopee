@@ -253,3 +253,90 @@ test("handbook: noi ro moc 15 ngay cua Shopee de user kiem chung duoc", () => {
   const html = render();
   assert.match(html, /15 ngày/);
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-11 (yeu cau truc tiep cua chu bot): So tay noi ro case mua them san pham trong cung don,
+// va them icon cho "do kho khan" - nhung KHONG qua nhieu.
+// ---------------------------------------------------------------------------
+
+/** Moi emoji (bieu tuong hinh) trong chuoi - dung de dem, khong dung de kiem noi dung. */
+function countEmoji(text: string): number {
+  return [...text.matchAll(/\p{Extended_Pictographic}/gu)].length;
+}
+
+/** Chu nguoi dung that su THAY: bo the va thuoc tinh (data-search lap lai noi dung nen se dem doi). */
+function visibleText(html: string): string {
+  return html.replace(/<[^>]*>/g, " ");
+}
+
+test("handbook: tieu de trang co icon cuon so, con <title> cua tab van la chu thuan", () => {
+  const html = render();
+  assert.match(html, /<h1><span class="title-icon" aria-hidden="true">📒<\/span>Sổ tay hoàn tiền<\/h1>/);
+  assert.match(html, /<title>Sổ tay hoàn tiền<\/title>/);
+});
+
+test("handbook: co muc 'mua them san pham trong cung shop', dat NGAY SAU dieu kien bat buoc", () => {
+  const html = render();
+  const iDieuKien = html.indexOf('id="dieu-kien"');
+  const iMuaThem = html.indexOf('id="mua-them-cung-shop"');
+  const iRutTien = html.indexOf('id="rut-tien"');
+  assert.ok(iMuaThem > iDieuKien && iMuaThem < iRutTien, "muc moi phai nam giua 'dieu kien' va 'rut tien'");
+
+  const section = html.slice(iMuaThem, html.indexOf("</details>", iMuaThem));
+  assert.match(section, /Mua thêm sản phẩm khác trong cùng shop/);
+  assert.match(
+    section,
+    /các sản phẩm bạn mua thêm trong cùng đơn vẫn được tính hoa hồng, kể cả sản phẩm bạn không gửi link/
+  );
+});
+
+test("handbook: muc 'mua them' CHI co 1 cau - 3 cau chu bot da bo KHONG duoc quay lai", () => {
+  const html = render();
+  const iMuaThem = html.indexOf('id="mua-them-cung-shop"');
+  assert.ok(iMuaThem > -1, "muc phai ton tai thi viec kiem 'khong co cau X' moi co nghia");
+  const section = html.slice(iMuaThem, html.indexOf("</details>", iMuaThem));
+  assert.ok(section.length > 100, "noi dung muc phai co that");
+  assert.doesNotMatch(section, /Trong chi tiết đơn/, "da bo cau 'trong chi tiet don thay tung mon'");
+  assert.doesNotMatch(section, /cộng lại đúng bằng hoa hồng/, "da bo cau 'cac mon cong lai dung bang hoa hong cua ca don'");
+  assert.doesNotMatch(section, /Quà tặng/, "da bo cau ve qua tang kem");
+  assert.doesNotMatch(section, /chưa bật hoa hồng/, "da bo cau ve nganh hang chua bat hoa hong");
+});
+
+test("handbook: moi muc gap/mo co dung 1 icon dung vi tri co dinh, khong lan vao tieu de", () => {
+  const html = render();
+  const summaries = [...html.matchAll(/<summary>([\s\S]*?)<\/summary>/g)].map((m) => m[1]);
+  assert.ok(summaries.length >= 10, "phai co du cac muc gap/mo");
+  for (const s of summaries) {
+    const icon = s.match(/<span class="faq-icon" aria-hidden="true">([^<]*)<\/span>/);
+    assert.ok(icon, `muc thieu icon: ${s.slice(0, 80)}`);
+    assert.equal(countEmoji(icon[1]), 1, `icon phai la dung 1 emoji: ${icon[1]}`);
+  }
+});
+
+test("handbook: icon CHI o tieu de muc, KHONG chen vao muc luc (muc luc tren mobile la hang ngang chat)", () => {
+  const html = render();
+  const toc = html.match(/<nav class="toc"[\s\S]*?<\/nav>/)![0];
+  // Chi dem CHU HIEN THI: thuoc tinh data-search cua muc luc van mang san emoji cua callout o buoc 3.
+  assert.equal(countEmoji(visibleText(toc)), 0, "muc luc khong duoc co emoji");
+});
+
+test("handbook: khong lam dung emoji - tong so tren trang gioi han (chu bot: dung them nhieu qua se roi)", () => {
+  const html = render();
+  const body = html.slice(html.indexOf("<body>"));
+  const total = countEmoji(visibleText(body.replace(/<script>[\s\S]*?<\/script>/g, "")));
+  assert.ok(total <= 18, `tong ${total} emoji - qua nhieu, bot bot di chu khong them`);
+  assert.ok(total >= 12, `chi co ${total} emoji - da mat icon cua cac muc`);
+});
+
+test("handbook: icon khong lam hong o tim kiem (data-search van khong bi cat ngang)", () => {
+  const html = render();
+  for (const m of html.matchAll(/data-search="[^"]*"(.)/g)) {
+    assert.match(m[1], /[\s>]/);
+  }
+});
+
+test("handbook: thang giam don to TAT -> van du icon o cac muc con lai", () => {
+  const html = render({ payoutHoldThresholdVnd: 0 });
+  const summaries = [...html.matchAll(/<summary>([\s\S]*?)<\/summary>/g)].map((m) => m[1]);
+  assert.ok(summaries.every((s) => s.includes('class="faq-icon"')));
+});

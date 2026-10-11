@@ -48,6 +48,12 @@ function merchantView(data: HandbookPageData): { hasTiktok: boolean; san: string
 interface HandbookItem {
   id: string;
   title: string;
+  /**
+   * 1 emoji dat TRUOC tieu de (2026-10-11, yeu cau chu bot: cho do kho khan, nhung khong qua nhieu).
+   * Tach khoi `title` co chu dich: title con vao muc luc (hang ngang tren mobile, rat chat cho) va vao
+   * data-search - icon chi ve o <summary>, khong bao gio lot vao hai cho do.
+   */
+  icon?: string;
   /** HTML cua phan than - mo ra khi bam vao tieu de. */
   body: string;
 }
@@ -138,6 +144,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
       ? [
           {
             id: "giam-don-to",
+            icon: "⏳",
             title: "Đơn giá trị lớn được giữ thêm vài ngày",
             body: `
             <ul>
@@ -194,7 +201,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
               <h3>Theo dõi &amp; nhận tiền hoàn</h3>
               <p>Nhắn <strong>"xemhh"</strong> (không phân biệt hoa/thường) trong tin nhắn riêng (DM) cho bot — không phải trong group — để lấy link dashboard cá nhân. Link này cố định, lưu lại dùng dần không cần nhắn lại nhiều lần.</p>
               <p>Trên dashboard bạn xem được: số dư khả dụng, số đang chờ xác nhận, số đang chờ rút, số đã nhận, và danh sách chi tiết từng đơn hàng.</p>
-              <p>Khi có đơn được xác nhận <strong>Hoàn thành</strong>, bot sẽ tự động nhắn tin riêng báo cho bạn — bạn không cần chủ động hỏi. Khi số dư "Khả dụng" đạt từ ${threshold} trở lên, bạn có thể bấm yêu cầu rút toàn bộ ngay trên dashboard.</p>
+              <p>🔔 Khi có đơn được xác nhận <strong>Hoàn thành</strong>, bot sẽ tự động nhắn tin riêng báo cho bạn — bạn không cần chủ động hỏi. Khi số dư "Khả dụng" đạt từ ${threshold} trở lên, bạn có thể bấm yêu cầu rút toàn bộ ngay trên dashboard.</p>
               <p class="muted-note"><strong>Tần suất cập nhật trạng thái đơn:</strong> ${hasTiktok ? "Shopee và TikTok Shop đều cập nhật" : "Shopee cập nhật"} <strong>mỗi ngày</strong>, nên đơn mới đặt thường cần vài ngày mới đổi trạng thái.</p>
             </div>
           </li>
@@ -208,11 +215,13 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
       items: [
         {
           id: "san-ho-tro",
+          icon: "🛍️",
           title: "Sàn được hỗ trợ",
           body: `<p>${san}.</p>`,
         },
         {
           id: "dinh-dang-link",
+          icon: "🔗",
           title: "Định dạng link nhận được",
           body: `
             <ul>
@@ -227,6 +236,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         },
         {
           id: "tan-suat-cap-nhat",
+          icon: "🔄",
           title: "Tần suất cập nhật trạng thái đơn",
           body: `
             <div class="kv-list">
@@ -236,6 +246,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         },
         {
           id: "trang-thai-don",
+          icon: "📊",
           title: "Trạng thái đơn hàng trên dashboard",
           body: `
             <div class="kv-list">
@@ -263,6 +274,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
       items: [
         {
           id: "ti-le-hoa-hong",
+          icon: "💰",
           title: "Tỉ lệ hoa hồng và cách tính",
           body: `
             <p>Mỗi đơn hàng được tính theo công thức: hoa hồng gốc từ sàn → trừ ${data.taxPercent}% thuế → trừ ${data.platformFeePercent}% phí sàn (tính trên phần đã trừ thuế) → phần còn lại bạn nhận <strong>${data.userSharePercent}%</strong>, chủ bot giữ ${botSharePercent}% để duy trì vận hành.</p>
@@ -272,6 +284,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         },
         {
           id: "dieu-kien",
+          icon: "✅",
           title: "Điều kiện bắt buộc để được tính hoa hồng",
           body: `
             <ul class="check-list">
@@ -281,7 +294,16 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
             </ul>`,
         },
         {
+          id: "mua-them-cung-shop",
+          icon: "🛒",
+          title: "Mua thêm sản phẩm khác trong cùng shop",
+          // Chi 1 cau (2026-10-11, chu bot): da bo cau "xem tung mon tren dashboard", cau "cong lai dung
+          // bang hoa hong ca don", cau ve qua tang va cau ve nganh hang 0% - dung them lai.
+          body: `<p>Khi bạn mở link và đặt hàng, các sản phẩm bạn mua thêm trong cùng đơn vẫn được tính hoa hồng, kể cả sản phẩm bạn không gửi link.</p>`,
+        },
+        {
           id: "rut-tien",
+          icon: "💸",
           title: "Rút tiền",
           body: `
             <ul>
@@ -295,6 +317,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         ...holdItems,
         {
           id: "tra-hang",
+          icon: "📦",
           title: "Nếu bạn trả hàng sau khi đã nhận tiền",
           body: `
             <ul>
@@ -307,6 +330,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
         },
         {
           id: "rui-ro",
+          icon: "⚠️",
           title: "Lưu ý / rủi ro cần biết",
           body: `
             <div class="callout callout-warning">
@@ -320,7 +344,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
 
 function renderItem(item: HandbookItem): string {
   return `<details class="faq" id="${item.id}" ${searchAttr(item.title, item.body)}>
-  <summary><span class="faq-title">${item.title}</span><span class="faq-chevron" aria-hidden="true"></span></summary>
+  <summary><span class="faq-title">${item.icon ? `<span class="faq-icon" aria-hidden="true">${item.icon}</span>` : ""}${item.title}</span><span class="faq-chevron" aria-hidden="true"></span></summary>
   <div class="faq-body">${item.body}</div>
 </details>`;
 }
@@ -563,7 +587,14 @@ export function renderHandbookPage(data: HandbookPageData): string {
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   }
   details.faq summary::-webkit-details-marker { display: none; }
-  .faq-title { font-weight: 650; font-size: 0.96875rem; color: var(--text); }
+  /* flex de neu tieu de xuong dong tren mobile thi dong 2 thut vao thang hang voi dong 1 (icon o ben
+     trai khong bi "troi" xuong duoi chu); text thuan tro thanh 1 flex item an danh. */
+  .faq-title {
+    display: flex; align-items: flex-start; gap: 0.625rem;
+    font-weight: 650; font-size: 0.96875rem; color: var(--text);
+  }
+  .faq-icon { flex: 0 0 auto; font-size: 1.0625rem; line-height: 1.35; }
+  .title-icon { margin-right: 0.5rem; }
   details.faq[open] .faq-title { color: #fff; }
   .faq-chevron {
     flex: 0 0 auto; width: 9px; height: 9px; border-right: 2px solid var(--text-dim);
@@ -681,7 +712,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
 <div class="bg-dots"></div>
 <div class="page-content">
   <header class="hero">
-    <h1>Sổ tay hoàn tiền</h1>
+    <h1><span class="title-icon" aria-hidden="true">📒</span>Sổ tay hoàn tiền</h1>
     <p class="subtitle">Hướng dẫn dành cho bạn khi dùng bot săn sale hoàn tiền (cashback) trong group Zalo/Telegram khi mua hàng qua ${san}.</p>
     <div class="chips">
       <div class="chip">
@@ -702,7 +733,7 @@ export function renderHandbookPage(data: HandbookPageData): string {
   <div class="search-wrap">
     <input id="handbook-search" type="search" autocomplete="off" placeholder="Tìm nhanh trong sổ tay… (vd: rút tiền, xemhh, trạng thái)" aria-label="Tìm trong sổ tay">
   </div>
-  <div class="no-match" id="handbook-no-match" hidden>Không tìm thấy mục nào khớp với từ khoá của bạn. Thử từ ngắn hơn, hoặc tag admin trong group nhé.</div>
+  <div class="no-match" id="handbook-no-match" hidden>🔍 Không tìm thấy mục nào khớp với từ khoá của bạn. Thử từ ngắn hơn, hoặc tag admin trong group nhé.</div>
 
   <div class="layout">
     ${renderToc(sections)}
