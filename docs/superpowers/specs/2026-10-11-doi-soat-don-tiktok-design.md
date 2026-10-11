@@ -25,7 +25,7 @@ ví CAST của RioHub (dòng tiền riêng, mục 1.3 của tài liệu).
 |---|---|---|
 | 2.1 | **Bấm tay trước, tự động sau** | Bảng quyết định trạng thái đang dựng trên 2 đơn / 1 trạng thái; vài lần đầu chủ bot phải tận mắt xem nó ghi gì |
 | 2.2 | **Đơn vào Khả dụng NGAY LÚC GIAO HÀNG**, không chờ RioHub quyết toán | `SETTLED` nằm sau cửa sổ trả hàng 15+ ngày — chờ nó là trải nghiệm rất tệ, user không đợi được. `payoutHold.ts` ghi rõ Shopee cũng bật "Hoàn thành" **ngay lúc giao hàng**, nên `time_delivered_iso` là mốc tương đương, không phải `SETTLED` |
-| 2.2b | **Hoa hồng gốc = `est_commission × 0,9`**, không sửa lại số sau khi đã chốt | Lúc giao hàng chỉ có `est` (số thô, chưa trừ thuế `pit`); `actual_commission` phải chờ ~15 ngày nữa. Hệ số 0,9 giữ đúng bài toán kinh tế 1.3b. Sửa số sau khi entry đã `confirmed` thì tiền user đã thấy và rút được → chạm vào cỗ máy nợ hoàn trả trên **mọi đơn** thay vì ca trả hàng hiếm: đánh đổi quá tệ |
+| 2.2b | **Hoa hồng gốc = `est_commission × 0,9`**, không sửa lại số sau khi đã chốt | Lúc giao hàng chỉ có `est` (số thô, chưa trừ thuế `pit`); `actual_commission` phải chờ ~15 ngày nữa. Hệ số 0,9 giữ đúng bài toán kinh tế ở mục 1.3b của `docs/riohub-tiktok.md`. Sửa số sau khi entry đã `confirmed` thì tiền user đã thấy và rút được → chạm vào cỗ máy nợ hoàn trả trên **mọi đơn** thay vì ca trả hàng hiếm: đánh đổi quá tệ |
 | 2.3 | **Tách lớp áp ledger dùng chung** với Shopee | Bản sao thứ hai của đường tiền là loại nợ kỹ thuật đắt nhất ở đây; chính đoạn đó lòi ra lỗ hổng nghiêm trọng 08/10/2026 |
 | 2.4 | **Cách ly Shopee ↔ TikTok là ràng buộc hạng nhất** | Yêu cầu trực tiếp của chủ bot: đồng bộ TikTok hỏng, hoặc bỏ hẳn TikTok sau này, đều **không được** ảnh hưởng Shopee |
 | 2.5 | `pit` **không** cảnh báo lặp, `shared_with_partner ≠ 0` **có** | `pit` khác 0 là chuyện đúng-như-dự-kiến vĩnh viễn; báo động nó mỗi ngày sẽ làm nhờn luôn cảnh báo thật |
@@ -70,10 +70,14 @@ applyOrderStatusToLedger(...)                              src/core/orderStatusA
   ▼
 commission_entries · payout_debts · order_status_events · seen_orders
   │
-  ├─▶ tự hiện ở /admin/orders, /admin/dashboard, /admin/links, dashboard user
+  ├─▶ tự hiện ở /admin/orders, /admin/dashboard, dashboard user
   ├─▶ tin "đơn về" cho user (ảnh) qua buildOrdersConfirmedNotification()
-  └─▶ cảnh báo admin nếu shared_with_partner ≠ 0
+  └─▶ cảnh báo admin: shared_with_partner ≠ 0 (7.1) · actual thấp hơn số đã trả (7.1b)
 ```
+
+`/admin/links` **không** nằm trong danh sách trên: nó đọc từ `logStore.listCreatedLinks()` (bảng
+`requests`), tức dữ liệu được ghi lúc **tạo link** — đường này không chạm tới nó. Link TikTok đã hiện
+ở đó từ 10/10.
 
 `importTiktokOrders` nhận **một mảng**, không tự gọi mạng — y hệt `importShopeeReport` nhận `csvText`.
 Nhờ vậy toàn bộ bảng quyết định tiền test được bằng fixture, không mock HTTP.
@@ -89,9 +93,9 @@ Nhờ vậy toàn bộ bảng quyết định tiền test được bằng fixtur
 
 ### 3.2 Lấy toàn bộ, không lọc ngày
 
-Tài liệu khuyến nghị sync tăng dần bằng `update_time_start/end`, nhưng mục 2.5 ghi cạm bẫy: **sai tên
-HOẶC sai định dạng tham số đều bị nuốt im lặng** rồi trả về toàn bộ lịch sử — không `422`, không một
-dấu hiệu nào. Nghĩa là code **buộc phải** chịu được ca quét toàn bộ dù có lọc hay không.
+Tài liệu khuyến nghị sync tăng dần bằng `update_time_start/end`, nhưng **mục 2.5 của
+`docs/riohub-tiktok.md`** ghi cạm bẫy: **sai tên HOẶC sai định dạng tham số đều bị nuốt im lặng** rồi
+trả về toàn bộ lịch sử — không `422`, không một dấu hiệu nào. Nghĩa là code **buộc phải** chịu được ca quét toàn bộ dù có lọc hay không.
 
 Nên: quét toàn bộ, phân trang, không lọc ngày. Lý do:
 
@@ -122,8 +126,9 @@ khác đối chứng** — nếu kết quả không đổi thì tham số đang 
 | | Nhánh `reversed`: **bảng 5 ca**, tự huỷ yêu cầu rút, ghi nợ hoàn trả |
 | | `recordOrderStatusEvent` |
 
-Đúng chỗ hai sàn khác nhau thật: Shopee đọc nhãn tiếng Việt theo dòng, TikTok có
-`refunded_quantity`/`fully_refunded` nên hoàn một phần là khái niệm hạng nhất.
+Đúng chỗ hai sàn khác nhau thật: Shopee phân loại bằng **nhãn tiếng Việt** của cột "Trạng thái sản
+phẩm liên kết", TikTok bằng **enum số đã chuẩn hoá** cộng một **mốc thời gian giao hàng** — hai hình
+dạng dữ liệu khác hẳn, và mốc giao hàng thì Shopee không có tương đương dạng field.
 
 ### 4.2 Giao diện
 
@@ -155,6 +160,7 @@ export interface OrderStatusApplyInput {
   subId: string;
   requestEntry: { platform: Platform; userId: string; merchant: MerchantId };
   orderAmount: number;
+  /** BI BO QUA khi targetStatus = "reversed": nhanh do thu hoi theo existing.userShareAmount da luu. */
   commissionAmount: number;
   productName: string | null;
   orderDate: string | null;
@@ -227,12 +233,16 @@ của RioHub là một mốc khác hẳn và muộn hơn nhiều.
 
 Theo đúng nguyên tắc *"chưa chắc chắn hết thì vẫn pending"* của `mergeOrderRows` bên Shopee:
 
-| Tình huống các dòng | Cả đơn | Ghi chú |
-|---|---|---|
-| có **bất kỳ** dòng `status` lạ | **bỏ qua cả đơn** + cảnh báo | không đoán mò trên tiền — đúng `skippedUnknownStatus` của Shopee |
-| **tất cả** dòng = `3` | `reversed` | |
-| còn dòng không huỷ **chưa giao** và **chưa quyết toán** | `pending` | món cuối chưa về thì cả đơn chưa chắc |
-| còn lại (mọi dòng không huỷ đã giao, hoặc `status=2`) | **`confirmed`** | giam theo `time_delivered_iso`; dòng `3` bị **loại khỏi tổng tiền** (hoàn một phần) |
+**Xét theo thứ tự trên xuống, dừng ở dòng khớp đầu tiên** — thứ tự là một phần của luật, không phải
+cách trình bày: đơn toàn dòng `3` **không có** dòng không huỷ nào, nên nếu xét ca `pending` trước thì
+nó rơi tuột xuống `confirmed` và đơn bị huỷ lại được ghi tiền.
+
+| # | Tình huống các dòng | Cả đơn | Ghi chú |
+|---|---|---|---|
+| 1 | có **bất kỳ** dòng `status` lạ | **bỏ qua cả đơn** + cảnh báo | không đoán mò trên tiền — đúng `skippedUnknownStatus` của Shopee |
+| 2 | **tất cả** dòng = `3` | `reversed` | phải xét TRƯỚC ca 3, xem đoạn trên |
+| 3 | còn dòng không huỷ **chưa giao** và **chưa quyết toán** | `pending` | món cuối chưa về thì cả đơn chưa chắc |
+| 4 | còn lại (mọi dòng không huỷ đã giao, hoặc `status=2`) | **`confirmed`** | giam theo `time_delivered_iso`; dòng `3` bị **loại khỏi tổng tiền** (hoàn một phần) |
 
 `status=2` vẫn được nhận là `confirmed` **kể cả khi `time_delivered_iso` rỗng** — đã quyết toán là
 tín hiệu mạnh hơn đã giao, không có lý gì giữ lại. Lúc đó `completedAt` là `null` và
@@ -241,6 +251,15 @@ tín hiệu mạnh hơn đã giao, không có lý gì giữ lại. Lúc đó `co
 Luật giam dùng **nguyên** `resolveConfirmPlan()`, không sửa một dòng: đơn nhỏ nằm lại `pending` thêm
 `payout_hold_small_days` (mặc định 1) ngày, đơn to vào `confirmed` với `available_from` sau
 `payout_hold_days` (mặc định 7) ngày — cả hai đếm từ `completedAt`, y hệt Shopee.
+
+**Hệ quả vận hành phải biết trước**: đơn nhỏ vào Khả dụng ở **lần đồng bộ KẾ TIẾP** sau ngày đã chốt,
+chứ không tự mở theo ngày — đúng tính chất đã được chấp nhận cho Shopee (xem
+`.claude/rules/ledger-va-tien.md`, mục `payoutHold.ts`). Với Shopee nó vô hại vì có nhịp import hằng
+ngày 9h30. Với TikTok thì **phải bấm nút ở hai ngày khác nhau** mới xong một đơn nhỏ.
+
+Chuyện này **gần như tự tan** vì cả hai nút nằm trên **cùng trang** `/admin/record-orders`: lần ghé
+hằng ngày để import Shopee là bấm luôn được nút TikTok. Nhưng nó là lý do thật để bật đồng bộ tự động
+sớm (mục 3.1) — nghỉ 3 ngày thì đơn nhỏ TikTok vào Khả dụng chậm 3 ngày. **Chậm chứ không mất.**
 
 ### 5.4 Tiền
 
@@ -258,6 +277,10 @@ Một công thức duy nhất cho cả hai trạng thái — đó chính là đi
 - Tiền về dạng **string** trong JSON (giữ độ chính xác decimal) → parse qua một helper trả
   `number | null`; chuỗi rỗng và `null` đều ra `null`, **khác** số `0` (0 là giá trị thật).
 - `est_commission` rỗng ở **mọi** dòng không huỷ → bỏ qua cả đơn + cảnh báo (không có gì để ghi).
+  **Chốt này CHỈ áp cho đơn `pending`/`confirmed`.** Đơn `reversed` có **không** dòng nào không huỷ
+  nên điều kiện trên đúng một cách rỗng tuếch — áp cả vào đó là **bỏ qua mọi đơn bị huỷ**, tức tiền
+  không bao giờ được thu hồi. Nhánh `reversed` không cần `commissionAmount`: nó thu hồi theo
+  `existing.userShareAmount` đã lưu, y như Shopee.
 
 > ⛔ **Nếu sau này có ai định dùng `actual_commission` để tính tiền: lấy THẲNG field, tuyệt đối không
 > cộng lại từ 6 thành phần.** `actual_standard_commission` và `actual_bonus_commission` là số **gộp
@@ -281,6 +304,9 @@ Một công thức duy nhất cho cả hai trạng thái — đó chính là đi
  * Dua so tho vao duong tien la hua cao hon thuc nhan tren MOI don - dung cai bay Shopee da day.
  */
 export const TIKTOK_PIT_RETAINED_RATIO = 0.9;
+
+/** Bien bo qua khi so actual voi so da tra user - xem muc 7.1b. */
+export const TIKTOK_ACTUAL_SHORTFALL_SLACK = 0.02;
 
 export function estimateTiktokNetCommission(grossVnd: number): number;
 ```
@@ -339,9 +365,26 @@ Dòng hoa hồng cao nhất + hậu tố `(+N sản phẩm khác)` — cùng quy
 
 ### 5.8 Chưa quan sát được lần nào
 
-Ghi rõ để sau không ai đọc nhánh code như bằng chứng đã kiểm chứng: **`status=2`, `status=3`, hoàn một
-phần, `status` lạ, và `actual_commission` có giá trị** — chưa thấy ca nào. Nhánh `reversed` của TikTok
-dựng từ tài liệu + loại suy từ Shopee. **Lần hoàn/huỷ thật đầu tiên vẫn phải soi tay.**
+Ghi rõ để sau không ai đọc nhánh code như bằng chứng đã kiểm chứng. Cả 4 đơn thật hiện có đều là
+**một SKU, `status=1`, chưa quyết toán** — nên chưa thấy ca nào trong số này:
+
+| Chưa quan sát | Thiết kế dựa vào đâu |
+|---|---|
+| `status=2` (đã quyết toán) | enum chuẩn hoá trong tài liệu RioHub |
+| `status=3` (huỷ/hoàn) | tài liệu + loại suy từ bảng 5 ca của Shopee |
+| `actual_commission` có giá trị | tài liệu (và là lý do tồn tại của gác 7.1b) |
+| `status` lạ | tài liệu tự nói *"TikTok có thể bổ sung trạng thái khác"* |
+| **Đơn nhiều SKU** | tài liệu (*"một đơn nhiều SKU = nhiều dòng"*), **chưa thấy đơn nào >1 dòng** |
+| **Hoàn một phần trong CÙNG một SKU** | **không có thiết kế** — xem dưới |
+
+**Khoảng hở còn mở, ghi ra thay vì che:** `refunded_quantity`/`returned_quantity`/`fully_refunded` tồn
+tại trong schema nhưng thiết kế này **không đọc** chúng. Hoàn một phần được xử lý **theo dòng** (dòng
+`status=3` bị loại khỏi tổng), nên ca "mua 3 cái, trả 1 cái, vẫn cùng một SKU" sẽ phụ thuộc vào việc
+`est_commission` của dòng đó có tự giảm theo hay không — **chưa đo được**.
+
+Không bịa cách xử lý cho ca chưa thấy. Thay vào đó đặt một **đèn báo rẻ**: khi gặp dòng có
+`refunded_quantity > 0` hoặc `fully_refunded` bật mà `status !== 3` → đẩy một dòng vào `result.errors`.
+Lần đầu ca đó xảy ra là biết ngay, kèm số thật để quyết định, chứ không phải phát hiện qua lệch tiền.
 
 ## 6. Bốn chốt cách ly Shopee ↔ TikTok
 
@@ -364,8 +407,15 @@ TikTok nào chạy lúc khởi động — đúng cơ chế provider đang tự 
 vẫn hiện bình thường vì `tiktokshop` về `RETIRED_MERCHANTS` và `getMerchantConfig()` vẫn trả được:
 **chính xác tiền lệ Lazada đang chạy**.
 
-**(4) Bỏ hẳn TikTok sau này = xoá 3 file + 1 route + 1 thẻ.** `tiktokOrderImport.ts`,
-`riohubOrdersSource.ts`, `riohubOrders.ts`.
+**(4) Bỏ hẳn phần đối soát của đợt này = xoá 4 file + 1 route + 1 thẻ.** `tiktokOrderImport.ts`,
+`riohubOrdersSource.ts`, `tiktokCommission.ts`, `riohubOrders.ts` (CLI).
+
+Phạm vi câu này là **riêng đợt đối soát**. Đường **tạo link** (`tiktokAffiliateProvider.ts`,
+`riohubClient.ts`, `compositeProvider.ts`) đã có từ 10/10 và được tắt bằng chốt (3), không phải xoá —
+`TIKTOK_ENABLED=false` là cách tắt cả hai đường mà không xoá dòng nào.
+
+Hai thứ **ở lại** vì không phải đồ của TikTok: `orderStatusApply.ts` (xem đoạn dưới) và
+`formatVnTimeHms()` trong `vietnamDate.ts` (hàm ngày tháng dùng chung).
 
 `orderStatusApply.ts` **ở lại** — nó là module ledger **không biết sàn nào**, thuộc về đường Shopee
 sau khi tách, không phải đồ của TikTok. Doc comment đầu file phải nói đúng điều đó, và nó có bộ test
@@ -400,12 +450,18 @@ con số cuối cùng.
 Mỗi lần đồng bộ, với mọi đơn đã quyết toán (`actual_commission` có giá trị), so:
 
 ```
-assumed = round( est_commission × TIKTOK_PIT_RETAINED_RATIO )   ◀ số ĐÃ dùng để trả user
-canh bao khi:  actual_commission < est_commission × (TIKTOK_PIT_RETAINED_RATIO − 0.02)
+assumed = round( est_commission × TIKTOK_PIT_RETAINED_RATIO )    ◀ so DA dung de tra user
+bien    = round( est_commission × TIKTOK_ACTUAL_SHORTFALL_SLACK ) ◀ SLACK = 0.02
+canh bao khi:  actual_commission < assumed − bien
 ```
 
+So **thẳng với `assumed`**, không dựng một biểu thức thứ hai — hai cách tính cùng một ngưỡng là chỗ
+để chúng lệch nhau lúc refactor.
+
 Biên `0.02` hấp thụ làm tròn và khoản `actual_creator_commission_reward_fee` nhỏ — thứ thật sự cần bắt
-(MCN giữ phần) lệch tới hàng **chục** phần trăm chứ không phải 2%.
+(MCN giữ phần) lệch tới hàng **chục** phần trăm chứ không phải 2%. Đặt tên hằng số
+(`TIKTOK_ACTUAL_SHORTFALL_SLACK`) cạnh `TIKTOK_PIT_RETAINED_RATIO` trong `tiktokCommission.ts`, không
+rắc số `0.02` vào giữa logic.
 
 Cảnh báo admin qua `AlertThrottle` khoá `tiktok_actual_below_assumed`, kèm mã đơn, `est`, `assumed`,
 `actual`, và **hệ quả bằng số**: đã trả user bao nhiêu trên một đơn thực nhận bấy nhiêu.
@@ -448,7 +504,7 @@ hữu ích lâu dài chứ không chỉ một lần.
   nhận/lợi nhuận chủ bot, xanh lá = khả dụng, xanh dương = Zalo) — mở màu thứ tư là làm loãng nghĩa
   của chúng.
 - Tin **"đơn về"** cho user: dùng nguyên `buildOrdersConfirmedNotification()`, đơn TikTok vào **ảnh
-  chung** với đơn Shopee. Đúng mục 1.4: với user việc thêm TikTok là vô hình.
+  chung** với đơn Shopee. Đúng mục 1.4 của `docs/riohub-tiktok.md`: với user việc thêm TikTok là vô hình.
 - **KHÔNG** gửi tin vào group Zalo sau khi đồng bộ TikTok. Tin hằng ngày đó thuộc nhịp import Shopee
   9h30; thêm tin thứ hai là nhiễu, và TikTok còn chưa thông báo cho user. **Cố ý, không phải sót.**
 
@@ -518,12 +574,14 @@ Baseline **947 pass / 0 fail** (mục 4.3).
 và 1 đơn đã giao có `time_delivered_iso`). Các trạng thái ở 5.8 phải dựng tay — **mỗi fixture dựng tay
 có comment ghi rõ `"dựng từ tài liệu, chưa quan sát"`**, để sau không ai đọc nó như bằng chứng.
 
-Hai chỗ phải có test chặn vì sai là sai tiền:
+Bốn chỗ phải có test chặn vì sai là sai tiền:
 - Đơn **đã giao mà chưa quyết toán** → vẫn `confirmed` (không chờ `actual_commission`). Đây là test
   chặn quan trọng nhất của mục 5.3: viết sai là user phải đợi 15 ngày.
 - **Hai nơi dùng `TIKTOK_PIT_RETAINED_RATIO` phải ra cùng một số** cho cùng một hoa hồng gốc —
   `estimateFrom()` (câu bot gửi) và `importTiktokOrders()` (số ghi ledger). Lệch là bot nói sai.
 - Tiền parse từ **string**: `""` và `null` → `null`; `"0"` và `"0.00"` → số `0` (giá trị thật).
+- **Đơn toàn dòng `status=3` phải ra `reversed`**, không bị chốt "est rỗng" ở 5.4 chặn lại và không
+  rơi xuống `confirmed`. Đây là ca thứ tự bảng 5.3 — sai là đơn huỷ không bao giờ được thu hồi tiền.
 
 ## 11. Tài liệu phải cập nhật trong cùng đợt
 
