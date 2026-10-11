@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addDaysToVnIso, formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../vietnamDate.js";
+import { addDaysToVnIso, formatVnDateDdMm, formatVnDateIso, formatVnTimeHms, todayVnIso, yesterdayVnDdMm } from "../vietnamDate.js";
 
 test("formatVnDateDdMm: dinh dang dd/mm theo gio VN, co padding 0", () => {
   // 2026-09-05T03:00:00Z = 10:00 ngay 05/09 gio VN
@@ -72,4 +72,23 @@ test("addDaysToVnIso: thang 2 nam KHONG nhuan", () => {
 
 test("addDaysToVnIso: days = 0 tra lai chinh ngay do", () => {
   assert.equal(addDaysToVnIso("2026-10-08", 0), "2026-10-08");
+});
+
+test("formatVnTimeHms: doi UTC sang gio VN (+07), dung vi du trong tai lieu RioHub", () => {
+  // API tra 2026-10-08 06:52:18 UTC, dashboard RioHub hien 13:52:18 gio VN.
+  assert.equal(formatVnTimeHms(new Date("2026-10-08T06:52:18Z")), "13:52:18");
+});
+
+test("formatVnTimeHms: nua dem gio VN la 00:xx, KHONG phai 24:xx", () => {
+  // 2026-09-05T17:30:00Z = 00:30 ngay 06/09 gio VN
+  assert.equal(formatVnTimeHms(new Date("2026-09-05T17:30:00Z")), "00:30:00");
+});
+
+test("formatVnTimeHms: doi thang va doi nam van dung gio, ngay di cung nhau", () => {
+  const monthEnd = new Date("2026-09-30T17:00:00Z"); // 00:00 ngay 01/10 gio VN
+  assert.equal(formatVnTimeHms(monthEnd), "00:00:00");
+  assert.equal(formatVnDateIso(monthEnd), "2026-10-01");
+  const yearEnd = new Date("2026-12-31T17:00:00Z"); // 00:00 ngay 01/01/2027 gio VN
+  assert.equal(formatVnTimeHms(yearEnd), "00:00:00");
+  assert.equal(formatVnDateIso(yearEnd), "2027-01-01");
 });

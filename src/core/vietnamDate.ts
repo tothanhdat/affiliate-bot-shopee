@@ -53,3 +53,13 @@ export function addDaysToVnIso(iso: string, days: number): string {
   const base = Date.UTC(year, month - 1, day);
   return new Date(base + days * ONE_DAY_MS).toISOString().slice(0, 10);
 }
+
+/**
+ * "HH:mm:ss" cua 1 thoi diem theo gio VN, 24 gio. Dung cho cot order_time (gio dat don) khi nguon tra
+ * thoi diem dang UTC (RioHub `time_created_iso`) - bao cao Shopee thi tra san gio VN nen chua can.
+ *
+ * hourCycle "h23" la BAT BUOC: hour12:false tren mot so ban ICU in nua dem la "24:30:00".
+ */
+export function formatVnTimeHms(date: Date): string {
+  return date.toLocaleTimeString("en-GB", { timeZone: VN_TIME_ZONE, hourCycle: "h23" });
+}
