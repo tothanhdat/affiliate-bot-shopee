@@ -132,7 +132,7 @@ function buildSections(data: HandbookPageData): HandbookSection[] {
                 data.payoutHoldDays
               } ngày</strong> kể từ ngày bạn nhận hàng, rồi mới chuyển sang "Khả dụng".</li>
               <li>Lí do: Shopee cho phép trả hàng trong 15 ngày kể từ khi giao thành công. Nếu đơn bị trả lại sau khi tiền đã chuyển đi thì khoản đó phải thu lại — giữ thêm vài ngày giúp phát hiện sớm và không ai phải nợ ai.</li>
-              <li>Đơn nhỏ hơn mức trên vẫn chuyển sang "Khả dụng" ngay như bình thường.</li>
+              <li>Đơn nhỏ hơn mức trên không bị giữ theo luật này.</li>
               <li>Dashboard hiện dòng "Đang tạm giữ" kèm ngày mở khoá của từng đơn, và mỗi đơn như vậy cũng mang nhãn "Đang tạm giữ" thay vì "Khả dụng".</li>
             </ul>`,
           },

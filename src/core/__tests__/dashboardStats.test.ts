@@ -418,3 +418,76 @@ test("computeDashboardStats: 'User moi' = user LAN DAU join nhom Zalo (gop moi n
   logStore.close();
   ledgerStore.close();
 });
+
+// Loi nhuan chu bot (2026-10-10, yeu cau user): KHONG tru phi 1% (khoan do la phi van hanh chu bot tu
+// thu them, khong phai phi Shopee/san) -> loi nhuan = hoa hong - THUE - phan chia user. Va hien them so
+// "truoc thue" = hoa hong - phan chia user.
+const REAL_RATES = { taxPercent: 10, platformFeePercent: 1, userSharePercent: 80 };
+
+function seedRealRates(ledgerStore: LedgerStore, orderId: string, status: "pending" | "confirmed" = "confirmed") {
+  return ledgerStore.recordConversion({
+    subId: `sub-${orderId}`,
+    platform: "zalo",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 1_000_000,
+    commissionAmount: 100_000,
+    orderDate: "2026-10-01",
+    status,
+    ...REAL_RATES,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+  });
+}
+
+test("ownerProfit KHONG tru phi 1%: = hoa hong - thue - phan chia user; ownerProfitBeforeTax = hoa hong - phan chia user", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    // 100.000 -> thue 10.000 -> 90.000 -> phi 900 -> 89.100 -> user 80% = 71.280.
+    seedRealRates(ledgerStore, "R1");
+    const stats = computeDashboardStats(ledgerStore, logStore, "today", new Date("2026-10-01T05:00:00Z"));
+    assert.equal(stats.money.userShare, 71_280);
+    assert.equal(stats.money.ownerProfit, 18_720, "100.000 - 10.000 thue - 71.280 user (phi 900 nam trong loi nhuan)");
+    assert.equal(stats.money.ownerProfitBeforeTax, 28_720, "100.000 - 71.280 user");
+    // Khong tru phi: lon hon cong thuc cu (89.100 - 71.280 = 17.820) dung bang phi 900.
+    assert.equal(stats.money.ownerProfit - 17_820, 900);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("ownerProfit cong ca don pending, bo don da huy; truoc thue = loi nhuan + thue", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRealRates(ledgerStore, "R1");
+    seedRealRates(ledgerStore, "R2", "pending");
+    const toReverse = seedRealRates(ledgerStore, "R3", "pending");
+    ledgerStore.reverseCommissionEntry(toReverse.id, "test");
+    const stats = computeDashboardStats(ledgerStore, logStore, "today", new Date("2026-10-01T05:00:00Z"));
+    assert.equal(stats.money.ownerProfit, 2 * 18_720);
+    assert.equal(stats.money.ownerProfitBeforeTax, 2 * 28_720);
+    assert.equal(stats.money.ownerProfitBeforeTax - stats.money.ownerProfit, 2 * 10_000, "chenh lech dung bang tong thue");
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});
+
+test("chart hoa hong theo ngay dung CUNG cong thuc voi the KPI (tong cac ngay = so tren the)", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRealRates(ledgerStore, "R1");
+    const stats = computeDashboardStats(ledgerStore, logStore, "today", new Date("2026-10-01T05:00:00Z"));
+    const chartTotal = stats.charts.commissionByDay.ownerProfit.reduce((a, b) => a + b, 0);
+    assert.equal(chartTotal, stats.money.ownerProfit);
+    assert.equal(chartTotal, 18_720);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});

@@ -377,3 +377,146 @@ test("khoang ngay ap dung cho CA count lan totals, khong chi bang", () => {
     store.close();
   }
 });
+
+// Loc theo gio phut (2026-10-10): fromDate/toDate nhan them "YYYY-MM-DDTHH:mm" (GIO VN).
+test("loc theo gio phut GIO VN: 'den HH:mm' tinh het phut do (ke ca giay :59)", () => {
+  const store = makeStore();
+  try {
+    // VN = UTC + 7. 22:59:59 VN = 15:59:59Z ... 00:00:00 ngay 10/10 VN = 17:00:00Z.
+    recordLink(store, { userId: "a-22h59", timestamp: "2026-10-09T15:59:59.000Z" });
+    recordLink(store, { userId: "b-23h00", timestamp: "2026-10-09T16:00:00.000Z" });
+    recordLink(store, { userId: "c-23h59s59", timestamp: "2026-10-09T16:59:59.999Z" });
+    recordLink(store, { userId: "d-00h00", timestamp: "2026-10-09T17:00:00.000Z" });
+
+    const rows = store.listCreatedLinks({ fromDate: "2026-10-09T23:00", toDate: "2026-10-09T23:59" });
+    assert.deepEqual(rows.map((r) => r.userId).sort(), ["b-23h00", "c-23h59s59"]);
+  } finally {
+    store.close();
+  }
+});
+
+test("chi co 1 dau co gio: tu gio do tro di / den het phut do", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "sang", timestamp: "2026-10-09T02:00:00.000Z" }); // 09:00 VN
+    recordLink(store, { userId: "chieu", timestamp: "2026-10-09T08:00:00.000Z" }); // 15:00 VN
+    assert.deepEqual(
+      store.listCreatedLinks({ fromDate: "2026-10-09T12:00" }).map((r) => r.userId),
+      ["chieu"]
+    );
+    assert.deepEqual(
+      store.listCreatedLinks({ toDate: "2026-10-09T12:00" }).map((r) => r.userId),
+      ["sang"]
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("KPI va danh sach dung CHUNG bo loc theo gio (so liet ke khop so dem)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "trong", timestamp: "2026-10-09T16:30:00.000Z" });
+    recordLink(store, { userId: "ngoai", timestamp: "2026-10-09T10:00:00.000Z" });
+    const filters = { fromDate: "2026-10-09T23:00", toDate: "2026-10-09T23:59" };
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+  } finally {
+    store.close();
+  }
+});
+
+// Tim theo Sub_id (2026-10-10): dung de do nguoc tu Sub_id1-5 cua bao cao Shopee ve dung luot tao link.
+test("search khop mot phan sub_id (ca chuoi day du lan doan giua/cuoi)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "k-2233805738531852881-mv17ndbz-18d664" });
+    recordLink(store, { userId: "u2", subId: "k-7777-mv17zzzz-aa11bb" });
+    recordLink(store, { userId: "u3", subId: null, outcome: "error", errorCode: "INVALID_LINK", affiliateUrl: null });
+
+    const full = store.listCreatedLinks({ search: "k-2233805738531852881-mv17ndbz-18d664" });
+    assert.deepEqual(full.map((r) => r.userId), ["u1"]);
+    assert.deepEqual(store.listCreatedLinks({ search: "mv17ndbz" }).map((r) => r.userId), ["u1"]);
+    assert.deepEqual(store.listCreatedLinks({ search: "aa11bb" }).map((r) => r.userId), ["u2"]);
+    // Dong khong co sub_id (NULL) khong bi khop nham va khong lam loi truy van.
+    assert.equal(store.listCreatedLinks({ search: "mv17" }).length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("search sub_id van escape '_' va '%' (go 'k_u' khong khop 'kxu')", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "kxu-1" });
+    assert.equal(store.listCreatedLinks({ search: "k_u" }).length, 0);
+    assert.equal(store.listCreatedLinks({ search: "100%" }).length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test("tim theo sub_id: danh sach, dem va KPI dung chung bo loc", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u1", subId: "k-abc-111" });
+    recordLink(store, { userId: "u2", subId: "k-xyz-222" });
+    const filters = { search: "abc-111" };
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test("searchUserKeys: search khop them cac user theo khoa 'platform:userId' (ten user), ket hop duoc voi cac cot khac", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "100", productName: "Gối" });
+    recordLink(store, { userId: "200", productName: "Ốp lưng" });
+    // Cung userId "100" nhung KENH khac - khong duoc bi keo theo khi chi khoa "zalo:100" duoc truyen.
+    recordLink(store, { userId: "100", platform: "telegram", productName: "Tai nghe" });
+
+    const byName = store.listCreatedLinks({ search: "Thao", searchUserKeys: ["zalo:100"] });
+    assert.deepEqual(byName.map((r) => r.productName), ["Gối"]);
+
+    // Van khop theo cot khac (ten san pham) cung luc voi khop theo ten user.
+    const both = store.listCreatedLinks({ search: "lưng", searchUserKeys: ["zalo:100"] });
+    assert.deepEqual(both.map((r) => r.productName).sort(), ["Gối", "Ốp lưng"]);
+  } finally {
+    store.close();
+  }
+});
+
+test("searchUserKeys: list/count/totals loc y het nhau; mang rong hoac khong co search thi khong co tac dung", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "100" });
+    recordLink(store, { userId: "200" });
+    const filters = { search: "khong-khop-cot-nao", searchUserKeys: ["zalo:200"] };
+
+    assert.equal(store.listCreatedLinks(filters).length, 1);
+    assert.equal(store.countCreatedLinks(filters), 1);
+    assert.equal(store.getCreatedLinksTotals(filters).total, 1);
+
+    assert.equal(store.listCreatedLinks({ search: "khong-khop-cot-nao", searchUserKeys: [] }).length, 0);
+    // Khong co `search` thi searchUserKeys bi bo qua - khong duoc tu thanh bo loc.
+    assert.equal(store.listCreatedLinks({ searchUserKeys: ["zalo:200"] }).length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("searchUserKeys: hang tram user khop cung luc van chay (khong cham gioi han so bien SQLite)", () => {
+  const store = makeStore();
+  try {
+    recordLink(store, { userId: "u-last" });
+    const keys = Array.from({ length: 40_000 }, (_, i) => `zalo:fake-${i}`);
+    keys.push("zalo:u-last");
+    assert.equal(store.listCreatedLinks({ search: "zzz", searchUserKeys: keys }).length, 1);
+  } finally {
+    store.close();
+  }
+});

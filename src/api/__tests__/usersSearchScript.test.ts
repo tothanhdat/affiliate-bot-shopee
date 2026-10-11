@@ -10,14 +10,14 @@ import { renderUsersPage } from "../adminHtml.js";
  */
 
 interface FakeRow {
-  dataset: { search: string; orders: string; paid: string; index: string };
+  dataset: { search: string; orders: string; paid: string; pending?: string; index: string };
   hidden: boolean;
 }
 
 /** Tao 1 dong gia; `index` la thu tu goc do server tra ve (dung lam tiebreak khi sap xep). */
-function row(search: string, orders: number, paid: number, index: number): FakeRow {
+function row(search: string, orders: number, paid: number, index: number, pending = 0): FakeRow {
   return {
-    dataset: { search, orders: String(orders), paid: String(paid), index: String(index) },
+    dataset: { search, orders: String(orders), paid: String(paid), pending: String(pending), index: String(index) },
     hidden: false,
   };
 }
@@ -79,6 +79,7 @@ function extractSearchScript(): string {
       displayName: "Trần Bảo",
       availableBalance: 0,
       pendingBalance: 0,
+      pendingConfirmationBalance: 0,
       paidTotal: 0,
       debtRemaining: 0,
       heldBalance: 0,
@@ -212,6 +213,7 @@ function userRow(over: Partial<Parameters<typeof renderUsersPage>[0][0]> = {}) {
     displayName: "Trần Bảo",
     availableBalance: 6_000,
     pendingBalance: 0,
+    pendingConfirmationBalance: 0,
     paidTotal: 0,
     debtRemaining: 0,
     heldBalance: 0,
@@ -323,4 +325,50 @@ test("loc /admin/users: ve 'Tất cả' thi hien lai het", () => {
   ordersFilter.type("no-orders");
   ordersFilter.type("");
   assert.deepEqual(rows.map((r) => r.hidden), [false, false]);
+});
+
+// Cot + tuy chon sap xep "Cho xac nhan" (2026-10-10).
+test("/admin/users: co cot 'Cho xac nhan' hien so tien cua user, 0 thi lam mo", () => {
+  const html = renderUsersPage(
+    [userRow({ pendingConfirmationBalance: 12_345 }), userRow({ userId: "u-002", pendingConfirmationBalance: 0 })],
+    80,
+    "2026-10-10"
+  );
+  assert.match(html, /<th[^>]*>Chờ xác nhận<\/th>/);
+  assert.match(html, /12\.345/);
+  // KHONG them the KPI nao (yeu cau user): phan truoc o loc chi co 4 the cu.
+  const kpiRegion = html.slice(0, html.indexOf('id="user-search"'));
+  assert.doesNotMatch(kpiRegion.replace(/<style>[\s\S]*?<\/style>/g, ""), /Chờ xác nhận/);
+  for (const label of ["Tổng người dùng", "Đang chờ rút", "Khả dụng \\(ví user\\)", "Đã chi trả thành công"]) {
+    assert.match(kpiRegion, new RegExp(label));
+  }
+});
+
+test("/admin/users: moi dong mang data-pending de sap xep", () => {
+  const html = renderUsersPage([userRow({ pendingConfirmationBalance: 7_000 })], 80, "2026-10-10");
+  assert.match(html, /data-pending="7000"/);
+});
+
+test("/admin/users: option sap xep 'Cho xac nhan cao nhat', mac dinh VAN la Kha dung cao nhat", () => {
+  const html = renderUsersPage([userRow()], 80, "2026-10-10");
+  const select = html.match(/<select id="user-sort"[\s\S]*?<\/select>/)?.[0] ?? "";
+  const values = [...select.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(values, ["", "orders", "paid", "pending"], "thu tu cu khong doi, option moi o cuoi");
+  assert.match(select, /<option value="">Mặc định \(khả dụng cao nhất\)<\/option>/);
+  assert.match(select, /<option value="pending">Chờ xác nhận cao nhất<\/option>/);
+});
+
+test("sap xep /admin/users: 'Chờ xác nhận cao nhất' giam dan, bang nhau giu thu tu goc", () => {
+  const rows = [row("a", 1, 0, 0, 0), row("b", 1, 0, 1, 9_000), row("c", 1, 0, 2, 0), row("d", 1, 0, 3, 3_000)];
+  const { sortSelect, order } = runScript(rows);
+
+  sortSelect.type("pending");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["b", "d", "a", "c"]);
+
+  // Doi qua doi lai khong lam xao tron: ve mac dinh thi tra dung thu tu server.
+  sortSelect.type("orders");
+  sortSelect.type("pending");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["b", "d", "a", "c"]);
+  sortSelect.type("");
+  assert.deepEqual(order.map((r) => r.dataset.search), ["a", "b", "c", "d"]);
 });

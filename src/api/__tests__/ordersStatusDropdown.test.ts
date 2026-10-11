@@ -6,7 +6,7 @@ import type { CommissionEntry, CommissionStatus } from "../../core/types.js";
 import { addDaysToVnIso, formatVnDateDdMm, todayVnIso } from "../../core/vietnamDate.js";
 
 const PAGINATION = { page: 1, totalPages: 1, totalEntries: 0 };
-const TOTALS = { totalEntries: 0, pendingEntries: 0, userShareTotal: 0, ownerShareTotal: 0 };
+const TOTALS = { totalEntries: 0, pendingEntries: 0, userShareTotal: 0, ownerShareTotal: 0, ownerShareBeforeTaxTotal: 0 };
 
 function render(statuses?: CommissionStatus[]): string {
   const filters: OrdersFilters = statuses ? { statuses } : {};
@@ -188,6 +188,7 @@ const EMPTY_TOTALS = {
   pendingEntries: 0,
   userShareTotal: 8_000,
   ownerShareTotal: 2_000,
+  ownerShareBeforeTaxTotal: 2_500,
 } as Parameters<typeof renderOrdersPage>[4];
 
 function renderOne(e: CommissionEntry, debtOrderIds = new Set<string>()): string {
@@ -224,6 +225,31 @@ test("/admin/orders: don DA qua ngay mo khoa -> KHONG con nhan giam", () => {
   assert.doesNotMatch(html, /mở khoá/);
 });
 
+/**
+ * Don NHO vua duoc Shopee ghi "Hoan thanh" nhung con cho vai ngay o "Cho xac nhan" (2026-10-11, xem
+ * payoutHold.ts): khong noi ro thi admin doi soat se thay bao cao Shopee ghi Hoan thanh ma trang
+ * minh ghi "Cho xac nhan" va khong hieu vi sao. User KHONG thay dong nay (dashboard rieng).
+ */
+test("/admin/orders: don nho dang cho -> hien 'sàn đã duyệt' + ngay vao Kha dung", () => {
+  const future = addDaysToVnIso(todayVnIso(), 1);
+  const html = renderOne(orderEntry({ status: "pending", availableFrom: future }));
+  assert.match(html, /sàn đã duyệt/);
+  assert.match(html, new RegExp(`Khả dụng ${formatVnDateDdMm(new Date(`${future}T12:00:00Z`)).replace("/", "\\/")}`));
+  // Khong duoc dung chu "mo khoa"/"tam giu" o day - do la ngon tu cua don TO bi giam.
+  assert.doesNotMatch(html, /mở khoá/);
+});
+
+test("/admin/orders: don pending binh thuong (chua Hoan thanh) -> khong co dong 'sàn đã duyệt'", () => {
+  const html = renderOne(orderEntry({ status: "pending" }));
+  assert.doesNotMatch(html, /sàn đã duyệt/);
+});
+
+// Cung cai bay voi nhan "mo khoa": don da toi han van giu nguyen gia tri trong cot available_from.
+test("/admin/orders: don nho DA toi han nhung chua import lai -> khong con dong 'sàn đã duyệt'", () => {
+  const html = renderOne(orderEntry({ status: "pending", availableFrom: "2020-01-08" }));
+  assert.doesNotMatch(html, /sàn đã duyệt/);
+});
+
 test("/admin/orders: don dang nam trong yeu cau rut -> khong deo nhan giam", () => {
   const html = renderOne(
     orderEntry({ availableFrom: addDaysToVnIso(todayVnIso(), 7), withdrawalId: "w1" })
@@ -256,4 +282,29 @@ test("/admin/orders: don dang bi giam deo nhan 'Đang tạm giữ', KHONG phai '
   const free = tbody(renderOne(orderEntry()));
   assert.match(free, /Khả dụng/);
   assert.doesNotMatch(free, /Đang tạm giữ/);
+});
+
+
+// The KPI "Loi nhuan chu bot" hien them so TRUOC THUE nho ben canh (2026-10-10); COT "Chu bot nhan" trong
+// bang van tinh theo cong thuc cu (after_tax - user_share, da tru phi) - user chi yeu cau doi the.
+test("/admin/orders: the 'Loi nhuan chu bot' co so phu 'truoc thue' (nho hon, ben canh so chinh)", () => {
+  const html = renderOne(orderEntry());
+  const card = html.match(/<div class="[^"]*">\s*<div class="min-w-0">\s*<div class="[^"]*">Lợi nhuận chủ bot<\/div>[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? "";
+  assert.notEqual(card, "", "phai tim thay the Loi nhuan chu bot");
+  assert.match(card, /text-2xl[^>]*>2\.000đ</);
+  assert.match(card, /text-xs[^>]*>[^<]*trước thuế 2\.500đ/);
+  assert.doesNotMatch(card.match(/text-2xl[^>]*>[^<]*</)?.[0] ?? "", /2\.500/, "so truoc thue KHONG nam trong so chinh");
+});
+
+test("/admin/orders: cac the KPI khac KHONG co so phu 'truoc thue'", () => {
+  const html = renderOne(orderEntry());
+  assert.equal((html.match(/trước thuế/g) ?? []).length, 1);
+});
+
+test("/admin/orders: cot 'Chu bot nhan' trong bang VAN theo cong thuc cu (after_tax - user_share)", () => {
+  const html = renderOne(orderEntry({ afterTaxAmount: 8_910, userShareAmount: 7_128, commissionAmount: 10_000, taxAmount: 1_000, platformFeeAmount: 90 }));
+  const tbody = html.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? "";
+  // 8.910 - 7.128 = 1.782 (da tru phi 90); neu doi sang cong thuc moi se la 10.000 - 1.000 - 7.128 = 1.872.
+  assert.match(tbody, /1\.782đ/);
+  assert.doesNotMatch(tbody, /1\.872đ/);
 });

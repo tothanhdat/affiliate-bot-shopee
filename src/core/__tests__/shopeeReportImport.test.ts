@@ -914,3 +914,61 @@ test("importShopeeReport: don DA CO tu truoc (ghi tay/CLI) lan dau xuat hien tro
     ledgerStore.close();
   }
 });
+
+test("importShopeeReport: don pending da khoa hoa hong -> giu so khoa, canh bao khi Shopee bao so khac", () => {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def");
+    const row = (commissionAmount: number, status: string): RowInput => ({
+      orderId: "SP-LOCK",
+      orderAmount: 100_000,
+      commissionAmount,
+      status,
+      subIdParts: ["zalo", "user-a", "abc", "def"],
+    });
+    importShopeeReport(logStore, ledgerStore, { recordOrderConfig: ORDER_CONFIG }, buildCsv([row(10_000, "Đang chờ xử lý")]));
+    const entry = ledgerStore.getEntryByOrderId("shopee", "SP-LOCK")!;
+    ledgerStore.overrideCommissionAmount(entry.id, {
+      commissionAmount: 20_000,
+      fallbackPercents: ORDER_CONFIG,
+      maxCommissionRatioPercent: 1000,
+    });
+
+    // Import lai: Shopee van bao 10.000 -> giu 20.000 va bao admin.
+    const pendingAgain = importShopeeReport(
+      logStore,
+      ledgerStore,
+      { recordOrderConfig: ORDER_CONFIG },
+      buildCsv([row(10_000, "Đang chờ xử lý")])
+    );
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "SP-LOCK")!.commissionAmount, 20_000);
+    assert.equal(pendingAgain.errors.length, 1);
+    assert.match(pendingAgain.errors[0], /SP-LOCK/);
+
+    // Shopee bao dung so da khoa -> khong canh bao.
+    const sameNumber = importShopeeReport(
+      logStore,
+      ledgerStore,
+      { recordOrderConfig: ORDER_CONFIG },
+      buildCsv([row(20_000, "Đang chờ xử lý")])
+    );
+    assert.deepEqual(sameNumber.errors, []);
+
+    // Don chuyen "Hoan thanh": van confirmed nhung giu 20.000 (80% = 16.000), van canh bao.
+    const confirmed = importShopeeReport(
+      logStore,
+      ledgerStore,
+      { recordOrderConfig: ORDER_CONFIG },
+      buildCsv([row(10_000, "Hoàn thành")])
+    );
+    const after = ledgerStore.getEntryByOrderId("shopee", "SP-LOCK")!;
+    assert.equal(after.status, "confirmed");
+    assert.equal(after.commissionAmount, 20_000);
+    assert.equal(after.userShareAmount, 16_000);
+    assert.equal(confirmed.errors.length, 1);
+  } finally {
+    logStore.close();
+    ledgerStore.close();
+  }
+});

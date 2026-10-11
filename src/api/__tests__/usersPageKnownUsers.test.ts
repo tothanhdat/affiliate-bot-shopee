@@ -17,6 +17,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     avatarUrl: null,
     availableBalance: 0,
     pendingBalance: 0,
+    pendingConfirmationBalance: 0,
     paidTotal: 0,
     debtRemaining: 0,
     heldBalance: 0,

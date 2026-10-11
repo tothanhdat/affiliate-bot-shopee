@@ -1,5 +1,6 @@
 import { adminCssHref } from "./adminAssets.js";
-import type { OrdersFilterTotals } from "../core/ledgerStore.js";
+import type { OrdersFilterTotals, RatePercents } from "../core/ledgerStore.js";
+import type { CommissionBreakdown } from "../core/commissionMath.js";
 import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
 import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import { vietQrImageUrl } from "../core/vietQr.js";
@@ -333,6 +334,15 @@ function shellStyles(): string {
     padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   button.danger:hover { background: var(--danger-soft); }
+  button.secondary {
+    background: #fff; color: var(--text); border: 1px solid var(--card-border); border-radius: 8px;
+    padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  button.secondary:hover { background: var(--content-bg); }
+  /* Hang nut hanh dong cua form (Luu / Xem truoc / Quay lai): khong co khoang cach thi cac nut dinh
+     sat nhau. Khoi phu (vd "Bo khoa") tach khoi hang chinh bang duong ke + khoang trong, de khong bam nham. */
+  .actions-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .form-secondary { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--card-border); }
   .filters { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: flex-end; }
   .filters label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
   .filters select, .filters input[type="text"], .filters input[type="search"] {
@@ -1133,6 +1143,8 @@ export function renderUsersPage(
     avatarUrl?: string | null;
     availableBalance: number;
     pendingBalance: number;
+    /** Phan user se nhan cua cac don dang cho Shopee duyet (2026-10-10) - khac pendingBalance (cho rut). */
+    pendingConfirmationBalance: number;
     paidTotal: number;
     /** No hoan tra con phai tru (2026-10-08) - KHONG tru vao availableBalance, chi tru luc duyet rut. */
     debtRemaining: number;
@@ -1161,7 +1173,7 @@ export function renderUsersPage(
           : `<div class="font-medium italic text-slate-400">Chưa đặt tên</div>`;
       return `<tr class="transition hover:bg-slate-50/80" data-search="${escapeHtml(
         `${u.displayName ?? ""} ${u.userId}`.toLowerCase()
-      )}" data-orders="${u.ordersCount}" data-paid="${u.paidTotal}" data-index="${index}">
+      )}" data-orders="${u.ordersCount}" data-paid="${u.paidTotal}" data-pending="${u.pendingConfirmationBalance}" data-index="${index}">
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-3">
       ${userAvatar(u.displayName, u.userId, u.avatarUrl)}
@@ -1178,6 +1190,7 @@ export function renderUsersPage(
   <td class="px-4 py-3.5 text-center">${commissionCell(u.commissionOverride, generalSharePercent, todayVn)}</td>
   <td class="px-4 py-3.5 text-center font-medium tabular-nums text-slate-700">${u.ordersCount}</td>
   ${moneyCell(u.availableBalance, "font-semibold text-emerald-600")}
+  ${moneyCell(u.pendingConfirmationBalance, "font-semibold text-amber-600")}
   ${moneyCell(u.pendingBalance, "font-semibold text-amber-600")}
   ${moneyCell(u.paidTotal, "font-medium text-slate-700")}
   ${moneyCell(u.debtRemaining, "font-semibold text-rose-600")}
@@ -1311,6 +1324,7 @@ export function renderUsersPage(
         <option value="">Mặc định (khả dụng cao nhất)</option>
         <option value="orders">Số đơn nhiều nhất</option>
         <option value="paid">Hoa hồng đã nhận nhiều nhất</option>
+        <option value="pending">Chờ xác nhận cao nhất</option>
       </select>
     </div>
   </div>
@@ -1330,6 +1344,7 @@ export function renderUsersPage(
           <th class="${thClass} !text-center">% hoa hồng</th>
           <th class="${thClass} !text-center">Số đơn</th>
           <th class="${thClass} !text-right">Khả dụng</th>
+          <th class="${thClass} !text-right" title="Phần user sẽ nhận của các đơn đang chờ Shopee duyệt, chưa thành Khả dụng">Chờ xác nhận</th>
           <th class="${thClass} !text-right">Đang chờ rút</th>
           <th class="${thClass} !text-right">Đã nhận</th>
           <th class="${thClass} !text-right" title="Tiền đã trả cho user rồi nhưng đơn bị trả hàng - sẽ trừ khi user gửi yêu cầu rút tiền lần sau">Nợ hoàn trả</th>
@@ -1476,6 +1491,12 @@ export interface OrdersFilters {
   statuses?: CommissionStatus[];
   /** O tim 1 dong: khop mot phan ma don / userId / ten hien thi. Xem CommissionEntryFilters.search. */
   search?: string;
+  /**
+   * Cot "Ma don & thoi gian" hien gi (2026-10-10): undefined/"import" = thoi diem IMPORT vao he thong
+   * (createdAt), "order" = NGAY DAT HANG (order_date). Chi la cach HIEN THI - khong anh huong bo loc
+   * nen khong duoc dua vao menh de WHERE.
+   */
+  timeMode?: "import" | "order";
 }
 
 /** So don hien tren 1 trang /admin/orders. */
@@ -1499,6 +1520,7 @@ function ordersPageHref(filters: OrdersFilters, page: number): string {
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.search) params.set("q", filters.search);
   for (const status of filters.statuses ?? []) params.append("status", status);
+  if (filters.timeMode === "order") params.set("time", "order");
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query === "" ? "/admin/orders" : `/admin/orders?${query}`;
@@ -1547,7 +1569,6 @@ const STATUS_LABELS: Record<CommissionStatus, string> = {
   paid: "Đã rút",
   reversed: "Đã huỷ",
 };
-export const PLATFORM_OPTIONS: Platform[] = ["telegram", "zalo", "http"];
 
 export function selectOptions<T extends string>(
   options: readonly T[],
@@ -1670,6 +1691,11 @@ export function kpiCard(input: {
   valueClass: string;
   iconClass: string;
   /**
+   * So phu nho hon dat BEN CANH so chinh (2026-10-10: the "Loi nhuan chu bot" - so truoc thue). Chuoi
+   * da dinh dang san, KHONG escape o day (giong `value`). Khong truyen = layout y het cu.
+   */
+  sub?: string;
+  /**
    * "alert" = vien cam + nen cam rat nhat: the dang bao CO VIEC PHAI LAM NGAY (vd tien user dang
    * cho chuyen khoan). Chi dung cho the that su can hanh dong - to mau de "cho noi bat" se lam mat
    * tac dung canh bao cua no.
@@ -1688,7 +1714,11 @@ export function kpiCard(input: {
   return `<div class="flex items-center justify-between gap-3 rounded-xl border ${shell} p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
     <div class="min-w-0">
       <div class="text-xs font-medium text-slate-500">${input.label}</div>
-      <div class="mt-1 text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</div>
+      ${
+        input.sub
+          ? `<div class="mt-1 flex flex-wrap items-baseline gap-x-2"><span class="text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</span><span class="text-xs font-medium tabular-nums text-slate-500">${input.sub}</span></div>`
+          : `<div class="mt-1 text-2xl font-bold tabular-nums ${input.valueClass}">${input.value}</div>`
+      }
       ${note}
     </div>
     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${input.iconClass}">${icon(
@@ -1704,8 +1734,13 @@ export function kpiCard(input: {
  * `columns` la so cot o man rong: 4 cho trang nhieu chi so, 2 cho trang it. Hai the keo het be ngang
  * man hinh trong rat trong rong nen ban 2 cot bi gioi han be ngang lai.
  */
-export function kpiGrid(cards: string[], columns: 2 | 4 = 4): string {
-  const wide = columns === 4 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 md:max-w-3xl";
+export function kpiGrid(cards: string[], columns: 2 | 3 | 4 = 4): string {
+  const wide =
+    columns === 4
+      ? "md:grid-cols-2 xl:grid-cols-4"
+      : columns === 3
+        ? "md:grid-cols-3"
+        : "md:grid-cols-2 md:max-w-3xl";
   return `<div class="mb-5 grid grid-cols-1 gap-4 ${wide}">\n${cards.join("\n")}\n</div>`;
 }
 
@@ -1843,6 +1878,20 @@ export function renderOrdersPage(
       const lockedShare = e.userSharePercent === null ? `<span class="muted">—</span>` : `${e.userSharePercent}%`;
       const displayName = displayNames.get(nameKey(e.platform, e.userId));
       const when = formatDateTimeParts(e.createdAt);
+      // Dong thoi gian duoi ma don (2026-10-10): theo toggle. Che do "ngay dat" hien "gio:phut:giay • ngay"
+      // CUNG dinh dang voi thoi gian import (yeu cau user). Don chua co gio (ghi truoc khi he thong luu
+      // gio, chua xuat hien lai trong bao cao nao) chi hien ngay, KHONG bia 00:00:00; don khong co ca ngay
+      // (truoc 2026-10-01) hien "—", KHONG lui ve ngay import: o che do nay admin dang hoi "khach dat
+      // luc nao", tra loi bang thoi diem import la noi sai.
+      const orderDateDdMmYyyy = e.orderDate ? e.orderDate.split("-").reverse().join("/") : null;
+      const timeLine =
+        filters.timeMode === "order"
+          ? orderDateDdMmYyyy
+            ? `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="${
+                e.orderTime ? "Thời điểm khách đặt hàng" : "Ngày khách đặt hàng (chưa có giờ)"
+              }">${escapeHtml(e.orderTime ? `${e.orderTime} • ${orderDateDdMmYyyy}` : orderDateDdMmYyyy)}</div>`
+            : `<div class="mt-0.5 text-[11px] text-slate-400" title="Đơn này ghi nhận trước khi hệ thống lưu ngày đặt hàng">—</div>`
+          : `<div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Thời điểm import vào hệ thống">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>`;
       // Don da huy: 2 cot tien van hien SO THAT (admin con doi soat voi bao cao Shopee) nhung phai
       // gach ngang + lam mo. De nguyen kieu thuong thi hang "Đã huỷ" doc ra thanh "khach nhan 5đ"
       // - mot so tien khong ai duoc nhan, va chinh 4 the KPI ben tren cung khong cong no vao.
@@ -1871,10 +1920,36 @@ export function renderOrdersPage(
               formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
             )}</div>`
           : "";
+      // Don NHO vua duoc bao cao ghi "Hoan thanh" nhung con cho vai ngay o "Cho xac nhan"
+      // (2026-10-11, xem payoutHold.ts). Dong nay CHI co o day, dashboard user khong he co: ca y
+      // tuong cua tinh nang la user khong biet don minh dang bi giu. Admin thi PHAI biet, neu khong
+      // ho se thay bao cao Shopee ghi "Hoan thanh" ma trang minh ghi "Cho xac nhan" va tuong la loi.
+      // Cung cai bay so-voi-hom-nay nhu nhan "mo khoa" o tren: don da toi han nhung chua import lai
+      // van giu nguyen available_from, bo phep so sanh thi no deo dong nay vinh vien.
+      const deferredHint =
+        e.status === "pending" && e.availableFrom !== null && e.availableFrom > todayVn
+          ? `<div class="mt-1 text-[10px] font-medium text-slate-500" title="Shopee đã ghi đơn Hoàn thành, nhưng đơn nhỏ được giữ ở Chờ xác nhận thêm vài ngày để kịp phát hiện khách trả hàng - user không thấy dòng này">sàn đã duyệt · Khả dụng ${escapeHtml(
+              formatVnDateDdMm(new Date(`${e.availableFrom}T12:00:00Z`))
+            )}</div>`
+          : "";
       const returnedHint = debtOrderIds.has(e.orderId)
         ? `<div class="mt-1 text-[10px] font-semibold text-rose-600" title="Đơn này bị trả hàng sau khi đã trả tiền cho user - thành nợ, trừ khi user rút tiền lần sau">⚠ đã trả hàng</div>`
         : "";
-      const statusDetail = `${heldHint}${returnedHint}`;
+      const statusDetail = `${heldHint}${deferredHint}${returnedHint}`;
+
+      // Hoa hong GOC san tra (2026-10-10), chua tru thue/phi/chia %. Don pending co nut but chi sang
+      // trang sua (khong nhet nut vao cot "Thao tac": cot do dang sat mep man hinh). Don da sua tay
+      // co dong phu de admin biet so nay KHONG con chay theo bao cao Shopee nua.
+      const commissionClass = voided ? "text-slate-400 line-through" : "font-medium text-slate-700";
+      const editCommissionLink =
+        e.status === "pending"
+          ? `<a class="text-slate-400 transition hover:text-indigo-600" href="/admin/orders/${e.id}/commission" title="Sửa hoa hồng gốc" aria-label="Sửa hoa hồng gốc đơn ${escapeHtml(e.orderId)}">${icon("edit-3", "h-3.5 w-3.5")}</a>`
+          : "";
+      const overriddenHint =
+        e.commissionOverriddenAt !== null && e.status === "pending"
+          ? `<div class="mt-1 text-[10px] font-medium text-indigo-600" title="Admin đã sửa tay - import báo cáo Shopee sau sẽ không ghi đè số này">✎ đã sửa tay</div>`
+          : "";
+      const commissionCell = `<div class="flex items-center justify-end gap-1.5"><span class="${commissionClass}">${formatVnd(e.commissionAmount)}</span>${editCommissionLink}</div>${overriddenHint}`;
 
       return `<tr class="transition hover:bg-slate-50/80">
   <td class="px-4 py-3.5">
@@ -1882,7 +1957,7 @@ export function renderOrdersPage(
       <span>${escapeHtml(e.orderId)}</span>
       ${copyIconButton(e.orderId, `Sao chép mã đơn ${e.orderId}`)}
     </div>
-    <div class="mt-0.5 text-[11px] text-slate-400 tabular-nums">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>
+    ${timeLine}
   </td>
   <td class="px-4 py-3.5">
     <div class="font-medium text-slate-800">${nameCell(displayName)}</div>
@@ -1891,10 +1966,10 @@ export function renderOrdersPage(
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-1.5">
       <span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(e.merchant)}">${getMerchantConfig(e.merchant).displayName}</span>
-      ${platformChip(e.platform)}
     </div>
   </td>
-  <td class="max-w-[260px] px-4 py-3.5">${product}</td>
+  <td class="max-w-[200px] px-4 py-3.5">${product}</td>
+  <td class="px-4 py-3.5 text-right tabular-nums">${commissionCell}</td>
   <td class="px-4 py-3.5 text-right font-medium text-slate-600 tabular-nums">${lockedShare}</td>
   <td class="px-4 py-3.5 text-right tabular-nums ${userMoneyClass}">${formatVnd(e.userShareAmount)}</td>
   <td class="px-4 py-3.5 text-right tabular-nums ${ownerMoneyClass}">${formatVnd(e.afterTaxAmount - e.userShareAmount)}</td>
@@ -1967,6 +2042,10 @@ export function renderOrdersPage(
     kpiCard({
       label: "Lợi nhuận chủ bot",
       value: formatVnd(totals.ownerShareTotal),
+      // Cung cong thuc voi the o Tong quan (hoa hong - thue - phan chia user, KHONG tru phi 1%) + so
+      // truoc thue ben canh (2026-10-10). COT "Chu bot nhan" trong bang van la after_tax - user_share
+      // (da tru phi) - user chi yeu cau doi the, nen tong cot do se nho hon the dung bang phi cac don.
+      sub: `trước thuế ${formatVnd(totals.ownerShareBeforeTaxTotal)}`,
       note: "không tính đơn đã huỷ",
       icon: "trending-up",
       valueClass: "text-indigo-600",
@@ -1995,14 +2074,6 @@ export function renderOrdersPage(
       </div>
     </div>
     <div class="w-full sm:w-40">
-      <label class="${FIELD_LABEL_CLASS}" for="orders-platform">Kênh</label>
-      <select id="orders-platform" name="platform" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
-        PLATFORM_OPTIONS,
-        (v) => PLATFORM_LABELS[v],
-        filters.platform
-      )}</select>
-    </div>
-    <div class="w-full sm:w-40">
       <label class="${FIELD_LABEL_CLASS}" for="orders-merchant">Sàn</label>
       <select id="orders-merchant" name="merchant" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
         MERCHANTS.map((m) => m.id),
@@ -2024,10 +2095,37 @@ export function renderOrdersPage(
     </div>
   </div>
   ${filters.userId ? `<input type="hidden" name="userId" value="${escapeHtml(filters.userId)}">` : ""}
+  ${
+    // O chon "Kenh" da bi go (2026-10-10, chi kinh doanh tren Zalo) nhung ?platform= VAN duoc hieu: nut
+    // "Xem don" o /admin/users dan sang bang ?platform=&userId=, va userId chi duy nhat TRONG 1 kenh. Giu
+    // qua nut Loc bang input an giong userId, neu khong bam Loc se doi tu "don cua user Zalo X" sang
+    // "don cua moi user co id X".
+    filters.platform ? `<input type="hidden" name="platform" value="${escapeHtml(filters.platform)}">` : ""
+  }
+  ${filters.timeMode === "order" ? `<input type="hidden" name="time" value="order">` : ""}
   <button type="submit" class="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
     ${icon("search", "h-3.5 w-3.5")} Lọc
   </button>
 </form>`;
+
+  // Toggle kieu thoi gian cua cot "Ma don & thoi gian" (2026-10-10), ngay DUOI bo loc. La LINK (khong
+  // phai checkbox + JS): trang render phia server nen doi che do = tai lai trang, va nho do trang thai
+  // song qua form Loc + phan trang (ordersPageHref) ma khong can dong JS nao. Giu NGUYEN bo loc va
+  // trang hien tai vi chi doi cach hien thi, khong doi tap don.
+  const timeOn = filters.timeMode === "order";
+  const toggleHref = ordersPageHref({ ...filters, timeMode: timeOn ? "import" : "order" }, pagination.page);
+  const timeToggle = `<div class="-mt-2 mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+  <a href="${escapeHtml(toggleHref)}" role="switch" aria-checked="${timeOn}" aria-label="Hiển thị thời gian theo ngày đặt hàng"
+     class="inline-flex h-5 w-9 shrink-0 items-center rounded-full no-underline transition-colors ${
+       timeOn ? "bg-indigo-600" : "bg-slate-300"
+     }"><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+       timeOn ? "translate-x-[18px]" : "translate-x-0.5"
+     }"></span></a>
+  <span class="font-medium text-slate-700">Hiển thị theo ngày đặt hàng</span>
+  <span class="text-slate-400">${
+    timeOn ? "Đang hiện thời điểm khách đặt đơn." : "Đang hiện thời điểm import vào hệ thống."
+  }</span>
+</div>`;
 
   const hasFilter = Boolean(
     filters.search || filters.platform || filters.merchant || filters.userId || filters.statuses?.length
@@ -2061,8 +2159,9 @@ export function renderOrdersPage(
         <tr>
           <th class="${thClass}">Mã đơn &amp; thời gian</th>
           <th class="${thClass}">Khách hàng</th>
-          <th class="${thClass}">Sàn / Kênh</th>
+          <th class="${thClass}">Sàn</th>
           <th class="${thClass}">Sản phẩm</th>
+          <th class="${thClass} !text-right" title="Hoa hồng Shopee trả, trước khi trừ thuế/phí và chia %">Hoa hồng gốc</th>
           <th class="${thClass} !text-right">% chốt</th>
           <th class="${thClass} !text-right">Khách nhận</th>
           <th class="${thClass} !text-right">Chủ bot nhận</th>
@@ -2080,6 +2179,7 @@ export function renderOrdersPage(
 
   const body = `${kpiRow}
 ${filterForm}
+${timeToggle}
 ${statusDropdownScript}
 <div class="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
 ${entries.length > 0 ? table : emptyState}
@@ -2112,6 +2212,102 @@ ${content}
 </div>`;
 
   return adminShell("orders", "Huỷ đơn hàng", body, pendingWithdrawals);
+}
+
+export interface EditCommissionPreview {
+  commissionAmount: number;
+  percents: RatePercents;
+  breakdown: CommissionBreakdown;
+}
+
+/**
+ * Trang sua tay hoa hong goc cua 1 don "Cho xac nhan" (2026-10-10). Trang RIENG (cung kieu trang Huy
+ * don) thay vi nhoi form vao hang bang: can cho cho bang "xem truoc" khach/chu bot se nhan bao nhieu
+ * va nut bo khoa. Ban xem truoc do SERVER tinh bang computeCommissionBreakdown (qua GET ?commissionAmount=)
+ * chu khong lap lai phep lam tron bang JS - 2 noi tinh khac nhau thi trang hua 1 so, luc luu ra so khac.
+ */
+export function renderEditCommissionPage(input: {
+  entry: CommissionEntry;
+  displayName?: string | null;
+  /** Co gia tri = khong cho sua (don khong con pending). */
+  blockedMessage?: string | null;
+  errorMessage?: string | null;
+  preview?: EditCommissionPreview | null;
+  /** Gia tri admin vua go (de giu lai o input khi loi / xem truoc). */
+  inputValue?: string;
+  pendingWithdrawals?: number;
+}): string {
+  const e = input.entry;
+  const who = input.displayName
+    ? `${escapeHtml(input.displayName)} (${escapeHtml(e.platform)} / ${escapeHtml(e.userId)})`
+    : `${escapeHtml(e.platform)} / ${escapeHtml(e.userId)}`;
+  const info = `<p class="muted">${who} — ${getMerchantConfig(e.merchant).displayName} — giá trị đơn ${formatVnd(e.orderAmount)}${
+    e.productName ? ` — ${escapeHtml(e.productName)}` : ""
+  }</p>`;
+
+  const ownerOf = (afterTax: number, user: number) => afterTax - user;
+  const previewTable = input.preview
+    ? (() => {
+        const p = input.preview;
+        const b = p.breakdown;
+        const row = (label: string, now: number, next: number) =>
+          `<tr><td>${label}</td><td style="text-align:right">${formatVnd(now)}</td><td style="text-align:right"><strong>${formatVnd(next)}</strong></td></tr>`;
+        return `<table>
+<thead><tr><th></th><th style="text-align:right">Hiện tại</th><th style="text-align:right">Sau khi sửa</th></tr></thead>
+<tbody>
+${row("Hoa hồng gốc (sàn trả)", e.commissionAmount, p.commissionAmount)}
+${row(`Thuế (${p.percents.taxPercent}%)`, e.taxAmount, b.taxAmount)}
+${row(`Phí sàn (${p.percents.platformFeePercent}%)`, e.platformFeeAmount, b.platformFeeAmount)}
+${row(`Khách nhận (${p.percents.userSharePercent}%)`, e.userShareAmount, b.userShareAmount)}
+${row("Chủ bot nhận", ownerOf(e.afterTaxAmount, e.userShareAmount), b.botShareAmount)}
+</tbody></table>
+<p class="muted">Tính theo tỉ lệ đã chốt của riêng đơn này, không theo % hiện hành ở Cài đặt.</p>`;
+      })()
+    : "";
+
+  const errorBlock = input.errorMessage ? `<div class="error">${escapeHtml(input.errorMessage)}</div>` : "";
+  const action = `/admin/orders/${e.id}/commission`;
+  const lockNote =
+    e.commissionOverriddenAt !== null
+      ? `<p class="help">Đơn này đang <strong>khoá</strong> hoa hồng ở ${formatVnd(e.commissionAmount)} (admin sửa tay). Import báo cáo Shopee sau vẫn đổi trạng thái đơn nhưng giữ số này, và báo ở mục cảnh báo nếu Shopee ghi số khác.</p>`
+      : `<p class="help">Sau khi lưu, số này được <strong>khoá</strong>: import báo cáo Shopee sau sẽ không ghi đè (chỉ báo cảnh báo nếu Shopee ghi số khác). Khi đơn chuyển "Khả dụng", user nhận tiền theo số đã khoá.</p>`;
+  const unlockForm =
+    e.commissionOverriddenAt !== null
+      ? `<form method="POST" action="${action}" class="form-secondary" ${confirmOnSubmit("Bỏ khoá? Số tiền hiện tại giữ nguyên cho tới lần import báo cáo Shopee kế tiếp, khi đó sẽ lấy lại số của Shopee.")}>
+  <input type="hidden" name="action" value="unlock">
+  <button type="submit" class="danger">Bỏ khoá, dùng lại số của Shopee ở lần import sau</button>
+</form>`
+      : "";
+
+  const content = input.blockedMessage
+    ? `${info}<div class="error">${escapeHtml(input.blockedMessage)}</div><p><a class="link" href="/admin/orders">Quay lại</a></p>`
+    : `${info}${errorBlock}
+<form method="POST" action="${action}" class="settings-form">
+  <div class="field">
+    <label for="commissionAmount">Hoa hồng gốc (đ)</label>
+    <input type="number" id="commissionAmount" name="commissionAmount" min="0" step="any" value="${escapeHtml(
+      input.inputValue ?? String(e.commissionAmount)
+    )}" required>
+    ${lockNote}
+  </div>
+  ${previewTable ? `<div class="field">${previewTable}</div>` : ""}
+  <div class="actions actions-row">
+    <button type="submit" name="action" value="save" class="primary">Lưu</button>
+    <button type="submit" class="secondary" formmethod="GET" formaction="${action}">Xem trước</button>
+    <a class="link" href="/admin/orders">Quay lại</a>
+  </div>
+</form>
+${unlockForm}`;
+
+  return adminShell(
+    "orders",
+    "Sửa hoa hồng gốc",
+    `<div class="card">
+<h2>Sửa hoa hồng gốc — đơn ${escapeHtml(e.orderId)}</h2>
+${content}
+</div>`,
+    input.pendingWithdrawals
+  );
 }
 
 export interface SingleOrderFormResult {
@@ -2246,6 +2442,7 @@ export function renderRecordOrdersPage(
       ${statRow("Số đơn quét được", shopeeReportResult.ordersScanned)}
       ${statRow(`Ghi mới "Khả dụng" (trùng bỏ qua ${shopeeReportResult.confirmedDuplicate})`, shopeeReportResult.confirmedNew)}
       ${statRow(`Ghi mới "Chờ xác nhận" (cập nhật lại ${shopeeReportResult.pendingUpdated})`, shopeeReportResult.pendingNew)}
+      ${statRow(`Đơn nhỏ đang chờ vào "Khả dụng"`, shopeeReportResult.smallHoldDeferred)}
       ${statRow("Đã huỷ (đơn huỷ / không hợp lệ)", shopeeReportResult.reversedCount)}
       ${statRow("Đơn nhiều sản phẩm đã gộp", shopeeReportResult.mergedMultiItem)}
       ${statRow("Bỏ qua - không tách được subId", shopeeReportResult.skippedNoSubId)}
@@ -2471,7 +2668,8 @@ function settingsTabOf(key: string): "faq" | "commission" | "messages" {
     key === SETTINGS_KEYS.userSharePercent ||
     key === SETTINGS_KEYS.withdrawalThresholdVnd ||
     key === SETTINGS_KEYS.payoutHoldThresholdVnd ||
-    key === SETTINGS_KEYS.payoutHoldDays
+    key === SETTINGS_KEYS.payoutHoldDays ||
+    key === SETTINGS_KEYS.payoutHoldSmallDays
   ) {
     return "commission";
   }

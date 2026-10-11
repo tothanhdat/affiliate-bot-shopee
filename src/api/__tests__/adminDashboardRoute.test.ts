@@ -361,3 +361,53 @@ test("GET /admin/dashboard: moi the co chip nhom cua rieng no, nam TRONG the", a
   assert.doesNotMatch(html, /Đã chi trả|Tỉ lệ lỗi|Đơn huỷ</);
   cleanup();
 });
+
+test("the 'Loi nhuan chu bot': khong tru phi 1%, hien them so TRUOC THUE cho nho hon ben canh", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    // 100.000 -> thue 10.000 -> 90.000 -> phi 900 -> 89.100 -> user 80% = 71.280.
+    ledgerStore.recordConversion({
+      subId: "k-lnbot-1",
+      platform: "zalo",
+      userId: "u-lnbot",
+      merchant: "shopee",
+      orderId: "ORD-LNBOT",
+      orderAmount: 1_000_000,
+      commissionAmount: 100_000,
+      orderDate: todayVn(),
+      taxPercent: 10,
+      platformFeePercent: 1,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await fetch(`${baseUrl}/admin/dashboard?range=today`, { headers: { cookie } }).then((r) => r.text());
+
+    const card = html.match(/<div class="kpi-card[^"]*">(?:(?!<div class="kpi-card)[\s\S])*?Lợi nhuận chủ bot[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? "";
+    assert.notEqual(card, "", "phai tim thay the Loi nhuan chu bot");
+    // So chinh: 18.720 (khong tru phi 900). So phu: 28.720 truoc thue, la phan tu RIENG (font nho hon).
+    assert.match(card, /class="kpi-value">18\.720đ</);
+    assert.match(card, /class="kpi-value-sub"[^>]*>[^<]*28\.720đ/);
+    assert.doesNotMatch(card, /17\.820/, "khong con so da tru phi 1%");
+    // Hint khong con noi "sau phi san".
+    assert.doesNotMatch(card, /phí sàn/);
+    // So truoc thue KHONG nam trong .kpi-value (test lam tron o tren dung regex tren kpi-value).
+    assert.doesNotMatch(card, /class="kpi-value">[^<]*28\.720/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("CSS: .kpi-value-sub nho hon .kpi-value", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await fetch(`${baseUrl}/admin/dashboard?range=today`, { headers: { cookie } }).then((r) => r.text());
+    const size = (sel: string) => Number(new RegExp(`${sel}\\s*\\{[^}]*font-size:\\s*([\\d.]+)rem`).exec(html)?.[1]);
+    assert.ok(size("\\.kpi-value-sub") > 0, "co dinh nghia font-size cho .kpi-value-sub");
+    assert.ok(size("\\.kpi-value-sub") < size("\\.kpi-value"), "so phu phai nho hon so chinh");
+  } finally {
+    cleanup();
+  }
+});

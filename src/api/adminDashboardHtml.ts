@@ -245,6 +245,8 @@ function renderKpiGrid(stats: DashboardStats): string {
     badge?: string;
     /** Link hanh dong o chan the - chi dung cho the can admin lam gi do ngay. */
     action?: { href: string; label: string };
+    /** So phu cho nho hon, dat BEN CANH so chinh (2026-10-10: the Loi nhuan chu bot - so truoc thue). */
+    sub?: string;
   }> = [
     {
       group: "Tiền",
@@ -256,7 +258,10 @@ function renderKpiGrid(stats: DashboardStats): string {
       group: "Tiền",
       label: "Lợi nhuận chủ bot",
       value: formatVnd(money.ownerProfit),
-      hint: `Sau thuế, phí sàn và phần chia user · ${periodNote}`,
+      // Cong thuc: hoa hong - thue - phan chia user (KHONG tru phi 1%, la phi van hanh chu bot tu thu
+      // them). So nho ben canh = chua tru thue. Hint KHONG hardcode "1%": ty le la setting.
+      sub: `trước thuế ${formatVnd(money.ownerProfitBeforeTax)}`,
+      hint: `Hoa hồng − thuế − phần chia user · ${periodNote}`,
       tone: "accent",
     },
     {
@@ -343,7 +348,11 @@ function renderKpiGrid(stats: DashboardStats): string {
           GROUP_ICONS[c.group] ?? "•"
         }</span>${escapeHtml(c.group)}</span>
       </div>
-      <span class="kpi-value">${escapeHtml(c.value)}</span>
+      ${
+        c.sub
+          ? `<div class="kpi-value-row"><span class="kpi-value">${escapeHtml(c.value)}</span><span class="kpi-value-sub">${escapeHtml(c.sub)}</span></div>`
+          : `<span class="kpi-value">${escapeHtml(c.value)}</span>`
+      }
       <span class="kpi-hint">${escapeHtml(c.hint)}</span>${
         c.action
           ? `<a class="kpi-action" href="${escapeHtml(c.action.href)}">${escapeHtml(c.action.label)}</a>`
@@ -865,6 +874,10 @@ export function dashboardStyles(): string {
 
   /* Con so la thong tin chinh cua the -> dung muc ink dam nhat, khong to mau theo series. */
   .kpi-value { font-size: 1.45rem; font-weight: 700; color: var(--text); line-height: 1.25; margin: 0.1rem 0; }
+  /* So phu dat canh so chinh (the Loi nhuan chu bot: so TRUOC THUE). Nho hon + mo hon de khong tranh
+     voi so chinh; flex-wrap de the hep (1 cot / man nho) tu xuong dong chu khong tran ra ngoai. */
+  .kpi-value-row { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 0.6rem; row-gap: 0; }
+  .kpi-value-sub { font-size: 0.8rem; font-weight: 500; color: var(--text-muted); }
   .kpi-hint { font-size: 0.75rem; color: var(--text-muted); line-height: 1.35; }
 
   /* DUNG 2 cot co dinh (khong auto-fit): 2 chart theo ngay o hang dau phai chia doi 50-50 de doi

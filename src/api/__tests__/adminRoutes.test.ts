@@ -17,7 +17,7 @@ import { LinkResolverService } from "../../core/linkResolverService.js";
 import { RateLimiter } from "../../core/rateLimiter.js";
 import { SETTINGS_REGISTRY } from "../../config/settingsRegistry.js";
 import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
-import { todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
+import { addDaysToVnIso, formatVnDateDdMm, todayVnIso, yesterdayVnDdMm } from "../../core/vietnamDate.js";
 
 const THRESHOLD_VND = 50_000;
 const BANK_INFO = { bankName: "Vietcombank", bankAccountNumber: "0123456789", bankAccountHolder: "Nguyen Van A" };
@@ -1415,7 +1415,7 @@ test("/admin/users hien cot % hoa hong rieng + nut cau hinh", async () => {
   }
 });
 
-test("GET /admin/settings hien 4 setting cua giam don to + no hoan tra", async () => {
+test("GET /admin/settings hien 5 setting cua giu tien don + no hoan tra", async () => {
   const { baseUrl, cleanup } = setup();
   try {
     const cookie = await loginAndGetCookie(baseUrl);
@@ -1424,8 +1424,89 @@ test("GET /admin/settings hien 4 setting cua giam don to + no hoan tra", async (
 
     assert.match(html, /payout_hold_threshold_vnd/);
     assert.match(html, /payout_hold_days/);
+    assert.match(html, /payout_hold_small_days/);
     assert.match(html, /payout_debt_notice_template/);
     assert.match(html, /withdrawal_cancelled_template/);
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Admin chon "Kha dung" nhung don nho bi hoan sang "Cho xac nhan" (2026-10-11): khong noi ro thi
+ * admin tuong minh bam sai o chon, hoac tuong he thong ghi nhan loi.
+ */
+test("POST record-orders/single: don nho chon 'Kha dung' -> bao ro dang cho + ngay vao Kha dung", async () => {
+  const { logStore, ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "sub-small-hold", { platform: "zalo", userId: "user-a" });
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: settingsFormBody({ payout_hold_threshold_vnd: "100000", payout_hold_small_days: "1" }),
+      redirect: "manual",
+    });
+
+    const res = await fetch(`${baseUrl}/admin/record-orders/single`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: new URLSearchParams({
+        subId: "sub-small-hold",
+        orderId: "order-small-hold",
+        orderAmount: "500000",
+        commissionAmount: "50000",
+        status: "confirmed",
+      }).toString(),
+    });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+
+    assert.equal(ledgerStore.getEntryByOrderId("shopee", "order-small-hold")?.status, "pending");
+    assert.match(html, /Chờ xác nhận/);
+    // Ngay vao Kha dung = hom nay + 1 (khong co ngay giao hang nen lui ve hom nay, xem payoutHold.ts).
+    assert.match(html, new RegExp(`Khả dụng ${formatVnDateDdMm(new Date(`${addDaysToVnIso(todayVnIso(), 1)}T12:00:00Z`)).replace("/", "\\/")}`));
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Chot chong "quen truyen smallHoldDays": config duoc dung lai o 5 cho trong production, va
+ * smallHoldDays la field TUY CHON (mac dinh 0 = khong cho) nen quen truyen se lam tinh nang am tham
+ * khong chay ma khong co loi typecheck nao - xem doc comment trong payoutHold.ts.
+ */
+test("POST shopee-report doc payout_hold_small_days tu settings: don nho nam lai 'Cho xac nhan', khong DM user", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "zalo-user-a-abc-def", { platform: "zalo", userId: "user-a" });
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+      body: settingsFormBody({ payout_hold_threshold_vnd: "100000", payout_hold_small_days: "1" }),
+      redirect: "manual",
+    });
+
+    // Hoa hong 10.000d, user nhan 80% = 8.000d -> duoi nguong 100.000d -> la don NHO.
+    const csvContent = [
+      SHOPEE_REPORT_HEADER,
+      shopeeReportRow("SHOPEE-NHO", "Hoàn thành", ["zalo", "user-a", "abc", "def"]),
+    ].join("\n");
+    const formData = new FormData();
+    formData.append("file", new Blob([csvContent], { type: "text/csv" }), "report.csv");
+    const res = await fetch(`${baseUrl}/admin/record-orders/shopee-report`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+    });
+    assert.equal(res.status, 200);
+
+    const entry = ledgerStore.getEntryByOrderId("shopee", "SHOPEE-NHO");
+    assert.equal(entry?.status, "pending");
+    assert.equal(ledgerStore.getAvailableBalance("zalo", "user-a"), 0);
+    // Khong co tin "don ve" nao: user chi thay "Cho xac nhan", den ngay vao Kha dung moi duoc bao.
+    assert.deepEqual(notifyUserCalls, []);
   } finally {
     cleanup();
   }
@@ -1728,6 +1809,412 @@ test("POST /admin/settings/zalo-groups van luu duoc khi dong bo thanh vien loi",
       ledgerStore.listNotifyEnabledZaloGroups().map((g) => g.groupId),
       ["group-1"]
     );
+  } finally {
+    cleanup();
+  }
+});
+
+// --- Sua tay hoa hong goc cua don pending (2026-10-10) ---
+
+function recordForCommissionEdit(
+  ledgerStore: LedgerStore,
+  orderId: string,
+  status: "pending" | "confirmed" = "pending"
+) {
+  return ledgerStore.recordConversion({
+    subId: "telegram-user-a-1",
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    status,
+  });
+}
+
+const formHeaders = (cookie: string) => ({ cookie, "content-type": "application/x-www-form-urlencoded" });
+
+test("/admin/orders co cot Hoa hong goc; chi don pending co nut sua, don da sua tay co nhan", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const locked = recordForCommissionEdit(ledgerStore, "PEND-2");
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    ledgerStore.overrideCommissionAmount(locked.id, {
+      commissionAmount: 70_000,
+      fallbackPercents: { taxPercent: 0, platformFeePercent: 0, userSharePercent: 80 },
+      maxCommissionRatioPercent: 1000,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+
+    assert.match(html, /Hoa hồng gốc/);
+    assert.match(html, /50\.000/);
+    assert.match(html, /70\.000/);
+    assert.match(html, new RegExp(`/admin/orders/${pending.id}/commission`));
+    assert.match(html, new RegExp(`/admin/orders/${locked.id}/commission`));
+    assert.doesNotMatch(html, new RegExp(`/admin/orders/${confirmed.id}/commission`));
+    assert.match(html, /đã sửa tay/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET trang sua hoa hong: don pending co o nhap; don confirmed bi chan, khong co o nhap", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    const okHtml = await (
+      await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(okHtml, /name="commissionAmount"/);
+
+    const blockedHtml = await (
+      await fetch(`${baseUrl}/admin/orders/${confirmed.id}/commission`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(blockedHtml, /Chờ xác nhận/);
+    assert.doesNotMatch(blockedHtml, /name="commissionAmount"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET trang sua hoa hong voi ?commissionAmount= hien ban xem truoc khach/chu bot nhan theo ty le da chot", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders/${pending.id}/commission?commissionAmount=100000`, {
+        headers: { cookie: cookie! },
+      })
+    ).text();
+    // 0% thue/phi, 80% -> khach 80.000, chu bot 20.000.
+    assert.match(html, /80\.000/);
+    assert.match(html, /20\.000/);
+    // Xem truoc KHONG duoc ghi gi.
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong: luu, tinh lai tien khach, khoa so", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    const after = ledgerStore.getEntryById(pending.id)!;
+    assert.equal(after.commissionAmount, 100_000);
+    assert.equal(after.userShareAmount, 80_000);
+    assert.notEqual(after.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong: so khong hop le -> 422, khong doi gi", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    for (const bad of ["", "abc", "-5", "999999999"]) {
+      const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+        method: "POST",
+        headers: formHeaders(cookie!),
+        body: `action=save&commissionAmount=${bad}`,
+        redirect: "manual",
+      });
+      assert.equal(res.status, 422, `gia tri "${bad}"`);
+    }
+    const after = ledgerStore.getEntryById(pending.id)!;
+    assert.equal(after.commissionAmount, 50_000);
+    assert.equal(after.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST sua hoa hong tren don da confirmed -> 422, khong doi so", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const confirmed = recordForCommissionEdit(ledgerStore, "CONF-1", "confirmed");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/orders/${confirmed.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 422);
+    assert.equal(ledgerStore.getEntryById(confirmed.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST action=unlock bo khoa", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: formHeaders(cookie!),
+      body: "action=unlock",
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionOverriddenAt, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("route sua hoa hong yeu cau dang nhap admin", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const pending = recordForCommissionEdit(ledgerStore, "PEND-1");
+    const res = await fetch(`${baseUrl}/admin/orders/${pending.id}/commission`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "action=save&commissionAmount=100000",
+      redirect: "manual",
+    });
+    assert.match(res.headers.get("location") ?? "", /\/admin\/login/);
+    assert.equal(ledgerStore.getEntryById(pending.id)!.commissionAmount, 50_000);
+  } finally {
+    cleanup();
+  }
+});
+
+// --- Toggle kieu thoi gian o cot "Ma don & thoi gian" cua /admin/orders (2026-10-10) ---
+// OFF (mac dinh) = thoi diem IMPORT vao he thong (createdAt); ON (?time=order) = NGAY DAT HANG (order_date).
+
+function recordWithOrderDate(
+  ledgerStore: LedgerStore,
+  orderId: string,
+  orderDate: string | null,
+  orderTime: string | null = null
+) {
+  return ledgerStore.recordConversion({
+    subId: "telegram-user-a-1",
+    platform: "telegram",
+    userId: "user-a",
+    merchant: "shopee",
+    orderId,
+    orderAmount: 500_000,
+    commissionAmount: 50_000,
+    taxPercent: 0,
+    platformFeePercent: 0,
+    userSharePercent: 80,
+    maxCommissionRatioPercent: 1000,
+    holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    status: "pending",
+    orderDate,
+    orderTime,
+  });
+}
+
+const tbodyOf = (html: string) => html.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? "";
+const TIME_OF_DAY = /\d{2}:\d{2}:\d{2} •/;
+
+test("/admin/orders mac dinh hien thoi gian IMPORT (gio:phut:giay), toggle OFF", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.match(tbodyOf(html), TIME_OF_DAY);
+    assert.doesNotMatch(tbodyOf(html), /20\/09\/2026/);
+    assert.match(html, /role="switch"[^>]*aria-checked="false"/);
+    // Toggle tro sang che do ngay dat.
+    assert.match(html, /href="\/admin\/orders\?time=order"[^>]*role="switch"|role="switch"[^>]*href="\/admin\/orders\?time=order"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders?time=order hien NGAY DAT HANG; don chua co ngay dat hien '—' (khong bia bang ngay import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-CO-NGAY", "2026-09-20");
+    recordWithOrderDate(ledgerStore, "DH-CU", null);
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    const body = tbodyOf(html);
+    assert.match(body, /20\/09\/2026/);
+    assert.doesNotMatch(body, TIME_OF_DAY, "khong con hien thoi diem import o che do ngay dat");
+    assert.match(html, /role="switch"[^>]*aria-checked="true"/);
+    // Bam lai la ve mac dinh (khong con tham so time).
+    assert.match(html, /href="\/admin\/orders"[^>]*role="switch"|role="switch"[^>]*href="\/admin\/orders"/);
+    // Dong cua don cu: o thoi gian la "—", van thay ma don.
+    const cuRow = body.split("<tr").find((r) => r.includes("DH-CU")) ?? "";
+    assert.match(cuRow, /—/);
+    assert.doesNotMatch(cuRow, /\d{2}\/\d{2}\/\d{4}/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("gia tri ?time= la thi ve mac dinh (import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=abc`, { headers: { cookie: cookie! } })).text();
+    assert.match(tbodyOf(html), TIME_OF_DAY);
+    assert.match(html, /aria-checked="false"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("che do ngay dat duoc GIU qua form Loc (input an) va link phan trang", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    for (let i = 0; i < 60; i++) recordWithOrderDate(ledgerStore, `DH-${i}`, "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    assert.match(html, /<input type="hidden" name="time" value="order">/);
+    assert.match(html, /\/admin\/orders\?[^"]*time=order[^"]*page=2/);
+    // Che do mac dinh thi khong day them tham so vao link.
+    const def = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.doesNotMatch(def, /name="time"/);
+    assert.doesNotMatch(def, /\/admin\/orders\?[^"]*time=order[^"]*page=2/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("toggle giu nguyen bo loc dang ap khi bam doi che do", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-1", "2026-09-20");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?q=DH&status=pending`, { headers: { cookie: cookie! } })).text();
+    const toggle = html.match(/<a[^>]*role="switch"[^>]*>/)?.[0] ?? "";
+    assert.match(toggle, /q=DH/);
+    assert.match(toggle, /status=pending/);
+    assert.match(toggle, /time=order/);
+  } finally {
+    cleanup();
+  }
+});
+
+
+test("che do ngay dat hien CA gio phut giay khi co (cung dinh dang thoi gian import)", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    recordWithOrderDate(ledgerStore, "DH-GIO", "2026-09-28", "21:15:42");
+    recordWithOrderDate(ledgerStore, "DH-CHI-NGAY", "2026-10-02", null);
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?time=order`, { headers: { cookie: cookie! } })).text();
+    const rows = tbodyOf(html).split("<tr");
+    const gio = rows.find((r) => r.includes("DH-GIO")) ?? "";
+    const chiNgay = rows.find((r) => r.includes("DH-CHI-NGAY")) ?? "";
+    assert.match(gio, /21:15:42 • 28\/09\/2026/);
+    // Chua co gio thi chi hien ngay, KHONG bia 00:00:00.
+    assert.match(chiNgay, /02\/10\/2026/);
+    assert.doesNotMatch(chiNgay, /\d{2}:\d{2}:\d{2}/);
+  } finally {
+    cleanup();
+  }
+});
+
+// Cot "San" cua /admin/orders (2026-10-10, yeu cau user): chi kinh doanh tren Zalo nen bo chip kenh
+// "Zalo" - cot chi con chip san. Bo loc "Kenh" tren thanh loc van giu nguyen.
+test("/admin/orders: cot San KHONG con chip kenh Zalo, tieu de la 'San', khong con o chon Kenh", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.recordConversion({
+      subId: "zalo-user-z-1",
+      platform: "zalo",
+      userId: "user-z",
+      merchant: "shopee",
+      orderId: "DH-ZALO",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+      status: "pending",
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    const tbody = tbodyOf(html);
+    assert.doesNotMatch(tbody, /Zalo/);
+    assert.match(tbody, /Shopee/);
+    assert.match(html, /<th[^>]*>Sàn<\/th>/);
+    assert.doesNotMatch(html, /Sàn \/ Kênh/);
+    // O chon "Kenh" da bi go (2026-10-10): khong con <select name="platform"> tren thanh loc.
+    assert.doesNotMatch(html, /<select[^>]*name="platform"/);
+    assert.doesNotMatch(html, /for="orders-platform"/);
+  } finally {
+    cleanup();
+  }
+});
+
+
+// ?platform= van la tham so HIEU DUOC (nut "Xem don" o /admin/users dan sang bang ?platform=&userId=):
+// chi bo o chon tren giao dien, khong bo tham so - bo thi userId trung giua 2 kenh se lan don.
+test("/admin/orders?platform=&userId= (tu nut Xem don) van loc dung va GIU qua nut Loc + phan trang", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const mk = (platform: "zalo" | "telegram", orderId: string) =>
+      ledgerStore.recordConversion({
+        subId: `${platform}-same-1`,
+        platform,
+        userId: "same-id",
+        merchant: "shopee",
+        orderId,
+        orderAmount: 500_000,
+        commissionAmount: 50_000,
+        taxPercent: 0,
+        platformFeePercent: 0,
+        userSharePercent: 80,
+        maxCommissionRatioPercent: 1000,
+        holdConfig: { thresholdVnd: 0, holdDays: 0 },
+        status: "pending",
+      });
+    mk("zalo", "DH-ZALO-1");
+    mk("telegram", "DH-TELE-1");
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders?platform=zalo&userId=same-id`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(tbodyOf(html), /DH-ZALO-1/);
+    assert.doesNotMatch(tbodyOf(html), /DH-TELE-1/);
+    assert.match(html, /<input type="hidden" name="platform" value="zalo">/);
+    assert.match(html, /<input type="hidden" name="userId" value="same-id">/);
+    // Khong co ?platform= thi khong sinh input an.
+    const plain = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.doesNotMatch(plain, /name="platform"/);
   } finally {
     cleanup();
   }

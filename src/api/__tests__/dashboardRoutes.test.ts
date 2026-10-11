@@ -402,3 +402,45 @@ test("?tru-no=<id> cua user KHAC khong hien thong bao tren dashboard cua minh", 
     cleanup();
   }
 });
+
+// Admin sua tay hoa hong goc (2026-10-10): user CHI duoc thay con so, khong duoc thay dau vet cua viec sua/khoa.
+test("GET /d/:token don bi admin sua tay hoa hong: hien so moi nhat quan, khong lo dau vet sua/khoa", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const entry = ledgerStore.recordConversion({
+      subId: "telegram-user-a-1",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "ORDER-EDIT-1",
+      orderAmount: 500_000,
+      commissionAmount: 50_000,
+      taxPercent: 10,
+      platformFeePercent: 1,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+      status: "pending",
+    });
+    ledgerStore.overrideCommissionAmount(entry.id, {
+      commissionAmount: 100_000,
+      fallbackPercents: { taxPercent: 10, platformFeePercent: 1, userSharePercent: 80 },
+      maxCommissionRatioPercent: 1000,
+    });
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+
+    const html = await (await fetch(`${baseUrl}/d/${token}`)).text();
+
+    // 100.000 goc -> thue 10.000 -> 90.000 -> phi 900 -> 89.100 -> khach 80% = 71.280 (cung ty le da chot).
+    assert.match(html, /100\.000/);
+    assert.match(html, /89\.100/);
+    assert.match(html, /71\.280/);
+    assert.match(html, /Thuế 10%/);
+    assert.match(html, /80%/);
+    // Khong lo bat ky dau vet nao cua viec admin sua / khoa.
+    assert.doesNotMatch(html, /sửa tay|đã sửa|khoá|khóa|override|overridden|commission_overridden/i);
+    assert.doesNotMatch(html, new RegExp(entry.id.replace(/-/g, "\\-") + "/commission"));
+  } finally {
+    cleanup();
+  }
+});

@@ -101,15 +101,28 @@ export interface CommissionEntry {
    */
   orderDate: string | null;
   /**
+   * Gio phut giay user DAT don, dang "HH:mm:ss" gio VN (2026-10-10), cung cot "Thời Gian Đặt Hàng" voi
+   * orderDate. null cho don ghi truoc khi he thong luu gio: se duoc bu khi don do xuat hien lai trong
+   * mot bao cao import sau (Shopee liet ke lai ca lich su) - xem LedgerStore.backfillOrderTime().
+   * Khong bao gio doan gio (khong dien 00:00:00).
+   */
+  orderTime: string | null;
+  /**
    * Ngay Shopee ghi don "Hoan thanh" = ngay giao hang ("YYYY-MM-DD" gio VN, 2026-10-08), doc tu cot
    * "Thời gian hoàn thành" cua bao cao. null khi bao cao khong co gia tri (don ghi tay, bao cao cu).
    * Day la moc Shopee dem 15 ngay duoc tra hang - xem payoutHold.ts.
    */
   completedAt: string | null;
   /**
-   * Ngay tien cua don nay duoc phep rut ("YYYY-MM-DD" gio VN). null = kha dung ngay (don duoi nguong,
-   * don con pending, hoac entry ghi truoc 2026-10-08 nen khong giam hoi to). Tinh 1 lan luc entry
-   * chuyen confirmed roi CHOT - doi setting khong tinh lai, xem resolveAvailableFrom().
+   * Ngay tien cua don nay duoc phep rut ("YYYY-MM-DD" gio VN). null = kha dung ngay (viec giu tien
+   * dang tat, don admin chu dong ghi "pending", hoac entry ghi truoc 2026-10-08 nen khong giam hoi
+   * to). Tinh 1 lan luc bao cao ghi don "Hoan thanh" roi CHOT - doi setting khong tinh lai, xem
+   * resolveConfirmPlan().
+   *
+   * Tu 2026-10-11 cot nay CO GIA TRI ca khi status van la "pending": do la don NHO dang cho vai ngay
+   * truoc khi vao Kha dung (xem payoutHold.ts). Vi vay moi query tien/nhan trang thai doc cot nay
+   * PHAI loc kem `status = 'confirmed'` - don dang cho khong phai tien kha dung, cung khong phai
+   * "dang tam giu".
    */
   availableFrom: string | null;
   platform: Platform;
@@ -145,6 +158,12 @@ export interface CommissionEntry {
   taxPercent: number | null;
   platformFeePercent: number | null;
   userSharePercent: number | null;
+  /**
+   * Luc admin sua TAY hoa hong goc cua don nay (2026-10-10), null = chua sua. Khac null nghia la
+   * commissionAmount bi KHOA: updatePendingEntry/confirmPendingEntry giu nguyen so nay thay vi lay
+   * so cua bao cao Shopee o cac lan import sau. Chi dat duoc tren don "pending".
+   */
+  commissionOverriddenAt: string | null;
   status: CommissionStatus;
   /** gan khi entry bi "giu" boi 1 yeu cau rut tien, null neu con kha dung */
   withdrawalId: string | null;

@@ -8,8 +8,10 @@ export const SETTINGS_KEYS = {
   withdrawalThresholdVnd: "withdrawal_threshold_vnd",
   /** Nguong user_share bi giam truoc khi cho rut (2026-10-08, xem payoutHold.ts). 0 = tat han. */
   payoutHoldThresholdVnd: "payout_hold_threshold_vnd",
-  /** So ngay giam, dem tu ngay Shopee ghi don "Hoan thanh" (= ngay giao hang). */
+  /** So ngay giam don TO, dem tu ngay Shopee ghi don "Hoan thanh" (= ngay giao hang). */
   payoutHoldDays: "payout_hold_days",
+  /** So ngay don NHO nam lai o "Cho xac nhan" truoc khi vao Kha dung (2026-10-11). 0 = khong cho. */
+  payoutHoldSmallDays: "payout_hold_small_days",
   /** DM khi phat sinh no hoan tra (khach tra hang SAU KHI tien da ra khoi tay, 2026-10-08). */
   payoutDebtNoticeTemplate: "payout_debt_notice_template",
   /** DM khi admin huy 1 yeu cau rut dang cho (2026-10-08). */

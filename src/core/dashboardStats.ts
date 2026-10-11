@@ -48,8 +48,13 @@ export interface DashboardStats {
   money: {
     /** Hoa hong goc tu Shopee trong ky (truoc thue/phi), bo qua don da huy. */
     commission: number;
-    /** Phan chu bot thuc giu = (hoa hong - thue - phi san) - phan chia cho user. */
+    /**
+     * Phan chu bot thuc giu = hoa hong - thue - phan chia cho user. KHONG tru phi san 1% (2026-10-10:
+     * do la phi van hanh chu bot tu thu them, khong phai phi Shopee) - xem OWNER_PROFIT_SQL.
+     */
     ownerProfit: number;
+    /** Loi nhuan chu bot CHUA tru thue = hoa hong - phan chia cho user (hien nho canh so chinh). */
+    ownerProfitBeforeTax: number;
     /** Phan chia cho user trong ky. */
     userShare: number;
     /** TOAN THOI GIAN: tien user da duoc xac nhan, chua rut - khoan phai chuan bi de tra. */
@@ -220,6 +225,7 @@ export function computeDashboardStats(
     money: {
       commission: money.commission,
       ownerProfit: money.ownerProfit,
+      ownerProfitBeforeTax: money.ownerProfitBeforeTax,
       userShare: money.userShare,
       owedToUsers: outstanding.owedToUsers,
     },
