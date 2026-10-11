@@ -2,7 +2,7 @@ import { adminCssHref } from "./adminAssets.js";
 import type { OrdersFilterTotals, RatePercents } from "../core/ledgerStore.js";
 import type { CommissionBreakdown } from "../core/commissionMath.js";
 import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
-import { getMerchantConfig, MERCHANTS, type MerchantId } from "../core/merchants.js";
+import { getMerchantAdminName, MERCHANTS, type MerchantId } from "../core/merchants.js";
 import { vietQrImageUrl } from "../core/vietQr.js";
 import type { ShopeeReportImportResult } from "../core/shopeeReportImport.js";
 import type { TiktokOrderImportResult } from "../core/tiktokOrderImport.js";
@@ -1966,7 +1966,7 @@ export function renderOrdersPage(
   </td>
   <td class="px-4 py-3.5">
     <div class="flex items-center gap-1.5">
-      <span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(e.merchant)}">${getMerchantConfig(e.merchant).displayName}</span>
+      <span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(e.merchant)}">${getMerchantAdminName(e.merchant)}</span>
     </div>
   </td>
   <td class="max-w-[200px] px-4 py-3.5">${product}</td>
@@ -2078,7 +2078,7 @@ export function renderOrdersPage(
       <label class="${FIELD_LABEL_CLASS}" for="orders-merchant">Sàn</label>
       <select id="orders-merchant" name="merchant" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
         MERCHANTS.map((m) => m.id),
-        (id) => getMerchantConfig(id).displayName,
+        (id) => getMerchantAdminName(id),
         filters.merchant
       )}</select>
     </div>
@@ -2197,7 +2197,7 @@ export function renderReverseConfirmPage(
   pendingWithdrawals?: number
 ): string {
   const who = displayName ? `${escapeHtml(displayName)} (${escapeHtml(entry.platform)} / ${escapeHtml(entry.userId)})` : `${escapeHtml(entry.platform)} / ${escapeHtml(entry.userId)}`;
-  const info = `<p class="muted">${who} — ${getMerchantConfig(entry.merchant).displayName} — ${formatVnd(entry.userShareAmount)}</p>`;
+  const info = `<p class="muted">${who} — ${getMerchantAdminName(entry.merchant)} — ${formatVnd(entry.userShareAmount)}</p>`;
 
   const content = blockedMessage
     ? `${info}<div class="error">${escapeHtml(blockedMessage)}</div>`
@@ -2242,7 +2242,7 @@ export function renderEditCommissionPage(input: {
   const who = input.displayName
     ? `${escapeHtml(input.displayName)} (${escapeHtml(e.platform)} / ${escapeHtml(e.userId)})`
     : `${escapeHtml(e.platform)} / ${escapeHtml(e.userId)}`;
-  const info = `<p class="muted">${who} — ${getMerchantConfig(e.merchant).displayName} — giá trị đơn ${formatVnd(e.orderAmount)}${
+  const info = `<p class="muted">${who} — ${getMerchantAdminName(e.merchant)} — giá trị đơn ${formatVnd(e.orderAmount)}${
     e.productName ? ` — ${escapeHtml(e.productName)}` : ""
   }</p>`;
 
@@ -2319,7 +2319,7 @@ export interface SingleOrderFormResult {
 const ACTION_TYPE_LABELS: Record<ImportHistoryEntry["actionType"], string> = {
   csv: "Import CSV (báo cáo Shopee)",
   single: "Ghi 1 đơn lẻ (form)",
-  tiktok: "Đồng bộ đơn TikTok Shop",
+  tiktok: "Đồng bộ đơn TikTok",
 };
 
 /**
@@ -2331,6 +2331,9 @@ export interface TiktokCardState {
   error?: string | null;
 }
 
+/** Hai tab cua /admin/record-orders (2026-10-11). Mac dinh "shopee"; "tiktok" chi co hieu luc khi TikTok dang bat. */
+export type RecordOrdersTab = "shopee" | "tiktok";
+
 export function renderRecordOrdersPage(
   history: ImportHistoryEntry[],
   singleResult?: SingleOrderFormResult | null,
@@ -2338,9 +2341,16 @@ export function renderRecordOrdersPage(
   shopeeReportError?: string | null,
   /** So yeu cau rut dang cho - chi de hien badge tren muc nav, xem adminShell(). */
   pendingWithdrawals?: number,
-  /** The "Dong bo don TikTok Shop" - co mat = TikTok dang bat; undefined = the KHONG ton tai. */
-  tiktok?: TiktokCardState
+  /** The "Dong bo don TikTok" - co mat = TikTok dang bat; undefined = the KHONG ton tai. */
+  tiktok?: TiktokCardState,
+  /**
+   * Tab dang xem. `history` truyen vao PHAI la lich su cua dung tab nay (route tu loc, xem
+   * listImportHistory). TikTok tat thi luon la "shopee" du truyen gi, de ?tab=tiktok go tay khong
+   * hien trang rong.
+   */
+  activeTab: RecordOrdersTab = "shopee"
 ): string {
+  const tab: RecordOrdersTab = tiktok && activeTab === "tiktok" ? "tiktok" : "shopee";
   // Banner thanh cong/loi - cung mot kieu dang dung o withdrawals/orders (vien+nen nhat theo mau,
   // chu dam mau). KHONG dung lai .success/.error cua CSS cu: 2 class do khong co trong .card moi
   // (chung chi duoc test voi nen trang cua CSS tay, mau se sai tren nen trang cua Tailwind).
@@ -2584,12 +2594,12 @@ export function renderRecordOrdersPage(
     <div class="flex items-center gap-2">
       <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">T</div>
       <div>
-        <h2 class="text-sm font-bold text-slate-900">Đồng bộ đơn TikTok Shop</h2>
+        <h2 class="text-sm font-bold text-slate-900">Đồng bộ đơn TikTok</h2>
         <span class="text-[11px] text-slate-500">Kéo đơn từ RioHub — đơn đã giao vào Khả dụng, áp luật giam như Shopee</span>
       </div>
     </div>
     <form method="POST" action="/admin/record-orders/tiktok-sync" ${confirmOnSubmit(
-      "Đồng bộ đơn TikTok Shop từ RioHub? Sẽ ghi nhận/cập nhật đơn vào hệ thống."
+      "Đồng bộ đơn TikTok từ RioHub? Sẽ ghi nhận/cập nhật đơn vào hệ thống."
     )}>
       <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
         ${icon("refresh-cw", "h-4 w-4")} Đồng bộ ngay
@@ -2677,16 +2687,28 @@ export function renderRecordOrdersPage(
     <p class="m-0 text-xs text-slate-500">Các giao dịch nhập đơn lẻ hoặc import file CSV sẽ được lưu nhật ký tại đây.</p>
   </div>`;
 
+  // TikTok tat -> khong co tab nen giu nguyen tieu de cu; co 2 tab thi tieu de noi ro dang xem san nao.
+  const historyTitle = !tiktok
+    ? "Lịch sử ghi nhận đơn hàng"
+    : tab === "tiktok"
+      ? "Lịch sử đồng bộ TikTok"
+      : "Lịch sử ghi nhận đơn Shopee";
+  const historySubtitle =
+    tab === "tiktok"
+      ? "Nhật ký các lần đồng bộ đơn TikTok gần đây"
+      : "Nhật ký các lượt ghi nhận thủ công và import file Shopee gần đây";
+  const refreshHref = tiktok ? `/admin/record-orders?tab=${tab}` : "/admin/record-orders";
+
   const historyCard = `<div class="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
   <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
     <div>
       <h2 class="flex items-center gap-2 text-sm font-bold text-slate-900">${icon(
         "history",
         "h-4 w-4 text-slate-500"
-      )} Lịch sử ghi nhận đơn hàng</h2>
-      <p class="mt-0.5 text-xs text-slate-500">Nhật ký các lượt ghi nhận thủ công và import file Shopee gần đây</p>
+      )} ${historyTitle}</h2>
+      <p class="mt-0.5 text-xs text-slate-500">${historySubtitle}</p>
     </div>
-    <a href="/admin/record-orders" title="Làm mới" aria-label="Làm mới danh sách" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">${icon(
+    <a href="${refreshHref}" title="Làm mới" aria-label="Làm mới danh sách" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">${icon(
       "refresh-cw",
       "h-4 w-4"
     )}</a>
@@ -2732,13 +2754,39 @@ export function renderRecordOrdersPage(
   </span>
 </div>`;
 
-  const body = `${shopeeReportToast}${tiktokToast}
+  // Thanh tab: LINK (khong phai JS nhu /admin/settings). Moi route POST render lai ca trang nen server tra
+  // dung tab cua no (import Shopee o lai tab Shopee, dong bo TikTok o lai tab TikTok); khong co state
+  // client nao de lech, va link chia se duoc. Chi ve khi TikTok bat - tat thi trang y het truoc day.
+  const tabLink = (target: RecordOrdersTab, iconName: "file-up" | "refresh-cw", label: string): string => {
+    const on = tab === target;
+    return `<a href="/admin/record-orders?tab=${target}" role="tab" aria-selected="${on}"
+    class="-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap no-underline border-b-2 py-3 text-xs transition ${on ? SETTINGS_TAB_BTN_CLASS.active : SETTINGS_TAB_BTN_CLASS.inactive}">
+    ${icon(iconName, "h-4 w-4")} ${label}
+  </a>`;
+  };
+  const tabsBar = tiktok
+    ? `<div class="mb-6 overflow-x-auto border-b border-slate-200">
+  <div class="flex w-max min-w-full gap-7 font-semibold" role="tablist">
+    ${tabLink("shopee", "file-up", "Shopee")}
+    ${tabLink("tiktok", "refresh-cw", "TikTok")}
+  </div>
+</div>`
+    : "";
+
+  const body =
+    tab === "tiktok"
+      ? `${tiktokToast}
+${tabsBar}
+${tiktokCard}
+${historyCard}
+${pageScript}`
+      : `${shopeeReportToast}
+${tabsBar}
 ${supportBadge}
 <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
   ${singleCard}
   ${shopeeReportCard}
 </div>
-${tiktokCard}
 ${historyCard}
 ${pageScript}`;
 

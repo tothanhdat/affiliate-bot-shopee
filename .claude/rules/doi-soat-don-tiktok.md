@@ -24,6 +24,16 @@ Admin bấm "Đồng bộ ngay" (thẻ ở `/admin/record-orders`) → `fetchTik
 3. `createServer(..., syncTiktokOrders)` = `undefined` khi TikTok tắt/thiếu key ⇒ thẻ ẩn, route 404. `tiktokshop` về `RETIRED_MERCHANTS` thì đơn đã ghi vẫn hiện (tiền lệ Lazada).
 4. Bỏ phần đối soát = xoá `tiktokOrderImport.ts`, `riohubOrdersSource.ts`, `tiktokCommission.ts`, `scripts/riohubOrders.ts` + 1 route + 1 thẻ. **`orderStatusApply.ts` Ở LẠI** — nó là module ledger không biết sàn nào, Shopee gọi nó.
 
+## Giao diện `/admin/record-orders` — 2 tab
+
+(2026-10-11, yêu cầu của chủ bot: trộn hai sàn trên một trang bị rối.) Tab **Shopee** (form "Ghi 1 đơn lẻ" + import CSV + lịch sử) và tab **TikTok** (thẻ đồng bộ + kết quả + lịch sử).
+
+- **Tab là LINK `?tab=shopee|tiktok` render phía server**, không phải JS như `/admin/settings`: mọi route POST render lại cả trang nên server trả đúng tab của nó (import Shopee ở lại tab Shopee, đồng bộ TikTok ở lại tab TikTok), không có state client nào để lệch. `?tab=tiktok` khi TikTok tắt → rơi về tab Shopee; TikTok tắt thì không có thanh tab.
+- **Lịch sử chia theo sàn, lọc TRONG SQL** (`listImportHistory(limit, actionTypes)`): Shopee = `csv`+`single`, TikTok = `tiktok`. Lọc sau khi cắt 20 dòng chung thì tab ít hoạt động chỉ còn vài dòng. Mảng loại rỗng = không khớp gì (không phải "lấy hết").
+- **Form "Ghi 1 đơn lẻ" nằm ở tab Shopee** và dòng lịch sử của nó luôn hiện ở tab Shopee, **kể cả khi subId là của TikTok** (form tra sàn theo subId nên về kỹ thuật ghi được đơn TikTok). Chủ bot đã chọn để vậy thay vì tra sàn của đơn để xếp đúng tab.
+- **Nhãn ngắn cho admin**: `getMerchantAdminName()` ("TikTok") dùng ở chip sàn `/admin/orders` + `/admin/links`, ô lọc "Sàn", trang huỷ đơn/sửa hoa hồng, nhãn lịch sử. **Tên đầy đủ `displayName` ("TikTok Shop") GIỮ NGUYÊN cho mọi thứ user đọc** (tin nhắn bot, `{{san}}`, dashboard cá nhân `/d/…`) — đổi `displayName` gốc sẽ làm bot nói "Shopee và TikTok" với khách. Thêm sàn mới: chỉ cần `adminName` nếu tên đầy đủ dài.
+- Nhãn tab là `<a>` nên phải có `no-underline` (không nạp preflight, thẻ `<a>` giữ gạch chân mặc định — đúng bẫy trong `admin-ui-nen-tang.md`).
+
 ## Bẫy đã biết
 
 - `sub_id` rỗng là chuỗi `""`, không phải `null`.

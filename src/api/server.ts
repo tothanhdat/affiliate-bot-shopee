@@ -10,6 +10,7 @@ import {
   renderEditCommissionPage,
   renderOrdersPage,
   renderRecordOrdersPage,
+  type RecordOrdersTab,
   type TiktokCardState,
   renderReverseConfirmPage,
   renderSettingsPage,
@@ -1046,7 +1047,21 @@ export function createServer(
   // record-shopee-report. Dung chung logic qua core/orderIngest.ts
   // de khong lap lai (tra subId -> platform/userId/merchant -> ledgerStore.recordConversion).
   app.get("/admin/record-orders", requireAdminAuth, (req: Request, res: Response) => {
-    res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, null, navPendingWithdrawals(), tiktokView()));
+    // ?tab=tiktok chi co hieu luc khi TikTok bat; sai/thieu -> tab Shopee.
+    const tab: RecordOrdersTab = req.query.tab === "tiktok" && syncTiktokOrders ? "tiktok" : "shopee";
+    res
+      .type("html")
+      .send(
+        renderRecordOrdersPage(
+          tab === "tiktok" ? tiktokHistory() : shopeeHistory(),
+          null,
+          null,
+          null,
+          navPendingWithdrawals(),
+          tiktokView(),
+          tab
+        )
+      );
   });
 
   app.post("/admin/record-orders/single", requireAdminAuth, (req: Request, res: Response) => {
@@ -1064,7 +1079,7 @@ export function createServer(
     if (!subId || !orderId || !Number.isFinite(orderAmount) || !Number.isFinite(commissionAmount)) {
       res.status(422).type("html").send(
         renderRecordOrdersPage(
-          ledgerStore.listImportHistory(20),
+          shopeeHistory(),
           { ok: false, message: "Thiếu subId/orderId hoặc orderAmount/commissionAmount không phải số." },
           null,
           null,
@@ -1139,7 +1154,7 @@ export function createServer(
           : `user nhận ${formatVnd(entry.userShareAmount)}`;
       res.type("html").send(
         renderRecordOrdersPage(
-          ledgerStore.listImportHistory(20),
+          shopeeHistory(),
           { ok: true, message: `Đã ghi nhận đơn "${entry.orderId}" (${statusLabel}) - ${amountHint}.` },
           null,
           null,
@@ -1149,7 +1164,7 @@ export function createServer(
       );
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
-      res.status(422).type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), { ok: false, message }, null, null, navPendingWithdrawals(), tiktokView()));
+      res.status(422).type("html").send(renderRecordOrdersPage(shopeeHistory(), { ok: false, message }, null, null, navPendingWithdrawals(), tiktokView()));
     }
   });
 
@@ -1280,6 +1295,14 @@ export function createServer(
   // Canh bao admin cua duong TikTok: gop theo key trong 15 phut (xem AlertThrottle). Tin DAU luon gui.
   const tiktokAlertThrottle = new AlertThrottle(15 * 60 * 1000);
 
+  /** Lich su moi tab: loc TRONG SQL de moi tab du 20 dong cua minh (xem LedgerStore.listImportHistory). */
+  function shopeeHistory() {
+    return ledgerStore.listImportHistory(20, ["csv", "single"]);
+  }
+  function tiktokHistory() {
+    return ledgerStore.listImportHistory(20, ["tiktok"]);
+  }
+
   /** undefined khi TikTok tat → renderRecordOrdersPage khong ve the. */
   function tiktokView(result: TiktokOrderImportResult | null = null, error: string | null = null): TiktokCardState | undefined {
     return syncTiktokOrders ? { result, error } : undefined;
@@ -1302,12 +1325,13 @@ export function createServer(
         .type("html")
         .send(
           renderRecordOrdersPage(
-            ledgerStore.listImportHistory(20),
+            tiktokHistory(),
             null,
             null,
             null,
             navPendingWithdrawals(),
-            tiktokView(null, describeRiohubSyncError(err))
+            tiktokView(null, describeRiohubSyncError(err)),
+            "tiktok"
           )
         );
       return;
@@ -1329,7 +1353,7 @@ export function createServer(
     res
       .type("html")
       .send(
-        renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, null, navPendingWithdrawals(), tiktokView(result))
+        renderRecordOrdersPage(tiktokHistory(), null, null, null, navPendingWithdrawals(), tiktokView(result), "tiktok")
       );
   });
 
@@ -1343,7 +1367,7 @@ export function createServer(
           .status(422)
           .type("html")
           .send(
-            renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, null, "Chưa chọn file báo cáo Shopee nào.", navPendingWithdrawals(), tiktokView())
+            renderRecordOrdersPage(shopeeHistory(), null, null, "Chưa chọn file báo cáo Shopee nào.", navPendingWithdrawals(), tiktokView())
           );
         return;
       }
@@ -1370,7 +1394,7 @@ export function createServer(
         newOrderIds: result.newOrderIds,
         statusTransitions: result.statusTransitions,
       });
-      res.type("html").send(renderRecordOrdersPage(ledgerStore.listImportHistory(20), null, result, null, navPendingWithdrawals(), tiktokView()));
+      res.type("html").send(renderRecordOrdersPage(shopeeHistory(), null, result, null, navPendingWithdrawals(), tiktokView()));
     }
   );
 

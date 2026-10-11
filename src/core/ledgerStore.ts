@@ -2709,13 +2709,22 @@ export class LedgerStore {
     };
   }
 
-  /** Lich su gan nhat truoc, dung cho bang hien thi tren /admin/record-orders. */
-  listImportHistory(limit: number): ImportHistoryEntry[] {
+  /**
+   * Lich su gan nhat truoc, dung cho bang hien thi tren /admin/record-orders.
+   *
+   * `actionTypes` (2026-10-11): moi tab Shopee/TikTok chi xem lich su cua san minh. Loc NAM TRONG SQL
+   * chu khong loc sau khi lay `limit` dong - loc sau thi mot tab it hoat dong chi con vai dong du da
+   * co du 20 dong cua no. Khong truyen = lay het. Mang RONG = khong khop gi (khong phai "lay het").
+   */
+  listImportHistory(limit: number, actionTypes?: readonly ImportActionType[]): ImportHistoryEntry[] {
+    // json_each(?) thay vi IN (?,?,...): so tham so khong doi theo so loai, cung cach logStore da dung.
+    const where = actionTypes ? "WHERE action_type IN (SELECT value FROM json_each(?))" : "";
+    const params: Array<string | number> = actionTypes ? [JSON.stringify(actionTypes), limit] : [limit];
     const rows = this.db
       // rowid phu - 2 lan ghi lien tiep co the trung created_at (do ISO string chi phan giai toi
       // milli-giay) khien ORDER BY created_at DESC mot minh khong on dinh thu tu.
-      .prepare(`SELECT * FROM import_history ORDER BY created_at DESC, rowid DESC LIMIT ?`)
-      .all(limit) as Array<Record<string, unknown>>;
+      .prepare(`SELECT * FROM import_history ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+      .all(...params) as Array<Record<string, unknown>>;
     return rows.map((r) => ({
       id: r.id as string,
       createdAt: r.created_at as string,

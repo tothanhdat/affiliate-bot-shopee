@@ -124,7 +124,12 @@ test("CHOT CACH LY 3: khong truyen fetcher -> the TikTok KHONG hien, route POST 
   try {
     const cookie = await login(t.baseUrl);
     const page = await (await fetch(`${t.baseUrl}/admin/record-orders`, { headers: { cookie } })).text();
-    assert.doesNotMatch(page, /Đồng bộ đơn TikTok Shop/);
+    assert.doesNotMatch(page, /Đồng bộ đơn TikTok/);
+    assert.doesNotMatch(page, /tab=tiktok/, "khong co thanh tab khi TikTok tat - trang y het truoc day");
+    // ?tab=tiktok khi TikTok tat: roi ve tab Shopee, khong the TikTok
+    const forced = await (await fetch(`${t.baseUrl}/admin/record-orders?tab=tiktok`, { headers: { cookie } })).text();
+    assert.match(forced, /Import báo cáo Shopee/);
+    assert.doesNotMatch(forced, /Đồng bộ ngay/);
     const res = await fetch(`${t.baseUrl}/admin/record-orders/tiktok-sync`, { method: "POST", headers: { cookie } });
     assert.equal(res.status, 404);
   } finally {
@@ -132,13 +137,24 @@ test("CHOT CACH LY 3: khong truyen fetcher -> the TikTok KHONG hien, route POST 
   }
 });
 
-test("co fetcher -> the TikTok hien tren /admin/record-orders", async () => {
+test("co fetcher -> 2 tab Shopee/TikTok, moi tab chi hien noi dung cua san minh", async () => {
   const t = setup(async () => []);
   try {
     const cookie = await login(t.baseUrl);
-    const page = await (await fetch(`${t.baseUrl}/admin/record-orders`, { headers: { cookie } })).text();
-    assert.match(page, /Đồng bộ đơn TikTok Shop/);
-    assert.match(page, /action="\/admin\/record-orders\/tiktok-sync"/);
+    const get = async (q = "") => (await fetch(`${t.baseUrl}/admin/record-orders${q}`, { headers: { cookie } })).text();
+
+    const shopee = await get();
+    assert.match(shopee, /href="\/admin\/record-orders\?tab=tiktok"/, "co link sang tab TikTok");
+    assert.match(shopee, /Import báo cáo Shopee/);
+    assert.match(shopee, /Ghi 1 đơn lẻ/);
+    assert.doesNotMatch(shopee, /Đồng bộ ngay/, "tab Shopee khong lan the TikTok");
+
+    const tiktok = await get("?tab=tiktok");
+    assert.match(tiktok, /action="\/admin\/record-orders\/tiktok-sync"/);
+    assert.match(tiktok, /Đồng bộ ngay/);
+    assert.doesNotMatch(tiktok, /Import báo cáo Shopee/, "tab TikTok khong lan form Shopee");
+    assert.doesNotMatch(tiktok, /Ghi 1 đơn lẻ/);
+    assert.doesNotMatch(tiktok, /Hỗ trợ CSV Shopee/);
   } finally {
     t.cleanup();
   }
@@ -182,6 +198,7 @@ test("CHOT CACH LY 2: RioHub tu choi 401 -> trang bao loi cho the TikTok, ledger
     const html = await res.text();
     assert.match(html, /API key sai hoặc hết hạn/);
     assert.match(html, /Đơn Shopee không bị ảnh hưởng/);
+    assert.match(html, /Đồng bộ ngay/, "loi hien tren TAB TikTok de admin bam lai duoc");
     assert.equal(t.ledgerStore.getEntryByOrderId("tiktokshop", "TT-1"), null);
   } finally {
     t.cleanup();
@@ -204,8 +221,11 @@ test("CHOT CACH LY 2: import Shopee KHONG BAO GIO goi fetcher RioHub", async () 
     });
     assert.equal(res.status, 422);
     assert.equal(calls, 0);
-    // Trang loi cua Shopee van phai VE THE TikTok (tiktokView() truyen o moi cho goi render).
-    assert.match(await res.text(), /Đồng bộ đơn TikTok Shop/);
+    // Trang loi cua Shopee render TAB SHOPEE (khong the TikTok) nhung van co thanh tab de sang TikTok.
+    const html = await res.text();
+    assert.match(html, /Import báo cáo Shopee/);
+    assert.match(html, /tab=tiktok/);
+    assert.doesNotMatch(html, /Đồng bộ ngay/);
   } finally {
     t.cleanup();
   }
@@ -240,6 +260,57 @@ test("trang ket qua luon co khoi 'So lieu da quyet toan'; chua co don quyet toan
     const html = await (await fetch(`${t.baseUrl}/admin/record-orders/tiktok-sync`, { method: "POST", headers: { cookie } })).text();
     assert.match(html, /Số liệu đã quyết toán/);
     assert.match(html, /Thuế pit/);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test("lich su ghi nhan chia theo san: moi tab chi thay dong cua minh", async () => {
+  const t = setup(async () => [order()]);
+  try {
+    const cookie = await login(t.baseUrl);
+    t.ledgerStore.recordImportHistory({ actionType: "csv", newOrderIds: ["SHOPEE-CSV-1"], statusTransitions: [] });
+    t.ledgerStore.recordImportHistory({ actionType: "single", newOrderIds: ["SHOPEE-LE-1"], statusTransitions: [] });
+    await fetch(`${t.baseUrl}/admin/record-orders/tiktok-sync`, { method: "POST", headers: { cookie } });
+
+    const shopee = await (await fetch(`${t.baseUrl}/admin/record-orders`, { headers: { cookie } })).text();
+    assert.match(shopee, /SHOPEE-CSV-1/);
+    assert.match(shopee, /SHOPEE-LE-1/);
+    assert.doesNotMatch(shopee, /TT-1/, "don TikTok khong nam trong lich su tab Shopee");
+
+    const tiktok = await (await fetch(`${t.baseUrl}/admin/record-orders?tab=tiktok`, { headers: { cookie } })).text();
+    assert.match(tiktok, /TT-1/);
+    assert.doesNotMatch(tiktok, /SHOPEE-CSV-1|SHOPEE-LE-1/, "don Shopee khong nam trong lich su tab TikTok");
+  } finally {
+    t.cleanup();
+  }
+});
+
+test("NHAN ADMIN: bang admin ghi 'TikTok', khong ghi 'TikTok Shop' (ten day du danh cho user)", async () => {
+  const t = setup(undefined);
+  try {
+    const cookie = await login(t.baseUrl);
+    t.ledgerStore.recordConversion({
+      subId: BOT_SUB,
+      platform: "zalo",
+      userId: "user-a",
+      merchant: "tiktokshop",
+      orderId: "TT-NHAN",
+      orderAmount: 100_000,
+      commissionAmount: 3000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    const orders = await (await fetch(`${t.baseUrl}/admin/orders`, { headers: { cookie } })).text();
+    assert.match(orders, />TikTok</, "chip san o /admin/orders");
+    assert.doesNotMatch(orders, />TikTok Shop</);
+
+    const links = await (await fetch(`${t.baseUrl}/admin/links`, { headers: { cookie } })).text();
+    assert.match(links, />TikTok</, "chip san o /admin/links");
+    assert.doesNotMatch(links, />TikTok Shop</);
   } finally {
     t.cleanup();
   }

@@ -80,6 +80,8 @@
 
 ## /admin/record-orders
 
+**(2026-10-11) Trang chia 2 tab Shopee / TikTok, lịch sử chia theo sàn** — chi tiết và lý do (tab là link server-side, lọc lịch sử trong SQL, form đơn lẻ ở tab Shopee) ở `.claude/rules/doi-soat-don-tiktok.md`, mục "Giao diện". Các ràng buộc bên dưới là của tab **Shopee**.
+
 (2026-10-04)
 
 **Trang /admin/record-orders da duoc dung lai theo design ref**: khong co the KPI (day la trang HANH DONG, khong phai trang tong quan/danh sach). Bo cuc luoi 2 cot 7/5 (`lg:col-span-7`/`lg:col-span-5`): "Ghi 1 don le thu cong" (form doc, nhan thuong khong viet hoa - `fieldLabel()` cuc bo trong ham, KHAC `FIELD_LABEL_CLASS` dung o toolbar cac trang khac, hai ngu canh khac nhau nen khong ep dung chung) va "Import bao cao Shopee Affiliate" (hop dan y + vung keo-tha + ket qua import). Duoi cung la card "Lich su ghi nhan don hang".

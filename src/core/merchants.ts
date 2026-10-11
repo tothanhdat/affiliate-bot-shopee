@@ -4,7 +4,14 @@ export type MerchantId = "shopee" | "lazada" | "tiktokshop";
 
 export interface MerchantConfig {
   id: MerchantId;
+  /** Ten day du, cho USER doc (tin nhan bot, {{san}}, dashboard ca nhan). */
   displayName: string;
+  /**
+   * Ten NGAN chi hien tren cac trang ADMIN (chip san, o loc, nhan lich su) - admin da biet ngu canh nen
+   * "TikTok" la du (2026-10-11, yeu cau chu bot). Bo trong = dung displayName. KHONG dung cho text gui user:
+   * doi displayName goc se lam bot noi "Shopee va TikTok" voi khach.
+   */
+  adminName?: string;
   hostPattern: RegExp;
   /** Domain rut gon can theo redirect de lay URL that (vi du s.shopee.vn). */
   shortHosts: Set<string>;
@@ -36,6 +43,7 @@ const LAZADA: MerchantConfig = {
 const TIKTOK_SHOP: MerchantConfig = {
   id: "tiktokshop",
   displayName: "TikTok Shop",
+  adminName: "TikTok",
   hostPattern: /(^|\.)tiktok\.com$/i,
   shortHosts: new Set(["vt.tiktok.com"]),
   resolveShortLinks: false,
@@ -114,4 +122,10 @@ export function getMerchantConfig(id: MerchantId): MerchantConfig {
     throw new Error(`Unknown merchant id: ${id}`);
   }
   return merchant;
+}
+
+/** Ten ngan cho cac trang admin - xem MerchantConfig.adminName. Don cu cua san da ngung van tra duoc ten. */
+export function getMerchantAdminName(id: MerchantId): string {
+  const merchant = getMerchantConfig(id);
+  return merchant.adminName ?? merchant.displayName;
 }

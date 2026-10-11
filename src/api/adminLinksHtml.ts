@@ -1,6 +1,6 @@
 import type { LinkSourceContext, RequestLogEntry, RequestOutcome } from "../core/types.js";
 import type { CreatedLinkFilters, CreatedLinksTotals } from "../core/logStore.js";
-import { getMerchantConfig } from "../core/merchants.js";
+import { getMerchantAdminName } from "../core/merchants.js";
 import { formatVnd } from "../core/money.js";
 import { copyIconButton, escapeHtml, formatDateTimeParts } from "./htmlHelpers.js";
 import {
@@ -203,7 +203,7 @@ export function renderLinksPage(
       const merchantChip = e.merchant
         ? `<span class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${merchantChipClass(
             e.merchant
-          )}">${escapeHtml(getMerchantConfig(e.merchant).displayName)}</span>`
+          )}">${escapeHtml(getMerchantAdminName(e.merchant))}</span>`
         : "";
 
       return `<tr class="transition hover:bg-slate-50/80${failed ? " bg-rose-50/20" : ""}">

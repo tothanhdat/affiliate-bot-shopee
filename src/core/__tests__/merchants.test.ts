@@ -7,6 +7,7 @@ import {
   RETIRED_MERCHANTS,
   detectMerchantByHost,
   detectRetiredMerchantByHost,
+  getMerchantAdminName,
   getMerchantConfig,
 } from "../merchants.js";
 import { FAQ_ANSWER_PLACEHOLDERS } from "../faq/faqTopics.js";
@@ -99,4 +100,15 @@ test("FAQ_ANSWER_PLACEHOLDERS co 'san' -> /admin/settings moi hien chip bam de c
   // helpText cua ca 8 o FAQ duoc sinh tu mang nay (settingsRegistry.ts), va trang settings quet
   // {{...}} trong helpText de ve chip. Thieu "san" thi admin khong biet placeholder nay ton tai.
   assert.ok(FAQ_ANSWER_PLACEHOLDERS.includes("san"));
+});
+
+test("ten ngan cho ADMIN: TikTok chi hien 'TikTok', con ten day du 'TikTok Shop' DANH CHO user", () => {
+  assert.equal(getMerchantAdminName("tiktokshop"), "TikTok");
+  // Ten day du la cai user doc trong tin nhan bot/{{san}}/dashboard - KHONG duoc bi doi theo.
+  assert.equal(getMerchantConfig("tiktokshop").displayName, "TikTok Shop");
+});
+
+test("ten ngan cho admin: san khong khai bao ten ngan thi lui ve displayName", () => {
+  assert.equal(getMerchantAdminName("shopee"), "Shopee");
+  assert.equal(getMerchantAdminName("lazada"), "Lazada");
 });

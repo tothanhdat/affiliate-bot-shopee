@@ -707,6 +707,32 @@ test("LedgerStore: listImportHistory gioi han dung so luong theo limit", () => {
   store.close();
 });
 
+test("LedgerStore: listImportHistory loc theo loai - moi tab /admin/record-orders chi thay lich su cua san minh", () => {
+  const store = new LedgerStore(":memory:");
+  store.recordImportHistory({ actionType: "csv", newOrderIds: ["S1"], statusTransitions: [] });
+  store.recordImportHistory({ actionType: "tiktok", newOrderIds: ["T1"], statusTransitions: [] });
+  store.recordImportHistory({ actionType: "single", newOrderIds: ["S2"], statusTransitions: [] });
+  store.recordImportHistory({ actionType: "tiktok", newOrderIds: ["T2"], statusTransitions: [] });
+
+  assert.deepEqual(store.listImportHistory(10, ["tiktok"]).map((h) => h.newOrderIds[0]), ["T2", "T1"]);
+  assert.deepEqual(store.listImportHistory(10, ["csv", "single"]).map((h) => h.newOrderIds[0]), ["S2", "S1"]);
+  // Khong truyen bo loc = lay het nhu cu (cac cho goi cu khong phai sua).
+  assert.equal(store.listImportHistory(10).length, 4);
+  store.close();
+});
+
+test("LedgerStore: listImportHistory voi bo loc van tinh limit TREN DUNG phan da loc", () => {
+  // Loc SAU khi cat 20 dong chung thi tab it hoat dong chi con vai dong: day la ly do bo loc nam trong SQL.
+  const store = new LedgerStore(":memory:");
+  store.recordImportHistory({ actionType: "tiktok", newOrderIds: ["T-CU"], statusTransitions: [] });
+  for (let i = 0; i < 5; i++) {
+    store.recordImportHistory({ actionType: "csv", newOrderIds: [`S${i}`], statusTransitions: [] });
+  }
+  assert.deepEqual(store.listImportHistory(3, ["tiktok"]).map((h) => h.newOrderIds[0]), ["T-CU"]);
+  assert.deepEqual(store.listImportHistory(3, []), [], "danh sach loai rong = khong khop gi, khong phai 'lay het'");
+  store.close();
+});
+
 // Bug that (2026-09-10, phat hien tu Zalo desktop instance "sanhoantien"): template sua qua form
 // /admin/settings duoc trinh duyet nop len dang CRLF ("\r\n" - dung chuan HTML cho <textarea>), luu
 // nguyen xi vao DB, roi Zalo desktop (Chromium, white-space: pre-wrap) dem "\r" va "\n" la 2 lan

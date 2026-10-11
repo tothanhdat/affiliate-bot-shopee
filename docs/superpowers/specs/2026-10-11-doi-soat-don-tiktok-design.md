@@ -492,8 +492,10 @@ hữu ích lâu dài chứ không chỉ một lần.
 
 ## 8. Route và giao diện
 
-- **Thẻ thứ ba** ở `/admin/record-orders`: "Đồng bộ đơn TikTok Shop" — chỉ một cái nút, **không** có ô
-  upload. Khối kết quả dùng lại `statRow()` y như Shopee. `TIKTOK_ENABLED=false` thì **ẩn thẻ**.
+- **Tab "TikTok"** ở `/admin/record-orders` (chủ bot đổi từ "thẻ thứ ba" thành 2 tab riêng, 2026-10-11 —
+  trộn hai sàn trên một trang bị rối): thẻ "Đồng bộ đơn TikTok" chỉ có một cái nút, **không** có ô
+  upload. Khối kết quả dùng lại `statRow()` y như Shopee. `TIKTOK_ENABLED=false` thì **không có thanh
+  tab**, trang y hệt trước đây. Chi tiết tab + lịch sử theo sàn: `.claude/rules/doi-soat-don-tiktok.md`.
 - `POST /admin/record-orders/tiktok-sync`.
 - `recordImportHistory()` thêm `actionType: "tiktok"` → hiện trong "Lịch sử ghi nhận đơn hàng" cùng
   bảng với Shopee. `ImportActionType` (`src/core/types.ts:262`) hiện là `"csv" | "single"`.
