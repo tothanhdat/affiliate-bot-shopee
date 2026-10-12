@@ -54,35 +54,7 @@ nào không** — câu đó quyết định cách đọc `shared_with_partner` c
 
 Khi có, phải dựng bảng quyết định đủ ca **trước khi** viết nhánh import, không vừa viết vừa đoán.
 
-**Cập nhật 2026-10-11:** chủ bot chọn KHÔNG chờ — bảng quyết định đã dựng (spec `2026-10-11-doi-soat-don-tiktok-design.md` mục 5.3) và có test, nhưng **6 ca vẫn chưa quan sát lần nào**: `status=2`, `status=3`, `actual_commission` có giá trị, `status` lạ, đơn nhiều SKU, hoàn một phần cùng SKU (mục 5.8 của spec). Nhánh `reversed` dựng từ tài liệu + loại suy Shopee. Có một đèn báo rẻ cho ca cuối: dòng có `refunded_quantity > 0` mà `status ≠ 3` đẩy một dòng vào `errors`. **Lần huỷ/hoàn thật đầu tiên vẫn phải soi tay.**
-
-### 3. `shared_with_partner` — MCN có thể giữ phần hoa hồng, và field này là sự thật cuối cùng
-
-**Trạng thái: CHỜ DỮ LIỆU — đây là field quyết định TOÀN BỘ bài toán kinh tế.**
-
-Thoả thuận trong app TikTok ghi RioMedia thu **0%** tới 08/04/2027, và tài liệu RioHub cũng nói
-*"đa số creator = 0"*. Nhưng **ví dụ trong chính tài liệu của họ** cho thấy MCN giữ tới **90%**:
-
-```
-đơn 585510807483352367:  6.080 + 45.600 + 0 − 46.512 = 5.168
-                         chuẩn   thưởng       MCN giữ   creator nhận
-                                              46.512/51.680 = 90%
-```
-
-**Nếu `shared_with_partner` khác 0 trên đơn thật, con số +56% so với Accesstrade sụp đổ** — thậm chí
-có thể tệ hơn Accesstrade (bên đó giữ 35,8%).
-
-Hai hệ quả phải nhớ khi viết code:
-
-- ⛔ **Lấy THẲNG `actual_commission`**, không bao giờ cộng lại từ các thành phần. Cảnh báo nguyên văn
-  của nhà cung cấp: cộng thêm là **trả thừa ~10 lần**. Cùng loại bẫy với quy tắc Shopee "lấy thẳng
-  field `commission`, không nhân `rate × price`".
-- ⚠️ **`est_commission` KHÔNG trừ phần MCN** → nếu MCN có giữ phần thì ước tính báo cho user sẽ
-  **cao hơn thực nhận**. Đúng hướng sai nguy hiểm mà Shopee đã dạy.
-
-**Việc phải làm**: đơn `SETTLED` đầu tiên — kiểm `shared_with_partner` **TRƯỚC MỌI THỨ KHÁC**.
-
-**Cập nhật 2026-10-11:** đã có cơ chế cảnh báo (`tiktok_mcn_cut` khi `shared_with_partner ≠ 0`; `tiktok_actual_below_assumed` khi `actual` thấp hơn số đã trả trừ biên 2%) và khối "Số liệu đã quyết toán" trên trang đồng bộ. **Còn CHỜ DỮ LIỆU: bản thân giá trị `shared_with_partner`/`pit`.** Giới hạn đã biết: cảnh báo nổ SAU khi tiền mấy đơn đầu đã trả user (đơn vào Khả dụng lúc giao hàng, quyết toán đến sau ~15 ngày) — nó chặn lỗ âm thầm kéo dài, không hoàn lại được tiền đã trả. Chủ bot chọn chỉ cảnh báo, không tự khoá đồng bộ.
+**Cập nhật 2026-10-11:** chủ bot chọn KHÔNG chờ — bảng quyết định đã dựng (spec `2026-10-11-doi-soat-don-tiktok-design.md` mục 5.3) và có test, nhưng **ngày 2026-10-12 đã thấy đơn `status=2` đầu tiên (xem *Nhật ký verify* trong `docs/riohub-tiktok.md`), còn 4 ca chưa quan sát lần nào**: `status=3`, `status` lạ, đơn nhiều SKU, hoàn một phần cùng SKU (mục 5.8 của spec). Nhánh `reversed` dựng từ tài liệu + loại suy Shopee. Có một đèn báo rẻ cho ca cuối: dòng có `refunded_quantity > 0` mà `status ≠ 3` đẩy một dòng vào `errors`. **Lần huỷ/hoàn thật đầu tiên vẫn phải soi tay.**
 
 ### 4. Phụ thuộc runtime vào RioHub trên đường sống — ĐÃ CÓ SỰ CỐ THẬT, 2 lần trong 11 ngày
 
@@ -205,14 +177,6 @@ Không phân biệt được hai ca này từ phía client.
 ---
 
 ## Rủi ro nhỏ
-
-### 9. Chưa biết MCN có thật cho x1.5 rate không
-
-**Trạng thái: CHỜ DỮ LIỆU.** Đơn đầu tiên phát sinh **sau** khi vào MCN vẫn cho
-`commission_bonus_rate = 0`, `shared_with_partner = null`. Còn khả năng nó chỉ hiện lúc `SETTLED`.
-
-Nhẹ vì: ảnh hưởng **dự báo doanh thu**, không ảnh hưởng đúng/sai. Con số **+56%** so với Accesstrade
-**không dựa vào khoản này**.
 
 ### 10. `observed_commission` chỉ có ở 1/10 sản phẩm
 

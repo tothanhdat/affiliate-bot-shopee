@@ -8,7 +8,7 @@ Admin bấm "Đồng bộ ngay" (thẻ ở `/admin/record-orders`) → `fetchTik
 
 ## Quyết định tiền (đã chốt với chủ bot 2026-10-11, đừng đảo lại khi chưa hỏi)
 
-- **Đơn vào Khả dụng LÚC GIAO HÀNG** (`time_delivered_iso`) hoặc `status=2`, KHÔNG chờ RioHub `SETTLED` (nằm sau cửa sổ trả hàng 15+ ngày, user không đợi nổi). Tương đương "Hoàn thành" của Shopee. Luật giam đơn to (7 ngày) / đơn nhỏ (1 ngày) dùng nguyên `resolveConfirmPlan()`, đếm từ ngày giao.
+- **Đơn vào Khả dụng LÚC GIAO HÀNG** (`time_delivered_iso`) hoặc `status=2`, KHÔNG chờ RioHub `SETTLED` (không đoán được lúc nào đến: đơn đầu tiên quyết toán sau ~23 giờ kể từ giao hàng, nhưng đơn khác giao cùng giây vẫn `To-SETTLE` nhiều giờ sau — không phải mốc theo thời gian thuần tuý). Tương đương "Hoàn thành" của Shopee. Luật giam đơn to (7 ngày) / đơn nhỏ (1 ngày) dùng nguyên `resolveConfirmPlan()`, đếm từ ngày giao.
 - **Hoa hồng gốc = `round(Σ est_commission dòng không huỷ × TIKTOK_PIT_RETAINED_RATIO)`** (0,9), cho CẢ `pending` lẫn `confirmed`. Một công thức ⇒ không bao giờ phải sửa số sau khi entry đã `confirmed` (sửa là chạm cỗ máy nợ hoàn trả trên MỌI đơn). `actual_commission` KHÔNG tham gia tính tiền — chỉ đối chiếu/cảnh báo. Nếu ai định dùng nó: lấy THẲNG field, tuyệt đối không cộng lại 6 thành phần (trả thừa ~10 lần).
 - **`TIKTOK_PIT_RETAINED_RATIO` dùng ở HAI nơi**: ghi ledger và `estimateFrom()` (câu ước tính bot gửi lúc trả link). Lệch nhau = bot hứa khác số trả. Có test chặn. Hằng số 0,9 đọc từ tài liệu, CHƯA đo trên đơn quyết toán thật — đơn đầu tiên quyết toán là lúc đối chiếu.
 - Hệ quả đã chấp nhận (mục 1.3b của `docs/riohub-tiktok.md`): TikTok đã khấu trừ `pit` rồi hệ thống trừ 10% "thuế" nữa ⇒ user TikTok nhận ít hơn Shopee ~10%. Muốn nói đúng bản chất thì sửa câu chữ `/so-tay`, KHÔNG sửa phép tính.
@@ -48,7 +48,7 @@ Admin bấm "Đồng bộ ngay" (thẻ ở `/admin/record-orders`) → `fetchTik
 - Tham số lọc sai tên/định dạng bị API nuốt im lặng và trả cả lịch sử — kể cả `page`. `fetchTiktokOrders` nén lỗi nếu trang sau không có đơn mới. Chưa lọc ngày: thêm `update_time_start` khi số đơn lớn lên, KÈM phép thử "kết quả phải khác đối chứng".
 - Đơn nhỏ vào Khả dụng ở lần đồng bộ KẾ TIẾP sau ngày đã chốt (không tự mở theo ngày) — nghỉ 3 ngày thì chậm 3 ngày.
 - `fully_refunded`/`refunded_quantity` KHÔNG được đọc để tính tiền; hoàn MỘT PHẦN trong cùng một SKU chưa có thiết kế. Có đèn báo: dòng có `refunded_quantity > 0` mà `status ≠ 3` → dòng trong `errors`.
-- Sáu thứ CHƯA quan sát lần nào (đừng đọc nhánh code của chúng như bằng chứng): `status=2`, `status=3`, `actual_commission` có giá trị, `status` lạ, đơn nhiều SKU, hoàn một phần cùng SKU.
+- Bốn thứ CHƯA quan sát lần nào (đừng đọc nhánh code của chúng như bằng chứng): `status=3`, `status` lạ, đơn nhiều SKU, hoàn một phần cùng SKU.
 
 ## Cảnh báo admin
 

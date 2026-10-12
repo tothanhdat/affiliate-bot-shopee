@@ -109,7 +109,7 @@ bot. Con số hiển thị vẫn nhất quán với nhau nên user không thấy
 **Hệ quả kỹ thuật tốt**: `computeCommissionBreakdown()` **giữ nguyên**, không cần nhánh riêng theo
 merchant, không cần đổi `taxPercent`. Đây là lý do chính của quyết định.
 
-**Cập nhật 2026-10-11 (đối soát đơn):** đầu vào của đường tiền KHÔNG phải `actual_commission` như bảng số trên giả định, mà là `est_commission × 0,9` (`TIKTOK_PIT_RETAINED_RATIO`, `src/core/tiktokCommission.ts`). Lý do: đơn vào Khả dụng lúc **giao hàng**, lúc đó chỉ có `est` (số thô, chưa trừ `pit`); `actual` phải chờ ~15 ngày. Kết quả cho user giống bảng trên (hoa hồng gốc 1.922đ thay vì 2.136đ ⇒ user nhận 1.370đ), nhưng nguồn số và lý do khác. Xem `.claude/rules/doi-soat-don-tiktok.md`.
+**Cập nhật 2026-10-11 (đối soát đơn):** đầu vào của đường tiền KHÔNG phải `actual_commission` như bảng số trên giả định, mà là `est_commission × 0,9` (`TIKTOK_PIT_RETAINED_RATIO`, `src/core/tiktokCommission.ts`). Lý do: đơn vào Khả dụng lúc **giao hàng**, lúc đó chỉ có `est` (số thô, chưa trừ `pit`); `actual` đến sau, không đoán được lúc nào (đơn quyết toán đầu tiên mất ~23 giờ, xem nhật ký 2026-10-12). **Và trên đơn đó `pit = 0,00` và `actual = est` ⇒ hệ số 0,9 đang trả user ÍT hơn TikTok thực trả trên đơn nhỏ** — xem nhật ký. Kết quả cho user giống bảng trên (hoa hồng gốc 1.922đ thay vì 2.136đ ⇒ user nhận 1.370đ), nhưng nguồn số và lý do khác. Xem `.claude/rules/doi-soat-don-tiktok.md`.
 
 ## 1.4 Rút tiền phía user — không đổi gì cả
 
@@ -499,8 +499,8 @@ Với thoả thuận 0% hiện tại thì `est_commission` dùng được — nh
 
 > *"Thuế TNCN TikTok khấu trừ (**10% phần HH chuẩn**) — **áp cho cả creator thường**."* Số **ÂM**.
 
-✅ Điều này **xác nhận rủi ro trừ thuế hai lần là THẬT**, không còn là giả thuyết. Xem rủi ro 3 trong
-`rui-ro-tich-hop-tiktok.md`.
+✅ Điều này **xác nhận rủi ro trừ thuế hai lần là THẬT**, không còn là giả thuyết. (Rủi ro 3 đã đóng 2026-10-12, xem
+nhật ký verify — nhưng nhớ `pit = 0,00` trên đơn nhỏ đầu tiên, phần đã trừ ở thuế TNCN còn chưa rõ.)
 
 ✅ **ĐÃ TRẢ LỜI (spec AI, 09/10/2026): `pit` NẰM TRONG `actual_commission`** — nó là một trong 6
 thành phần, mang dấu âm. Nghĩa là **`actual_commission` đã trừ thuế rồi.**
@@ -509,8 +509,7 @@ thành phần, mang dấu âm. Nghĩa là **`actual_commission` đã trừ thu�
 Shopee đưa số **trước thuế**; TikTok thì đưa số **sau thuế**. Dùng chung một đường tính cho hai sàn
 là trừ thuế hai lần cho user TikTok. Đây là khác biệt kiến trúc, không phải tham số cấu hình.
 
-❓ Còn lại: chưa thấy giá trị thật (cả 2 đơn chưa `SETTLED`) nên chưa biết `pit` tính trên phần nào
-**chính xác** — tài liệu field ghi *"10% phần HH chuẩn"*, nhưng chưa đối chiếu được bằng số.
+⚠️ **Cập nhật 2026-10-12: đơn quyết toán đầu tiên (`…518`, 2.136đ) có `pit = 0,00`, `actual_commission = est_commission`.** Tức là TikTok KHÔNG khấu trừ thuế TNCN trên đơn này, trái với câu "áp cho cả creator thường" của tài liệu. Chưa biết vì sao (giả thuyết CHƯA kiểm: khấu trừ chỉ áp khi tổng chi trả vượt một ngưỡng nên đơn vài nghìn đồng không bị — cần một đơn hoa hồng lớn để thử). Một đơn chưa đủ để đổi `TIKTOK_PIT_RETAINED_RATIO = 0,9`.
 
 ### Ngữ nghĩa các field khác, đã đọc từ tài liệu chính thức
 
@@ -708,15 +707,20 @@ Khi thêm một tham số mới, **luôn kiểm bằng giá trị mà kết qu�
 | 2026-10-11 | ⚠️ Hai đơn KHÔNG liên quan (bot + ngoài) cùng `time_delivered_iso = 04:16:50Z` đúng từng giây | Trông như thời điểm RioHub **phát hiện** giao hàng chứ không phải giờ giao thật của TikTok. Hướng sai an toàn: giam lâu hơn chút, không bao giờ sớm hơn. CHƯA khẳng định — cần thêm đơn để xem |
 | 2026-10-11 | Smoke `importTiktokOrders` trên JSON thật (DB bộ nhớ, không ghi gì) | Field thật khớp giả định (không thiếu field nào; tiền là string, `status` là number, `actual/pit/shared` là `null`). Đơn `…731` → hoa hồng gốc **2871** (3190×0,9), `…518` → **1922** (2136×0,9); giờ đặt đổi UTC→VN đúng (`08:47:28Z` → `15:47:28`) |
 | 2026-10-11 | Dựng xong đường đối soát đơn (bấm tay) | `orderStatusApply` → `tiktokOrderImport`; xem `.claude/rules/doi-soat-don-tiktok.md` |
+| 2026-10-12 | **Đơn `SETTLED` ĐẦU TIÊN** (`586502233699747518`, hoa hồng 2.136đ, giao 11/10 04:16:50Z, quyết toán 12/10 03:31:47Z) | ✅ `status=2`, `settlement_status=SETTLED`, `payment_status=SETTLED`, `tt_order_status=103`. **`shared_with_partner = "0.00"`, `pit = "0.00"`, `actual_commission = est_commission = 2136.00`, `commission_bonus_rate = 0`, `actual_bonus_commission = null`** ⇒ MCN không giữ đồng nào (khớp thoả thuận 0%), không có thưởng x1,5, **rủi ro 3 và 9 đóng** |
+| 2026-10-12 | Quyết toán đến SỚM hơn dự kiến | Giao → quyết toán **~23 giờ**, không phải ~15 ngày như tài liệu cũ giả định. Nhưng đơn `…174` giao **đúng cùng giây** vẫn `To-SETTLE` (khác shop) ⇒ không phải mốc theo thời gian thuần tuý, đừng dựa vào nó |
+| 2026-10-12 | `pit = 0,00` | Trái với tài liệu ("áp cho cả creator thường"). `est × 0,9` đang trả user ít hơn thực tế TikTok trả: hoa hồng gốc ghi 1.922đ trong khi `actual` là 2.136đ (user nhận 1.370đ thay vì 1.522đ). Chưa đổi hệ số vì n=1 và đơn quá nhỏ |
+| 2026-10-12 | Smoke `importTiktokOrders` trên 5 đơn thật (DB bộ nhớ, giả lập log) | `settledTotals` = 1 đơn, est 2136 = actual 2136, pit 0, shared 0, shortfall 0 ⇒ **không có cảnh báo nào nổ**; `…518` và `…174` → `confirmed`, `…731` → `pending` (giao 12/10, mở 13/10), `…161` → `pending` chưa giao, đơn `sub_id ""` bị bỏ qua. Thời điểm giao của `…731` là `04:28:17Z` — KHÁC giây với hai đơn kia nên nghi vấn "giờ RioHub phát hiện" yếu đi nhưng chưa loại |
 
 ## Việc còn treo
 
 - [x] ~~`time_delivered_iso` có được điền không~~ ✅ 2026-10-11 (xem nhật ký — nhưng chú ý nghi vấn về nguồn của mốc đó)
-- [ ] `pit`, `shared_with_partner`, `actual_commission`, `status=2/3` — chờ đơn quyết toán đầu tiên
-- [ ] **Đối chiếu `TIKTOK_PIT_RETAINED_RATIO = 0,9` với `pit` thật** ngay khi đơn đầu tiên quyết toán (cảnh báo `tiktok_actual_below_assumed` là thứ bắt được lúc đó)
+- [x] ~~`shared_with_partner`, `actual_commission`, `status=2`~~ ✅ 2026-10-12 (đơn `…518`) — còn `status=3` (huỷ/hoàn) chưa thấy
+- [ ] `pit` khác 0 chưa thấy lần nào (`0,00` trên đơn 2.136đ) — cần đơn hoa hồng lớn
+- [ ] **Đối chiếu `TIKTOK_PIT_RETAINED_RATIO = 0,9` với `pit` thật**: đơn đầu tiên cho `pit = 0` nên hệ số đang THỪA trên đơn nhỏ. Cảnh báo `tiktok_actual_below_assumed` chỉ bắt được `actual` THẤP hơn số đã trả, KHÔNG bắt được ca này (đã trả ít hơn thực tế)
 - [x] ~~Đơn qua link **có sub_id** → chốt mắt xích link → đơn~~ ✅ 2026-10-09
 - [x] ~~Chạy lại với sub_id **4 đoạn** của bot qua một đơn thật~~ ✅ 2026-10-10 — đơn `586502233699747518`, sub_id về nguyên vẹn, ước tính khớp từng đồng
-- [ ] Xem `commission_bonus_rate` trên một đơn đã **`SETTLED`** (tại lúc tạo đơn thì đã đo: vẫn `0`)
+- [x] ~~Xem `commission_bonus_rate` trên một đơn đã `SETTLED`~~ ✅ 2026-10-12: vẫn `0`, `actual_bonus_commission = null`
 - [x] ~~Hỏi RioHub tên 3 miền dự phòng~~ ✅ 2026-10-09 (mục 2.1, kèm quy tắc failover phải bắt cả lỗi TLS)
 - [ ] Rotate API key trước khi lên production
 - [x] ~~Quyết định nhịp đồng bộ~~ ✅ 2026-10-11: **bấm tay trước**, tự động sau khi bảng quyết định chạy đúng qua vài đơn thật (trần kỹ thuật: 15–30 phút/lần)
