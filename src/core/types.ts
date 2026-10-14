@@ -291,6 +291,34 @@ export interface ZaloGroup {
   lastSeenAt: string;
 }
 
+/** 1 "mau" (Tip) hien tren trang Tips cua user - noi dung chung, khong thuoc user nao, khong thuoc duong tien. */
+export interface Tip {
+  id: number;
+  title: string;
+  description: string;
+  /** Ten FILE (khong phai duong dan) trong TIPS_IMAGE_DIR; null = Tip khong co anh. */
+  imagePath: string | null;
+  /** Thu tu hien thi (tang dan) - cung la thu tu slide ben user. */
+  sortOrder: number;
+  /** false = admin da tat, user khong thay. */
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TipInput {
+  title: string;
+  description: string;
+  imagePath: string | null;
+}
+
+export interface TipUpdateInput {
+  title: string;
+  description: string;
+  /** undefined = giu anh cu, null = bo anh, chuoi = anh moi. */
+  imagePath?: string | null;
+}
+
 /**
  * Ly do 1 thread bi khoa FAQ (2026-09-13) - chi de chan doan khi doc DB, khong anh huong logic.
  * "admin_typed": chu bot vua go tay tra loi user trong thread do (phat hien qua selfListen).

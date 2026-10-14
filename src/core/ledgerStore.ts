@@ -10,6 +10,7 @@ import {
   ImplausibleCommissionAmountError,
   InsufficientBalanceError,
   DebtNotCoveredError,
+  InvalidTipError,
   MissingBankInfoError,
   WithdrawalAlreadyPendingError,
   WithdrawalNotCancellableError,
@@ -27,6 +28,9 @@ import type {
   PayoutDebt,
   Platform,
   StatusTransition,
+  Tip,
+  TipInput,
+  TipUpdateInput,
   WithdrawalRequest,
   ZaloGroup,
 } from "./types.js";
@@ -543,6 +547,19 @@ export class LedgerStore {
         notify_enabled INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL
+      );
+
+      -- Tips cho user (2026-10-14). Bang MOI nen khong can migration. Noi dung chung cho moi user,
+      -- KHONG thuoc duong tien. sort_order la thu tu slide; is_active = 0 la admin da tat.
+      CREATE TABLE IF NOT EXISTS tips (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        image_path TEXT,
+        sort_order INTEGER NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
 
       -- Moi user Zalo bot TUNG thay trong 1 group (2026-10-09). Bang MOI nen khong can migration.
@@ -3166,6 +3183,102 @@ export class LedgerStore {
     }));
   }
 
+  // --- Tips cho user (2026-10-14) ---
+
+  /** Tip moi xep CUOI; sort_order tinh ngay trong cau INSERT nen 2 lan tao lien tiep khong trung thu tu. */
+  createTip(input: TipInput): Tip {
+    const clean = cleanTipFields(input.title, input.description);
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `INSERT INTO tips (title, description, image_path, sort_order, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tips), 1, ?, ?)`
+      )
+      .run(clean.title, clean.description, input.imagePath, now, now);
+    return this.getTipById(Number(result.lastInsertRowid)) as Tip;
+  }
+
+  getTipById(id: number): Tip | null {
+    const row = this.db.prepare(`SELECT ${TIP_COLUMNS} FROM tips WHERE id = ?`).get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? mapTipRow(row) : null;
+  }
+
+  /**
+   * `imagePath` undefined = giu anh cu, null = bo anh, chuoi = anh moi. Tra ve anh CU de caller xoa file
+   * (store khong cham vao he thong file). null neu khong co Tip nay.
+   */
+  updateTip(id: number, input: TipUpdateInput): { tip: Tip; previousImagePath: string | null } | null {
+    const existing = this.getTipById(id);
+    if (existing === null) return null;
+    const clean = cleanTipFields(input.title, input.description);
+    const nextImage = input.imagePath === undefined ? existing.imagePath : input.imagePath;
+    this.db
+      .prepare(`UPDATE tips SET title = ?, description = ?, image_path = ?, updated_at = ? WHERE id = ?`)
+      .run(clean.title, clean.description, nextImage, new Date().toISOString(), id);
+    return { tip: this.getTipById(id) as Tip, previousImagePath: existing.imagePath };
+  }
+
+  setTipActive(id: number, active: boolean): boolean {
+    const result = this.db
+      .prepare(`UPDATE tips SET is_active = ?, updated_at = ? WHERE id = ?`)
+      .run(active ? 1 : 0, new Date().toISOString(), id);
+    return Number(result.changes) > 0;
+  }
+
+  /** Tra ve anh cua tip da xoa de caller xoa file; null neu khong co tip nay. */
+  deleteTip(id: number): { imagePath: string | null } | null {
+    const existing = this.getTipById(id);
+    if (existing === null) return null;
+    this.db.prepare(`DELETE FROM tips WHERE id = ?`).run(id);
+    return { imagePath: existing.imagePath };
+  }
+
+  /** Sap theo sort_order, tiebreak id de on dinh neu du lieu loi lam trung thu tu. */
+  listTips(options: { onlyActive?: boolean } = {}): Tip[] {
+    const where = options.onlyActive ? "WHERE is_active = 1" : "";
+    const rows = this.db
+      .prepare(`SELECT ${TIP_COLUMNS} FROM tips ${where} ORDER BY sort_order ASC, id ASC`)
+      .all() as Array<Record<string, unknown>>;
+    return rows.map(mapTipRow);
+  }
+
+  countActiveTips(): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM tips WHERE is_active = 1`).get() as { n: number };
+    return Number(row.n);
+  }
+
+  /**
+   * Doi thu tu TOAN BO tips (ke ca tip da tat). Chi chap nhan khi `orderedIds` la HOAN VI DUNG cua tap id
+   * dang co: neu admin khac vua them/xoa tip trong luc minh keo-tha thi tu choi thay vi ghi de am tham.
+   * BEGIN/COMMIT o day la de an toan khi crash giua chung (node:sqlite dong bo nen khong co xen ke).
+   */
+  reorderTips(orderedIds: number[]): void {
+    const existing = (this.db.prepare(`SELECT id FROM tips`).all() as Array<{ id: number }>).map((row) =>
+      Number(row.id)
+    );
+    const wanted = new Set(orderedIds);
+    const valid =
+      Array.isArray(orderedIds) &&
+      orderedIds.every((id) => Number.isInteger(id)) &&
+      wanted.size === orderedIds.length &&
+      orderedIds.length === existing.length &&
+      existing.every((id) => wanted.has(id));
+    if (!valid) {
+      throw new InvalidTipError("Danh sách Tips đã thay đổi, hãy tải lại trang rồi sắp xếp lại.");
+    }
+    const update = this.db.prepare(`UPDATE tips SET sort_order = ? WHERE id = ?`);
+    this.db.exec("BEGIN");
+    try {
+      orderedIds.forEach((id, index) => update.run(index + 1, id));
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
   close(): void {
     this.db.close();
   }
@@ -3281,5 +3394,37 @@ function mapZaloGroupRow(row: {
     notifyEnabled: row.notify_enabled === 1,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
+  };
+}
+
+export const TIP_TITLE_MAX_LENGTH = 120;
+export const TIP_DESCRIPTION_MAX_LENGTH = 2000;
+
+const TIP_COLUMNS = "id, title, description, image_path, sort_order, is_active, created_at, updated_at";
+
+/** Chuan hoa + kiem tra chu cua Tip. Mo ta qua normalizeNewlines vi <textarea> nop len dang CRLF (xem textNormalize.ts). */
+function cleanTipFields(title: string, description: string): { title: string; description: string } {
+  const cleanTitle = title.trim();
+  const cleanDescription = normalizeNewlines(description).trim();
+  if (cleanTitle === "") throw new InvalidTipError("Tiêu đề không được để trống.");
+  if (cleanTitle.length > TIP_TITLE_MAX_LENGTH) {
+    throw new InvalidTipError(`Tiêu đề tối đa ${TIP_TITLE_MAX_LENGTH} ký tự.`);
+  }
+  if (cleanDescription.length > TIP_DESCRIPTION_MAX_LENGTH) {
+    throw new InvalidTipError(`Mô tả tối đa ${TIP_DESCRIPTION_MAX_LENGTH} ký tự.`);
+  }
+  return { title: cleanTitle, description: cleanDescription };
+}
+
+function mapTipRow(row: Record<string, unknown>): Tip {
+  return {
+    id: Number(row.id),
+    title: String(row.title),
+    description: String(row.description),
+    imagePath: row.image_path === null || row.image_path === undefined ? null : String(row.image_path),
+    sortOrder: Number(row.sort_order),
+    isActive: Number(row.is_active) === 1,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }

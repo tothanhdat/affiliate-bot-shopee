@@ -22,7 +22,8 @@ export type ErrorCode =
   | "MISSING_WITHDRAWAL_PROOF"
   | "MISSING_BANK_INFO"
   | "ENTRY_NOT_PENDING"
-  | "WITHDRAWAL_NOT_CANCELLABLE";
+  | "WITHDRAWAL_NOT_CANCELLABLE"
+  | "INVALID_TIP";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -213,6 +214,13 @@ export class EntryAlreadyWithdrawnError extends AppError {
       "ENTRY_ALREADY_WITHDRAWN",
       "Đơn hàng này đã nằm trong 1 yêu cầu rút tiền (đang chờ hoặc đã trả), không thể huỷ trực tiếp qua đây."
     );
+  }
+}
+
+/** Du lieu Tips (tieu de rong/qua dai, anh sai dinh dang, danh sach sap xep loi thoi...) - 2026-10-14. */
+export class InvalidTipError extends AppError {
+  constructor(userMessage: string) {
+    super("INVALID_TIP", userMessage);
   }
 }
 
