@@ -230,3 +230,7 @@ Chủ bot gửi ảnh tham chiếu và yêu cầu thiết kế lại `/admin/tip
 ## 13. Cập nhật 2026-10-14: lặp vòng + vuốt chuột (trang slide của user)
 
 Chủ bot yêu cầu: bấm "tiếp theo" ở Tip cuối thì về Tip 1, bấm "trước" ở Tip 1 thì sang Tip cuối, và hỗ trợ vuốt trái/phải (không chỉ bấm mũi tên). **Đảo quyết định "Không lặp vòng" ở mục 7.1.** Cách làm: script nhân bản slide thành 3 bộ và nhảy tức thời về bộ giữa khi cuộn dừng ở bản sao; vuốt cảm ứng giữ nguyên scroll-snap gốc, thêm kéo bằng chuột cho máy tính. Chi tiết và các ràng buộc: `.claude/rules/trang-cho-user.md`, mục "Lặp vòng + vuốt".
+
+## 14. Cập nhật 2026-10-14: ảnh Tips hiện đầy đủ (khung 2:3)
+
+Ảnh Tips thực tế là ảnh dọc 1024×1536 nên khung 4:3 + `cover` ở mục 7.2 làm cắt ảnh. Đổi sang khung 2:3 + `contain`; gợi ý trên form admin đổi từ "ảnh ngang" thành "ảnh dọc 2:3". Chi tiết: `.claude/rules/trang-cho-user.md`.

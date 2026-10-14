@@ -41,7 +41,7 @@ const BTN_PRIMARY = `${BTN_BASE} border-0 bg-indigo-600 text-white hover:bg-indi
 const BTN_SECONDARY = `${BTN_BASE} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
 const BTN_DANGER = `${BTN_BASE} border-0 bg-rose-600 text-white hover:bg-rose-700`;
 
-const IMAGE_HINT = "Ảnh ngang, khoảng 1000px là đủ. JPG / PNG / WebP, tối đa 5MB.";
+const IMAGE_HINT = "Nên dùng ảnh dọc tỉ lệ 2:3 (ví dụ 1024 × 1536) để hiển thị đầy đủ. JPG / PNG / WebP, tối đa 5MB.";
 
 function imageUrl(imagePath: string): string {
   return `/tips/images/${encodeURIComponent(imagePath)}`;

@@ -139,3 +139,11 @@ test("server van chi render slide THAT (script moi nhan ban): khong co ban sao s
   assert.equal(slideCount(html), 3);
   assert.doesNotMatch(html, /<article[^>]*data-clone/); // (chuoi "data-clone" co trong script nhung khong duoc co tren the article)
 });
+
+test("anh Tips hien DAY DU, khong bi cat: khung doc 2:3 + object-fit contain (anh Tips deu la 1024x1536, khung ngang 4:3 + cover tung cat mat phan tren/duoi)", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
+  assert.match(html, /\.tip-image \{[^}]*aspect-ratio: 2 \/ 3/);
+  assert.match(html, /\.tip-image img \{[^}]*object-fit: contain/);
+  assert.doesNotMatch(html, /object-fit: cover/);
+  assert.doesNotMatch(html, /aspect-ratio: 4 \/ 3/);
+});

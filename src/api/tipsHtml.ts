@@ -62,14 +62,16 @@ const TIPS_PAGE_CSS = `
   .tips-single { scroll-snap-type: none; padding-left: 1rem; padding-right: 1rem; }
   .tips-single .tip-slide { flex-basis: 100%; cursor: default; }
   h2.tip-title { font-size: 1.125rem; font-weight: 700; color: #fff; margin: 1rem 1rem 0.75rem; line-height: 1.35; }
+  /* Anh Tips deu la anh DOC 1024x1536 (2:3): khung 2:3 + contain de hien DAY DU, khong cat. Khung co dinh (khong de height:auto)
+     de slide khong giat khi anh tai xong. Anh ti le khac thi hien du anh, co vien trong hai ben. */
   .tip-image {
     margin: 0 0.75rem;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 2 / 3;
     border-radius: 12px;
     overflow: hidden;
     background: oklch(1 0 0 / 0.06);
   }
-  .tip-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .tip-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
   .tip-desc {
     margin: 0;
     padding: 0.875rem 1rem 1.125rem;
