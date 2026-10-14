@@ -26,12 +26,19 @@ const TIPS_PAGE_CSS = `
     position: relative;
     padding: 0.25rem 0 1.25rem;
     scroll-snap-type: x mandatory;
-    scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     outline: none;
   }
   .tips-track::-webkit-scrollbar { display: none; }
+  /* KHONG khai bao cuon muot mac dinh o day - script lap vong tu truyen behavior ro rang, "auto" phai la tuc thoi de nhay ve bo giua. */
+  /* Nhay ve bo giua (lap vong) tat transition, neu khong slide that vua active se sang dan trong luc ban sao vua roi di. */
+  .tips-track.no-anim .tip-slide { transition: none; }
+  .tips-track.is-grabbing { user-select: none; -webkit-user-select: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .tips-track { cursor: grab; }
+    .tips-track.is-grabbing { cursor: grabbing; }
+  }
   .tips-track::before, .tips-track::after { content: ""; flex: 0 0 calc(14% - var(--gap)); }
   .tip-slide {
     flex: 0 0 72%;
@@ -94,7 +101,6 @@ const TIPS_PAGE_CSS = `
   #tips-next { right: 0.5rem; }
   @media (hover: hover) and (pointer: fine) { .tips-arrow { display: inline-flex; } }
   @media (prefers-reduced-motion: reduce) {
-    .tips-track { scroll-behavior: auto; }
     .tip-slide, .tips-dot::before { transition: none; }
   }
 `;
@@ -103,7 +109,7 @@ function renderSlide(tip: Tip, index: number, total: number): string {
   const image = tip.imagePath
     ? `<div class="tip-image"><img src="/tips/images/${encodeURIComponent(tip.imagePath)}" alt="${escapeHtml(tip.title)}"${
         index === 0 ? "" : ' loading="lazy"'
-      } decoding="async" onerror="this.parentNode.style.display='none'"></div>`
+      } decoding="async" draggable="false" onerror="this.parentNode.style.display='none'"></div>`
     : "";
   const description = tip.description ? `<p class="tip-desc">${escapeHtml(tip.description)}</p>` : "";
   return `<article class="tip-slide${index === 0 ? " is-active" : ""}" data-index="${index}" aria-roledescription="slide" aria-label="${index + 1} / ${total}">

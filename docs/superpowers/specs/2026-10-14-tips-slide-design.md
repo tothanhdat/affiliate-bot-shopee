@@ -226,3 +226,7 @@ Chủ bot gửi ảnh tham chiếu và yêu cầu thiết kế lại `/admin/tip
 - Form Sửa/Xoá/Thêm mở bằng **checkbox ẩn + label** thay cho `<details>` (không cần JS). Hint "giữ lại thì ẩn, đừng xoá" chuyển vào panel xác nhận xoá.
 - Đang tìm kiếm thì không cho kéo-thả.
 - Chi tiết và lý do: `.claude/rules/admin-ui-tung-trang.md`, mục `/admin/tips`.
+
+## 13. Cập nhật 2026-10-14: lặp vòng + vuốt chuột (trang slide của user)
+
+Chủ bot yêu cầu: bấm "tiếp theo" ở Tip cuối thì về Tip 1, bấm "trước" ở Tip 1 thì sang Tip cuối, và hỗ trợ vuốt trái/phải (không chỉ bấm mũi tên). **Đảo quyết định "Không lặp vòng" ở mục 7.1.** Cách làm: script nhân bản slide thành 3 bộ và nhảy tức thời về bộ giữa khi cuộn dừng ở bản sao; vuốt cảm ứng giữ nguyên scroll-snap gốc, thêm kéo bằng chuột cho máy tính. Chi tiết và các ràng buộc: `.claude/rules/trang-cho-user.md`, mục "Lặp vòng + vuốt".

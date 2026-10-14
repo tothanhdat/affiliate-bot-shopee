@@ -114,3 +114,28 @@ test("co noscript de slide khong bi mo hoan toan khi tat JS", () => {
   const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
   assert.match(html, /<noscript>/);
 });
+
+test("lap vong: CSS KHONG dat scroll-behavior:smooth (script tu truyen behavior; neu co thi 'auto' khong con la tuc thoi va cu nhay ve bo giua se bi cuon muot lo ra)", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
+  assert.doesNotMatch(html, /scroll-behavior/);
+});
+
+test("lap vong: co class no-anim de nhay ve bo giua khong bi chop sang/mo; track co the nam keo bang chuot", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
+  assert.match(html, /\.tips-track\.no-anim \.tip-slide \{[^}]*transition: none/);
+  assert.match(html, /\.tips-track\.is-grabbing \{[^}]*user-select: none/);
+  assert.match(html, /@media \(hover: hover\) and \(pointer: fine\) \{[^}]*\.tips-track \{ cursor: grab/);
+});
+
+test("anh trong slide khong the bi trinh duyet 'keo ra' (draggable=false) - neu khong keo chuot tren anh se keo ma anh thay vi chuyen Tip", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
+  const imgs = html.match(/<img [^>]*>/g) ?? [];
+  assert.equal(imgs.length, 2);
+  for (const img of imgs) assert.match(img, /draggable="false"/);
+});
+
+test("server van chi render slide THAT (script moi nhan ban): khong co ban sao san trong HTML", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2), tip(3)] });
+  assert.equal(slideCount(html), 3);
+  assert.doesNotMatch(html, /<article[^>]*data-clone/); // (chuoi "data-clone" co trong script nhung khong duoc co tren the article)
+});
