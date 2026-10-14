@@ -4,6 +4,7 @@ import type { LogStore } from "./logStore.js";
 import { applyOrderStatusToLedger } from "./orderStatusApply.js";
 import type { EntryItemInput } from "./entryItems.js";
 import { summarizeOrderResultsByUser, type OrderRowResult, type RecordOrderConfig, type UserOrderSummary } from "./orderIngest.js";
+import type { MerchantId } from "./merchants.js";
 import type { Platform, StatusTransition } from "./types.js";
 import { todayVnIso } from "./vietnamDate.js";
 
@@ -51,6 +52,22 @@ export interface ShopeeReportImportResult {
   skippedSubIdNotFound: number;
   /** Gia tri cot "Trang thai san pham lien ket" khong khop 1 trong 3 gia tri da biet. */
   skippedUnknownStatus: number;
+  /**
+   * Cot "Loại thuộc tính" co gia tri la, hoac 1 don lan ca "cùng một Shop" lan "các Shop khác nhau"
+   * (2026-10-14) - bo qua CA DON, khong doan don do la tien cua ai.
+   */
+  skippedUnknownAttribution: number;
+  /**
+   * So don HOA HONG GIAN TIEP (2026-10-14) da ghi/cap nhat vao bang indirect_commissions trong lan nay -
+   * Shopee ghi "Đơn hàng từ các Shop khác nhau": khach mua o shop KHAC voi san pham trong link (cookie).
+   */
+  indirectCount: number;
+  /**
+   * Don gian tiep nhung DA CO entry cua user trong DB (ghi truoc khi he thong doc cot nay) - GIU NGUYEN
+   * cho user o MOI trang thai, ke ca "Cho xac nhan" (quyet dinh cua chu bot 2026-10-14: chi chan don MOI),
+   * van di duong cu (Shopee duyet thi vao Kha dung, bao huy thi thu hoi). Khong liet ke entry da huy.
+   */
+  indirectKeptForUser: string[];
   errors: string[];
   /** Dung de gui thong bao gop cho user. CHI cho don MOI "confirmed". */
   confirmedByUser: UserOrderSummary[];
@@ -116,6 +133,29 @@ const STATUS_UNPAID = "Chưa thanh toán";
 const KNOWN_STATUS_LABELS = [STATUS_COMPLETED, STATUS_PENDING, STATUS_UNPAID, STATUS_INVALID, ...STATUS_CANCELLED];
 
 type RowStatus = "confirmed" | "pending" | "reversed" | "unknown";
+
+/**
+ * Cot "Loại thuộc tính" (2026-10-14, bug that ve tien): Shopee phan loai TUNG DON theo shop cua san
+ * pham khach click lan CUOI. "cùng một Shop" = don o dung shop do (hoa hong TRUC TIEP - ke ca mon mua kem
+ * trong shop, dung loi hua o /so-tay muc "Mua them san pham khac trong cung shop"). "các Shop khác
+ * nhau" = mua o shop KHAC trong cua so cookie - Shopee VAN gan Sub_id cua lan click cuoi, nen truoc
+ * day don nay bi ghi tien cho user (vd 261013GNH72VWU: click link shop A ngay 11/10, 13/10 mua kinh
+ * cuong luc o shop BEEBOO). Do la hoa hong GIAN TIEP cua chu bot (quyet dinh 2026-08-23).
+ *
+ * Do tren bao cao 14/10/2026: 179 don, 160 "cùng một Shop", 19 "các Shop khác nhau", KHONG don nao
+ * lan 2 gia tri. O rong (bao cao cu / fixture khong co cot) -> TRUC TIEP nhu hanh vi truoc day.
+ */
+const ATTRIBUTION_DIRECT = "Đơn hàng từ cùng một Shop";
+const ATTRIBUTION_INDIRECT = "Đơn hàng từ các Shop khác nhau";
+
+type Attribution = "direct" | "indirect" | "unknown";
+
+function classifyAttribution(raw: string): Attribution {
+  const value = raw.normalize("NFC");
+  if (value === "" || value === ATTRIBUTION_DIRECT.normalize("NFC")) return "direct";
+  if (value === ATTRIBUTION_INDIRECT.normalize("NFC")) return "indirect";
+  return "unknown";
+}
 
 /** So khop ten trang thai khong phu thuoc cach encode dau tieng Viet trong file (NFC vs NFD). */
 function normalizeStatus(raw: string): string {
@@ -204,6 +244,8 @@ interface ShopeeReportRow {
    */
   listPrice: number | null;
   linkedProductStatus: string;
+  /** Cot "Loại thuộc tính" - "" khi bao cao thieu cot. Xem classifyAttribution. */
+  attribution: string;
   subId: string | null;
 }
 
@@ -246,6 +288,7 @@ function parseShopeeReportRows(csvText: string): ShopeeReportRow[] {
       quantity: Number(row["Số lượng"]),
       listPrice: parseOptionalNumber(row["Giá(₫)"]),
       linkedProductStatus: row["Trạng thái sản phẩm liên kết"]?.trim() ?? "",
+      attribution: row["Loại thuộc tính"]?.trim() ?? "",
       subId: subIdParts.length > 0 ? subIdParts.join("-") : null,
     };
   });
@@ -288,10 +331,15 @@ interface MergedOrder {
   status: "confirmed" | "pending" | "reversed";
   /** Gia tri GOC cot "Trang thai san pham lien ket" dai dien cho don - chi dung cho canh bao/ly do. */
   rawStatusLabel: string;
+  /** Truc tiep (tien cua user) hay gian tiep (tien cua chu bot) - xem classifyAttribution. */
+  attribution: "direct" | "indirect";
   warnings: string[];
 }
 
-type MergeOutcome = { kind: "unknown-status"; rawStatus: string } | { kind: "ok"; order: MergedOrder };
+type MergeOutcome =
+  | { kind: "unknown-status"; rawStatus: string }
+  | { kind: "unknown-attribution"; rawValues: string[] }
+  | { kind: "ok"; order: MergedOrder };
 
 /**
  * Gop N dong cung 1 "ID don hang" thanh 1 don. Quy tac chot voi user 2026-09-10:
@@ -319,6 +367,17 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
   const warnings: string[] = [];
   const subId = rows.find((r) => r.subId)?.subId ?? null;
   const counted = classified.filter((c) => c.row.subId === subId);
+
+  // Chi xet khi don CO Sub_id: don khong Sub_id da la tien cua chu bot (skippedNoSubId), giu nguyen duong cu.
+  let attribution: MergedOrder["attribution"] = "direct";
+  if (subId !== null) {
+    const kinds = new Set(counted.map((c) => classifyAttribution(c.row.attribution)));
+    if (kinds.has("unknown") || kinds.size > 1) {
+      return { kind: "unknown-attribution", rawValues: [...new Set(counted.map((c) => c.row.attribution))] };
+    }
+    if (kinds.has("indirect")) attribution = "indirect";
+  }
+
   const excludedCount = classified.length - counted.length;
   if (excludedCount > 0) {
     warnings.push(
@@ -405,9 +464,61 @@ function mergeOrderRows(orderId: string, rows: ShopeeReportRow[]): MergeOutcome 
       commissionAmount,
       status,
       rawStatusLabel,
+      attribution,
       warnings,
     },
   };
+}
+
+/** Bao cao Shopee luon la cua san Shopee - don gian tiep co the khong khop request nao de lay merchant. */
+const SHOPEE_MERCHANT = "shopee" as const;
+
+/**
+ * Xu ly 1 don hoa hong GIAN TIEP (2026-10-14). Tra `true` = da ghi vao bang gian tiep, caller bo qua
+ * duong ghi cho user; `false` = don DA CO entry cua user trong DB -> caller chay duong cu y nhu truoc.
+ *
+ * Quyet dinh cua chu bot 2026-10-14: CHI CHAN DON MOI. Don da co trong DB giu nguyen cho user o moi trang
+ * thai (ke ca "Cho xac nhan") - KHONG tu huy, KHONG chuyen sang bang gian tiep. Dung "sua" thanh huy entry
+ * pending: phuong an do da duoc trinh bay va chu bot tu choi.
+ */
+function applyIndirectOrder(
+  ledgerStore: LedgerStore,
+  order: MergedOrder,
+  subId: string,
+  requestEntry: { platform: Platform; userId: string; merchant: MerchantId | null } | null,
+  recordOrderConfig: RecordOrderConfig,
+  result: ShopeeReportImportResult
+): boolean {
+  const merchant = requestEntry?.merchant ?? SHOPEE_MERCHANT;
+  const orderId = order.orderId;
+  const existing = ledgerStore.getEntryByOrderId(merchant, orderId);
+
+  if (existing) {
+    // Entry da huy khong liet ke: khong con tien nao cua user de admin phai biet.
+    if (existing.status !== "reversed") result.indirectKeptForUser.push(orderId);
+    return false;
+  }
+
+  // Don gian tiep chua tung thay ma da huy ngay tu dau: bo qua im lang, giong don truc tiep (reversed-unseen).
+  if (order.status === "reversed" && !ledgerStore.getIndirectCommission(merchant, orderId)) return true;
+
+  ledgerStore.upsertIndirectCommission({
+    merchant,
+    orderId,
+    subId,
+    platform: requestEntry?.platform ?? null,
+    userId: requestEntry?.userId ?? null,
+    productName: order.productName || null,
+    orderAmount: order.orderAmount,
+    commissionAmount: order.commissionAmount,
+    status: order.status,
+    orderDate: order.orderDate,
+    orderTime: order.orderTime,
+    completedAt: order.completedAt,
+    taxPercent: recordOrderConfig.taxPercent,
+  });
+  result.indirectCount += 1;
+  return true;
 }
 
 export function importShopeeReport(
@@ -430,6 +541,9 @@ export function importShopeeReport(
     skippedNoSubId: 0,
     skippedSubIdNotFound: 0,
     skippedUnknownStatus: 0,
+    skippedUnknownAttribution: 0,
+    indirectCount: 0,
+    indirectKeptForUser: [],
     errors: [],
     confirmedByUser: [],
     newOrderIds: [],
@@ -453,6 +567,13 @@ export function importShopeeReport(
       );
       continue;
     }
+    if (merged.kind === "unknown-attribution") {
+      result.skippedUnknownAttribution += 1;
+      result.errors.push(
+        `[${orderId}] Cot "Loại thuộc tính" = ${merged.rawValues.map((v) => `"${v}"`).join(" + ")} - khong phai mot trong "${ATTRIBUTION_DIRECT}" / "${ATTRIBUTION_INDIRECT}", bo qua ca don de khong doan sai tien cua ai.`
+      );
+      continue;
+    }
 
     const order = merged.order;
     if (group.length > 1) result.mergedMultiItem += 1;
@@ -467,12 +588,16 @@ export function importShopeeReport(
     }
 
     const requestEntry = logStore.findBySubId(subId);
+    const importDay = todayVnIso();
+
+    if (order.attribution === "indirect" && applyIndirectOrder(ledgerStore, order, subId, requestEntry, recordOrderConfig, result)) {
+      continue;
+    }
+
     if (!requestEntry || !requestEntry.merchant) {
       result.skippedSubIdNotFound += 1;
       continue;
     }
-
-    const importDay = todayVnIso();
 
     // Phan ap trang thai vao ledger dung CHUNG voi moi nguon don khac - xem orderStatusApply.ts.
     // Shopee chi con lai: gop dong, phan loai nhan tieng Viet, va map outcome ve result cu.

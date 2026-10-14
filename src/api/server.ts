@@ -9,6 +9,7 @@ import {
   renderAdminLoginPage,
   renderEditCommissionPage,
   renderOrdersPage,
+  renderIndirectOrdersPage,
   renderRecordOrdersPage,
   type RecordOrdersTab,
   type TiktokCardState,
@@ -25,7 +26,12 @@ import { renderHandbookPage } from "./handbookHtml.js";
 import { LINKS_PAGE_SIZE, renderLinksPage } from "./adminLinksHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
 import { AppError, EntryNotPendingError } from "../core/errors.js";
-import { effectivePercents, type LedgerStore } from "../core/ledgerStore.js";
+import {
+  effectivePercents,
+  type IndirectCommissionFilters,
+  type IndirectCommissionStatus,
+  type LedgerStore,
+} from "../core/ledgerStore.js";
 import { computeCommissionBreakdown } from "../core/commissionMath.js";
 import type { LinkResolverService } from "../core/linkResolverService.js";
 import type { CreatedLinkFilters, LogStore } from "../core/logStore.js";
@@ -774,6 +780,35 @@ export function createServer(
   );
 
   app.get("/admin/orders", requireAdminAuth, (req: Request, res: Response) => {
+    // Tab "Hoa hong gian tiep" (2026-10-14) - bang RIENG (indirect_commissions), khong phai don cua user.
+    if (req.query.view === "indirect") {
+      const rawStatuses = Array.isArray(req.query.status) ? req.query.status : [req.query.status];
+      const indirectFilters: IndirectCommissionFilters = {
+        statuses: rawStatuses.filter(
+          (s): s is IndirectCommissionStatus => s === "pending" || s === "confirmed" || s === "reversed"
+        ),
+        search: typeof req.query.q === "string" && req.query.q.trim() !== "" ? req.query.q.trim() : undefined,
+      };
+      const indirectTotals = ledgerStore.getIndirectCommissionTotals(indirectFilters);
+      const indirectPages = Math.max(1, Math.ceil(indirectTotals.totalEntries / ORDERS_PAGE_SIZE));
+      const indirectPage = Math.min(parsePageParam(req.query.page), indirectPages);
+      const indirectRows = ledgerStore.listIndirectCommissions(indirectFilters, {
+        limit: ORDERS_PAGE_SIZE,
+        offset: (indirectPage - 1) * ORDERS_PAGE_SIZE,
+      });
+      res.type("html").send(
+        renderIndirectOrdersPage(
+          indirectRows,
+          indirectFilters,
+          ledgerStore.getDisplayNamesMap(),
+          { page: indirectPage, totalPages: indirectPages, totalEntries: indirectTotals.totalEntries },
+          indirectTotals,
+          navPendingWithdrawals()
+        )
+      );
+      return;
+    }
+
     const filters: OrdersFilters = {
       platform:
         typeof req.query.platform === "string" && VALID_PLATFORMS.includes(req.query.platform as Platform)

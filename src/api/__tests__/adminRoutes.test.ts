@@ -2250,3 +2250,94 @@ test("/admin/orders hien chi tiet tung mon cua don nhieu mon trong o San pham", 
     cleanup();
   }
 });
+
+/**
+ * Tab "Hoa hong gian tiep" (2026-10-14): don khach mua o SHOP KHAC voi link (Shopee ghi "Đơn hàng từ các
+ * Shop khác nhau") - tien cua chu bot, nam o bang rieng, hien o /admin/orders?view=indirect.
+ */
+test("/admin/orders?view=indirect liet ke don gian tiep kem chip, bang don user khong co don do", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    ledgerStore.upsertIndirectCommission({
+      merchant: "shopee",
+      orderId: "261013GNH72VWU",
+      subId: "k-u1-mv1ohh25-c38742",
+      platform: "zalo",
+      userId: "u1",
+      productName: "Kính cường lực <Oppo>",
+      orderAmount: 25_800,
+      commissionAmount: 1_806,
+      status: "pending",
+      orderDate: "2026-10-13",
+      orderTime: "13:41:24",
+      completedAt: null,
+      taxPercent: 10,
+    });
+    ledgerStore.upsertIndirectCommission({
+      merchant: "shopee",
+      orderId: "DA-HUY-1",
+      subId: "k-u1-x-y",
+      platform: null,
+      userId: null,
+      productName: null,
+      orderAmount: 0,
+      commissionAmount: 500,
+      status: "reversed",
+      orderDate: null,
+      orderTime: null,
+      completedAt: null,
+      taxPercent: 10,
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (await fetch(`${baseUrl}/admin/orders?view=indirect`, { headers: { cookie: cookie! } })).text();
+    assert.match(html, /261013GNH72VWU/);
+    assert.match(html, /Hoa hồng gián tiếp<\/span>/);
+    assert.match(html, /Kính cường lực &lt;Oppo&gt;/, "ten san pham phai duoc escape");
+    assert.match(html, /1\.625/, "chu bot nhan = 1806 - thue 181");
+    assert.match(html, /line-through[^>]*>500/, "don da huy gach ngang");
+    assert.match(html, /href="\/admin\/orders\?view=indirect" role="tab" aria-selected="true"/);
+
+    const pendingOnly = await (
+      await fetch(`${baseUrl}/admin/orders?view=indirect&status=pending&q=GNH72`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(pendingOnly, /261013GNH72VWU/);
+    assert.doesNotMatch(pendingOnly, /DA-HUY-1/);
+
+    const userTab = await (await fetch(`${baseUrl}/admin/orders`, { headers: { cookie: cookie! } })).text();
+    assert.doesNotMatch(userTab, /261013GNH72VWU/);
+    assert.match(userTab, /href="\/admin\/orders\?view=indirect"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/admin/orders?q= tim duoc theo ten san pham KHONG DAU, trang va the KPI khop nhau", async () => {
+  const { ledgerStore, baseUrl, cleanup } = setup();
+  try {
+    const base = {
+      platform: "zalo" as const,
+      userId: "user-a",
+      merchant: "shopee" as const,
+      orderAmount: 100_000,
+      commissionAmount: 10_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    };
+    ledgerStore.recordConversion({ ...base, subId: "k-a-1", orderId: "SP-KINH", productName: "Kính cường lực Oppo" });
+    ledgerStore.recordConversion({ ...base, subId: "k-a-2", orderId: "SP-SUA", productName: "Sữa tắm Lifebuoy" });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const html = await (
+      await fetch(`${baseUrl}/admin/orders?q=${encodeURIComponent("kinh cuong")}`, { headers: { cookie: cookie! } })
+    ).text();
+    assert.match(html, /SP-KINH/);
+    assert.doesNotMatch(html, /SP-SUA/);
+    assert.match(html, /tên sản phẩm/, "placeholder noi ro o tim khop ca ten san pham");
+  } finally {
+    cleanup();
+  }
+});

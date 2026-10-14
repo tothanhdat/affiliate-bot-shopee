@@ -1,5 +1,12 @@
 import { adminCssHref } from "./adminAssets.js";
-import type { OrdersFilterTotals, RatePercents } from "../core/ledgerStore.js";
+import type {
+  IndirectCommission,
+  IndirectCommissionFilters,
+  IndirectCommissionStatus,
+  IndirectCommissionTotals,
+  OrdersFilterTotals,
+  RatePercents,
+} from "../core/ledgerStore.js";
 import type { CommissionBreakdown } from "../core/commissionMath.js";
 import { entryItemsKey, entryItemsReconcile, type CommissionEntryItem } from "../core/entryItems.js";
 import { formatVnDateDdMm, todayVnIso } from "../core/vietnamDate.js";
@@ -2120,7 +2127,7 @@ export function renderOrdersPage(
       <label class="${FIELD_LABEL_CLASS}" for="orders-q">Tìm kiếm</label>
       <div class="relative">
         ${icon("search", "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400")}
-        <input type="search" id="orders-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Tìm theo mã đơn, tên hoặc user ID..." class="${FIELD_CLASS} pl-9">
+        <input type="search" id="orders-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Mã đơn, tên khách, user ID hoặc tên sản phẩm..." class="${FIELD_CLASS} pl-9">
       </div>
     </div>
     <div class="w-full sm:w-40">
@@ -2227,12 +2234,224 @@ export function renderOrdersPage(
     ${renderPagination(filters, pagination)}
   </div>`;
 
-  const body = `${kpiRow}
+  const body = `${ordersViewTabs("user")}
+${kpiRow}
 ${filterForm}
 ${timeToggle}
 ${statusDropdownScript}
 <div class="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
 ${entries.length > 0 ? table : emptyState}
+</div>`;
+
+  return adminShell("orders", "Đơn hàng", body, pendingWithdrawals);
+}
+
+/**
+ * Thanh tab dau trang /admin/orders (2026-10-14): "Don cua user" | "Hoa hong gian tiep". LINK render
+ * phia server (?view=indirect), cung kieu /admin/record-orders - 2 bang nam o 2 bang SQL khac nhau, tron
+ * vao mot danh sach phan trang thi moi bo loc/the KPI cua bang don user phai viet lai.
+ */
+function ordersViewTabs(active: "user" | "indirect"): string {
+  const tab = (target: "user" | "indirect", href: string, iconName: "users" | "link", label: string): string => {
+    const on = active === target;
+    return `<a href="${href}" role="tab" aria-selected="${on}"
+    class="-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap no-underline border-b-2 py-3 text-xs transition ${on ? SETTINGS_TAB_BTN_CLASS.active : SETTINGS_TAB_BTN_CLASS.inactive}">
+    ${icon(iconName, "h-4 w-4")} ${label}
+  </a>`;
+  };
+  return `<div class="mb-6 overflow-x-auto border-b border-slate-200">
+  <div class="flex w-max min-w-full gap-7 font-semibold" role="tablist">
+    ${tab("user", "/admin/orders", "users", "Đơn của user")}
+    ${tab("indirect", "/admin/orders?view=indirect", "link", "Hoa hồng gián tiếp")}
+  </div>
+</div>`;
+}
+
+const INDIRECT_STATUS_OPTIONS: IndirectCommissionStatus[] = ["pending", "confirmed", "reversed"];
+/**
+ * Nhan trang thai don gian tiep: KHONG dung "Khả dụng" (do la so du rut duoc cua user - don nay khong
+ * thuoc user nao). "confirmed" o day chi co nghia la Shopee da ghi "Hoàn thành".
+ */
+const INDIRECT_STATUS_BADGES: Record<IndirectCommissionStatus, { label: string; tone: BadgeTone }> = {
+  pending: { label: "Chờ xác nhận", tone: "warning" },
+  confirmed: { label: "Shopee đã duyệt", tone: "success" },
+  reversed: { label: "Đã huỷ", tone: "danger" },
+};
+
+function indirectOrdersHref(filters: IndirectCommissionFilters, page: number): string {
+  const params = new URLSearchParams({ view: "indirect" });
+  if (filters.search) params.set("q", filters.search);
+  for (const status of filters.statuses ?? []) params.append("status", status);
+  if (page > 1) params.set("page", String(page));
+  return `/admin/orders?${params.toString()}`;
+}
+
+/**
+ * Tab "Hoa hong gian tiep" cua /admin/orders (2026-10-14): don Shopee gan Sub_id cua link bot nhung khach
+ * mua o SHOP KHAC voi san pham trong link (bao cao ghi "Đơn hàng từ các Shop khác nhau") - tien cua chu
+ * bot, khong ghi cho user. Cot "Nguoi click link" chi de doi soat: user do KHONG duoc nhan gi tu don nay.
+ */
+export function renderIndirectOrdersPage(
+  rows: IndirectCommission[],
+  filters: IndirectCommissionFilters,
+  displayNames: Map<string, string>,
+  pagination: OrdersPagination,
+  totals: IndirectCommissionTotals,
+  pendingWithdrawals?: number
+): string {
+  const tableRows = rows
+    .map((r) => {
+      const voided = r.status === "reversed";
+      const moneyClass = voided ? "text-slate-400 line-through" : "font-medium text-slate-700";
+      const when = formatDateTimeParts(r.createdAt);
+      const clicker =
+        r.platform && r.userId
+          ? `<div class="font-medium text-slate-800">${nameCell(displayNames.get(nameKey(r.platform, r.userId)))}</div>
+    <div class="mt-0.5 text-[11px] text-slate-400">ID: ${escapeHtml(r.userId)}</div>`
+          : `<span class="text-slate-400" title="Sub_id không khớp lượt tạo link nào của bot">—</span>`;
+      const product = r.productName
+        ? `<span class="block truncate font-medium text-slate-700" title="${escapeHtml(r.productName)}">${escapeHtml(r.productName)}</span>`
+        : `<span class="text-slate-400">—</span>`;
+      return `<tr class="transition hover:bg-slate-50/80">
+  <td class="px-4 py-3.5">
+    <div class="flex items-center gap-1.5 font-semibold text-slate-800">
+      <span>${escapeHtml(r.orderId)}</span>
+      ${copyIconButton(r.orderId, `Sao chép mã đơn ${r.orderId}`)}
+    </div>
+    <div class="mt-0.5 text-[11px] text-slate-400 tabular-nums" title="Thời điểm import vào hệ thống">${escapeHtml(when.time)} • ${escapeHtml(when.date)}</div>
+    <span class="mt-1 inline-flex items-center rounded border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">Hoa hồng gián tiếp</span>
+  </td>
+  <td class="px-4 py-3.5">${clicker}</td>
+  <td class="max-w-[260px] px-4 py-3.5">${product}</td>
+  <td class="px-4 py-3.5 text-right tabular-nums text-slate-600">${formatVnd(r.orderAmount)}</td>
+  <td class="px-4 py-3.5 text-right tabular-nums ${moneyClass}">${formatVnd(r.commissionAmount)}</td>
+  <td class="px-4 py-3.5 text-right tabular-nums ${voided ? "text-slate-400 line-through" : "font-semibold text-indigo-600"}" title="Hoa hồng − thuế ${r.taxPercent}%">${formatVnd(
+    r.commissionAmount - r.taxAmount
+  )}</td>
+  <td class="px-4 py-3.5 text-center">${statusPill(INDIRECT_STATUS_BADGES[r.status])}</td>
+</tr>`;
+    })
+    .join("\n");
+
+  const kpiRow = kpiGrid(
+    [
+      kpiCard({
+        label: "Đơn gián tiếp",
+        value: String(totals.totalEntries),
+        note: `theo bộ lọc đang áp · ${totals.pendingEntries} chờ xác nhận`,
+        icon: "link",
+        valueClass: "text-slate-800",
+        iconClass: "bg-slate-100 text-slate-600",
+      }),
+      kpiCard({
+        label: "Hoa hồng gốc",
+        value: formatVnd(totals.commissionTotal),
+        note: "Shopee trả · không tính đơn đã huỷ",
+        icon: "coins",
+        valueClass: "text-slate-800",
+        iconClass: "bg-slate-100 text-slate-600",
+      }),
+      kpiCard({
+        label: "Lợi nhuận chủ bot",
+        value: formatVnd(totals.ownerProfitTotal),
+        sub: `trước thuế ${formatVnd(totals.commissionTotal)}`,
+        note: "hoa hồng − thuế, không chia user",
+        icon: "trending-up",
+        valueClass: "text-indigo-600",
+        iconClass: "bg-indigo-50 text-indigo-600",
+      }),
+    ],
+    3
+  );
+
+  // Bat buoc co: neu khong admin se tuong "nguoi click link" la nguoi duoc nhan tien don nay.
+  const explainer = `<p class="mb-5 rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-xs text-indigo-900">Khách bấm link bot gửi nhưng mua ở <strong>shop khác</strong> với sản phẩm trong link (báo cáo Shopee ghi “Đơn hàng từ các Shop khác nhau”). Hoa hồng này thuộc chủ bot, <strong>không</strong> ghi cho user. Cột “Người click link” chỉ để đối soát. Đã cộng vào thẻ “Lợi nhuận chủ bot” ở trang Tổng quan.</p>`;
+
+  const selected = filters.statuses?.[0];
+  const filterForm = `<form method="GET" action="/admin/orders" class="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+  <input type="hidden" name="view" value="indirect">
+  <div class="flex flex-wrap items-end gap-3">
+    <div class="w-full sm:w-72">
+      <label class="${FIELD_LABEL_CLASS}" for="indirect-q">Tìm kiếm</label>
+      <div class="relative">
+        ${icon("search", "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400")}
+        <input type="search" id="indirect-q" name="q" value="${escapeHtml(filters.search ?? "")}" placeholder="Mã đơn, user ID hoặc tên sản phẩm..." class="${FIELD_CLASS} pl-9">
+      </div>
+    </div>
+    <div class="w-full sm:w-44">
+      <label class="${FIELD_LABEL_CLASS}" for="indirect-status">Trạng thái</label>
+      <select id="indirect-status" name="status" class="${FIELD_CLASS} ${SELECT_CHEVRON_CLASS}">${selectOptions(
+        INDIRECT_STATUS_OPTIONS,
+        (s) => INDIRECT_STATUS_BADGES[s].label,
+        selected
+      )}</select>
+    </div>
+  </div>
+  <button type="submit" class="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
+    ${icon("search", "h-3.5 w-3.5")} Lọc
+  </button>
+</form>`;
+
+  const hasFilter = Boolean(filters.search || filters.statuses?.length);
+  const emptyState = `<div class="px-5 py-14 text-center">
+  <div class="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">${icon("link", "h-5 w-5")}</div>
+  <div class="mb-1 text-sm font-semibold text-slate-700">${hasFilter ? "Không có đơn nào khớp bộ lọc" : "Chưa có đơn hoa hồng gián tiếp nào"}</div>
+  <p class="m-0 text-xs text-slate-500">${
+    hasFilter ? "Thử bỏ bớt điều kiện lọc." : "Đơn sẽ xuất hiện ở đây sau khi import báo cáo Shopee có đơn “Đơn hàng từ các Shop khác nhau”."
+  }</p>
+</div>`;
+
+  const thClass = "px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500";
+  const firstIndex = (pagination.page - 1) * ORDERS_PAGE_SIZE + 1;
+  const lastIndex = firstIndex + rows.length - 1;
+  const { page, totalPages } = pagination;
+  const pager =
+    totalPages <= 1
+      ? ""
+      : `<nav class="pagination" aria-label="Phân trang hoa hồng gián tiếp">${
+          page > 1
+            ? `<a href="${escapeHtml(indirectOrdersHref(filters, page - 1))}" aria-label="Trang trước">${icon("chevron-left")}</a>`
+            : `<span class="disabled" aria-hidden="true">${icon("chevron-left")}</span>`
+        }${paginationItems(page, totalPages)
+          .map((item) =>
+            item === "gap"
+              ? `<span class="gap">…</span>`
+              : item === page
+                ? `<span class="current" aria-current="page">${item}</span>`
+                : `<a href="${escapeHtml(indirectOrdersHref(filters, item))}">${item}</a>`
+          )
+          .join("")}${
+          page < totalPages
+            ? `<a href="${escapeHtml(indirectOrdersHref(filters, page + 1))}" aria-label="Trang sau">${icon("chevron-right")}</a>`
+            : `<span class="disabled" aria-hidden="true">${icon("chevron-right")}</span>`
+        }</nav>`;
+  const table = `<div class="table-scroll">
+    <table class="w-full border-collapse whitespace-nowrap text-xs">
+      <thead class="border-b border-slate-200 bg-slate-50">
+        <tr>
+          <th class="${thClass}">Mã đơn &amp; thời gian</th>
+          <th class="${thClass}">Người click link</th>
+          <th class="${thClass}">Sản phẩm</th>
+          <th class="${thClass} !text-right">Giá trị đơn</th>
+          <th class="${thClass} !text-right">Hoa hồng gốc</th>
+          <th class="${thClass} !text-right">Chủ bot nhận</th>
+          <th class="${thClass} !text-center">Trạng thái</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">${tableRows}</tbody>
+    </table>
+  </div>
+  <div class="flex flex-col items-start justify-between gap-3 border-t border-slate-200 px-4 py-3.5 text-xs text-slate-500 sm:flex-row sm:items-center">
+    <div>Hiển thị <strong class="font-semibold text-slate-800 tabular-nums">${firstIndex} – ${lastIndex}</strong> trên tổng số <strong class="font-semibold text-slate-800 tabular-nums">${pagination.totalEntries}</strong> đơn</div>
+    ${pager}
+  </div>`;
+
+  const body = `${ordersViewTabs("indirect")}
+${kpiRow}
+${explainer}
+${filterForm}
+<div class="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+${rows.length > 0 ? table : emptyState}
 </div>`;
 
   return adminShell("orders", "Đơn hàng", body, pendingWithdrawals);
@@ -2520,7 +2739,18 @@ export function renderRecordOrdersPage(
       ${statRow("Bỏ qua - không tách được subId", shopeeReportResult.skippedNoSubId)}
       ${statRow("Bỏ qua - subId không khớp user", shopeeReportResult.skippedSubIdNotFound)}
       ${statRow("Bỏ qua - trạng thái lạ", shopeeReportResult.skippedUnknownStatus)}
+      ${statRow(`Hoa hồng gián tiếp (chủ bot) - <a class="font-semibold text-indigo-600 no-underline hover:underline" href="/admin/orders?view=indirect">xem</a>`, shopeeReportResult.indirectCount)}
+      ${statRow("Bỏ qua - loại thuộc tính lạ", shopeeReportResult.skippedUnknownAttribution)}
     </dl>
+    ${
+      // 1 dong gop, KHONG phai 1 canh bao/don: bao cao liet ke lai lich su nen cac don nay se hien LAI moi
+      // ngay - mot loat canh bao lap lai hang ngay se day admin bo qua ca canh bao that.
+      shopeeReportResult.indirectKeptForUser.length > 0
+        ? `<p class="mt-2 text-[11px] text-slate-500">${shopeeReportResult.indirectKeptForUser.length} đơn gián tiếp đã có trong hệ thống từ trước khi tách loại này - giữ nguyên cho user: ${shopeeReportResult.indirectKeptForUser
+            .map((id) => escapeHtml(id))
+            .join(", ")}</p>`
+        : ""
+    }
     ${
       shopeeReportResult.errors.length > 0
         ? `<div class="mt-3 max-h-32 overflow-y-auto rounded-lg border border-amber-200/60 bg-amber-50/60 p-2.5">

@@ -149,12 +149,116 @@ export interface CommissionEntryFilters {
   /** Nhieu trang thai cung luc (form admin dung checkbox). Rong/undefined = khong loc theo trang thai. */
   statuses?: CommissionStatus[];
   /**
-   * O tim kiem 1 dong cua /admin/orders (2026-10-04): khop MOT PHAN ma don, userId, hoac ten hien thi.
+   * O tim kiem 1 dong cua /admin/orders (2026-10-04): khop MOT PHAN ma don, userId, ten hien thi, hoac (2026-10-14)
+   * ten san pham (khong phan biet hoa/thuong va dau, xem matchProductNames).
    * Khac `userId` o tren - cai do khop CHINH XAC va duoc dung khi admin bam tu /admin/users sang, con
    * cai nay la admin tu go vao o tim. Giu ca 2 vi 2 muc dich khac nhau: bam tu /admin/users phai ra
    * DUNG user do, khong duoc keo theo user khac co userId chua chuoi tuong tu.
    */
   search?: string;
+}
+
+/** Trang thai cua 1 don hoa hong gian tiep - theo dung bao cao Shopee, khong co "paid" (khong ai rut). */
+export type IndirectCommissionStatus = "pending" | "confirmed" | "reversed";
+
+/** 1 dong bang indirect_commissions - xem CREATE TABLE trong constructor. */
+export interface IndirectCommission {
+  merchant: MerchantId;
+  orderId: string;
+  subId: string;
+  /** Nguoi click link CUOI (chi de doi soat) - null khi Sub_id khong khop request nao. */
+  platform: Platform | null;
+  userId: string | null;
+  productName: string | null;
+  orderAmount: number;
+  commissionAmount: number;
+  /** % thue CHOT luc ghi lan dau - doi % tren /admin/settings khong hoi to. */
+  taxPercent: number;
+  taxAmount: number;
+  status: IndirectCommissionStatus;
+  orderDate: string | null;
+  orderTime: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IndirectCommissionInput {
+  merchant: MerchantId;
+  orderId: string;
+  subId: string;
+  platform: Platform | null;
+  userId: string | null;
+  productName: string | null;
+  orderAmount: number;
+  commissionAmount: number;
+  status: IndirectCommissionStatus;
+  orderDate: string | null;
+  orderTime: string | null;
+  completedAt: string | null;
+  /** CHI dung khi ghi lan DAU - dong da co giu nguyen % da chot. */
+  taxPercent: number;
+}
+
+/** Bo loc tab "Hoa hong gian tiep" cua /admin/orders. */
+export interface IndirectCommissionFilters {
+  statuses?: IndirectCommissionStatus[];
+  /** Khop MOT PHAN ma don / userId nguoi click / ten san pham. */
+  search?: string;
+}
+
+/** So lieu the KPI tab "Hoa hong gian tiep" - tinh TREN DUNG bo loc dang ap. */
+export interface IndirectCommissionTotals {
+  totalEntries: number;
+  pendingEntries: number;
+  /** Hoa hong goc Shopee tra, KHONG tinh don da huy. */
+  commissionTotal: number;
+  /** Hoa hong - thue (khong co phan chia user), KHONG tinh don da huy. */
+  ownerProfitTotal: number;
+}
+
+function buildIndirectCommissionsWhere(
+  filters?: IndirectCommissionFilters,
+  matchedProductNames: readonly string[] = []
+): { where: string; params: string[] } {
+  const conditions: string[] = [];
+  const params: string[] = [];
+  if (filters?.statuses && filters.statuses.length > 0) {
+    conditions.push(`status IN (${filters.statuses.map(() => "?").join(", ")})`);
+    params.push(...filters.statuses);
+  }
+  const search = filters?.search?.trim();
+  if (search) {
+    // Ten san pham so khop o JS (khong dau, khong phan biet hoa/thuong) roi dua xuong MOT tham so
+    // json_each - xem LedgerStore.matchProductNames(). LIKE chi con cho ma don/userId (ASCII).
+    const byProduct = matchedProductNames.length > 0 ? ` OR product_name IN (SELECT value FROM json_each(?))` : "";
+    conditions.push(`(order_id LIKE ? ESCAPE '\\' OR user_id LIKE ? ESCAPE '\\'${byProduct})`);
+    const pattern = likePattern(search);
+    params.push(pattern, pattern);
+    if (matchedProductNames.length > 0) params.push(JSON.stringify(matchedProductNames));
+  }
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+function rowToIndirectCommission(row: Record<string, unknown>): IndirectCommission {
+  return {
+    merchant: row.merchant as MerchantId,
+    orderId: row.order_id as string,
+    subId: row.sub_id as string,
+    platform: (row.platform as Platform | null) ?? null,
+    userId: (row.user_id as string | null) ?? null,
+    productName: (row.product_name as string | null) ?? null,
+    orderAmount: row.order_amount as number,
+    commissionAmount: row.commission_amount as number,
+    taxPercent: row.tax_percent as number,
+    taxAmount: row.tax_amount as number,
+    status: row.status as IndirectCommissionStatus,
+    orderDate: (row.order_date as string | null) ?? null,
+    orderTime: (row.order_time as string | null) ?? null,
+    completedAt: (row.completed_at as string | null) ?? null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
 }
 
 /**
@@ -190,7 +294,10 @@ function foldForNameSearch(raw: string): string {
  * 3 ham nay BAT BUOC phai loc y het nhau, neu khong thi tong so trang va cac the KPI dau trang se
  * khong khop voi so don that su hien ra trong bang.
  */
-function buildCommissionEntriesWhere(filters?: CommissionEntryFilters): { where: string; params: (string | number)[] } {
+function buildCommissionEntriesWhere(
+  filters?: CommissionEntryFilters,
+  matchedProductNames: readonly string[] = []
+): { where: string; params: (string | number)[] } {
   const conditions: string[] = [];
   const params: (string | number)[] = [];
   if (filters?.platform) {
@@ -214,16 +321,20 @@ function buildCommissionEntriesWhere(filters?: CommissionEntryFilters): { where:
     // Ten hien thi nam o bang KHAC (user_profiles) nen phai di qua subquery tuong quan thay vi JOIN:
     // JOIN se nhan ban dong neu 1 user co nhieu ho so, va lam LEFT JOIN thi phai sua ca 3 ham dung
     // menh de nay. EXISTS giu nguyen hinh dang "FROM commission_entries <where>" cua ca 3.
+    // Ten san pham (2026-10-14): so khop o JS roi vao day qua MOT tham so json_each, xem
+    // LedgerStore.matchProductNames(). Rong = khong them dieu kien (khong co ten nao khop).
+    const byProduct = matchedProductNames.length > 0 ? ` OR product_name IN (SELECT value FROM json_each(?))` : "";
     conditions.push(
       `(order_id LIKE ? ESCAPE '\\' OR user_id LIKE ? ESCAPE '\\' OR EXISTS (
          SELECT 1 FROM user_profiles p
          WHERE p.platform = commission_entries.platform
            AND p.user_id = commission_entries.user_id
            AND p.display_name LIKE ? ESCAPE '\\'
-       ))`
+       )${byProduct})`
     );
     const pattern = likePattern(search);
     params.push(pattern, pattern, pattern);
+    if (matchedProductNames.length > 0) params.push(JSON.stringify(matchedProductNames));
   }
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
 }
@@ -384,6 +495,32 @@ export class LedgerStore {
         commission_amount REAL NOT NULL,
         row_status TEXT NOT NULL,
         PRIMARY KEY (merchant, order_id, item_id, model_id)
+      );
+
+      -- Hoa hong GIAN TIEP (2026-10-14): don Shopee gan Sub_id cua link bot nhung mua o SHOP KHAC voi
+      -- san pham trong link (cot "Loai thuoc tinh" = "Don hang tu cac Shop khac nhau"). Tien nay la cua
+      -- CHU BOT, khong thuoc user nao - nen nam o bang RIENG chu khong phai commission_entries (moi truy
+      -- van tien cua user deu doc bang do). platform/user_id = nguoi click link cuoi, CHI de doi soat;
+      -- NULL khi Sub_id khong khop request nao. tax_percent chot 1 lan luc ghi dau (giong 3 cot % cua
+      -- commission_entries). Bang MOI nen khong can migration.
+      CREATE TABLE IF NOT EXISTS indirect_commissions (
+        merchant TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        sub_id TEXT NOT NULL,
+        platform TEXT,
+        user_id TEXT,
+        product_name TEXT,
+        order_amount REAL NOT NULL,
+        commission_amount REAL NOT NULL,
+        tax_percent REAL NOT NULL,
+        tax_amount REAL NOT NULL,
+        status TEXT NOT NULL,
+        order_date TEXT,
+        order_time TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (merchant, order_id)
       );
 
       CREATE TABLE IF NOT EXISTS welcome_messages (
@@ -1602,6 +1739,23 @@ export class LedgerStore {
     return keys;
   }
 
+  /**
+   * Cac TEN SAN PHAM (khac nhau) chua `search`, khong phan biet hoa/thuong va dau - o tim cua /admin/orders
+   * (2026-10-14). So khop o JS thay vi LIKE vi LIKE cua SQLite chi bo qua hoa/thuong voi ASCII: ten san pham
+   * la chu co dau, admin go "kinh cuong luc" la chuyen thuong xuyen. Chi quet DISTINCT product_name (it hon
+   * nhieu so voi so don, vi nhieu don cung 1 san pham) roi dua ket qua xuong SQL qua MOT tham so json_each
+   * - go 1 chu cai co the khop hang tram ten, `IN (?,?,...)` se cham tran so tham so cua SQLite.
+   * `table` chi nhan 2 hang so, khong bao gio la chuoi nguoi dung. Chuoi rong -> mang rong.
+   */
+  private matchProductNames(table: "commission_entries" | "indirect_commissions", search: string | undefined): string[] {
+    const needle = foldForNameSearch((search ?? "").trim());
+    if (needle === "") return [];
+    const rows = this.db
+      .prepare(`SELECT DISTINCT product_name FROM ${table} WHERE product_name IS NOT NULL`)
+      .all() as Array<{ product_name: string }>;
+    return rows.map((r) => r.product_name).filter((name) => foldForNameSearch(name).includes(needle));
+  }
+
   /** Dung boi trang admin (withdrawals/orders) de tra cuu ten hien thi theo key "platform:userId". */
   getDisplayNamesMap(): Map<string, string> {
     const rows = this.db.prepare(`SELECT platform, user_id, display_name FROM user_profiles`).all() as Array<{
@@ -1840,7 +1994,10 @@ export class LedgerStore {
    * khong con tai ca danh sach mot luc nua - xem countCommissionEntries de biet tong so trang).
    */
   listCommissionEntries(filters?: CommissionEntryFilters, paging?: { limit: number; offset: number }): CommissionEntry[] {
-    const { where, params } = buildCommissionEntriesWhere(filters);
+    const { where, params } = buildCommissionEntriesWhere(
+      filters,
+      this.matchProductNames("commission_entries", filters?.search)
+    );
     // Tiebreak rowid DESC: created_at chi phan giai toi mili-giay nen nhieu don ghi cung luc
     // (vd 1 lan import bao cao Shopee) co thu tu KHONG on dinh neu chi sap theo created_at -
     // phan trang se bi trung/sot don giua cac trang. Giong listImportHistory().
@@ -1854,7 +2011,10 @@ export class LedgerStore {
 
   /** Tong so don khop bo loc - dung de tinh so trang cho /admin/orders. */
   countCommissionEntries(filters?: CommissionEntryFilters): number {
-    const { where, params } = buildCommissionEntriesWhere(filters);
+    const { where, params } = buildCommissionEntriesWhere(
+      filters,
+      this.matchProductNames("commission_entries", filters?.search)
+    );
     const row = this.db.prepare(`SELECT COUNT(*) AS total FROM commission_entries ${where}`).get(...params) as {
       total: number;
     };
@@ -1875,7 +2035,10 @@ export class LedgerStore {
    * Tinh bang SUM trong SQL chu khong keo row len JS - bang tien chi tang chu khong giam.
    */
   getOrdersFilterTotals(filters?: CommissionEntryFilters): OrdersFilterTotals {
-    const { where, params } = buildCommissionEntriesWhere(filters);
+    const { where, params } = buildCommissionEntriesWhere(
+      filters,
+      this.matchProductNames("commission_entries", filters?.search)
+    );
     const row = this.db
       .prepare(
         `SELECT
@@ -1913,6 +2076,123 @@ export class LedgerStore {
    * Dung boi shopeeReportImport.ts de tim entry can cap nhat/reverse khi bao cao Shopee doi trang
    * thai cho 1 don da tung ghi nhan truoc do (khong biet truoc id noi bo, chi co orderId).
    */
+  /**
+   * Ghi/cap nhat 1 don hoa hong GIAN TIEP (2026-10-14). Bao cao Shopee liet ke lai ca lich su moi lan
+   * import nen day la UPSERT theo (merchant, order_id): so lieu + trang thai chay theo bao cao moi nhat
+   * (tien cua chu bot, khong co gi phai chot cho user), con tax_percent + created_at giu nguyen tu lan
+   * ghi dau. Thue tinh qua computeCommissionBreakdown - nguon DUY NHAT cua phep lam tron tien.
+   */
+  upsertIndirectCommission(input: IndirectCommissionInput): { isNew: boolean } {
+    const existing = this.getIndirectCommission(input.merchant, input.orderId);
+    const taxPercent = existing?.taxPercent ?? input.taxPercent;
+    const { taxAmount } = computeCommissionBreakdown({
+      commissionAmount: input.commissionAmount,
+      taxPercent,
+      platformFeePercent: 0,
+      userSharePercent: 0,
+    });
+    const now = new Date().toISOString();
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE indirect_commissions SET
+             sub_id = ?, platform = COALESCE(?, platform), user_id = COALESCE(?, user_id),
+             product_name = COALESCE(?, product_name), order_amount = ?, commission_amount = ?, tax_amount = ?,
+             status = ?, order_date = COALESCE(order_date, ?), order_time = COALESCE(order_time, ?),
+             completed_at = ?, updated_at = ?
+           WHERE merchant = ? AND order_id = ?`
+        )
+        .run(
+          input.subId,
+          input.platform,
+          input.userId,
+          input.productName,
+          input.orderAmount,
+          input.commissionAmount,
+          taxAmount,
+          input.status,
+          input.orderDate,
+          input.orderTime,
+          input.completedAt,
+          now,
+          input.merchant,
+          input.orderId
+        );
+      return { isNew: false };
+    }
+    this.db
+      .prepare(
+        `INSERT INTO indirect_commissions (merchant, order_id, sub_id, platform, user_id, product_name, order_amount,
+           commission_amount, tax_percent, tax_amount, status, order_date, order_time, completed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        input.merchant,
+        input.orderId,
+        input.subId,
+        input.platform,
+        input.userId,
+        input.productName,
+        input.orderAmount,
+        input.commissionAmount,
+        taxPercent,
+        taxAmount,
+        input.status,
+        input.orderDate,
+        input.orderTime,
+        input.completedAt,
+        now,
+        now
+      );
+    return { isNew: true };
+  }
+
+  getIndirectCommission(merchant: MerchantId, orderId: string): IndirectCommission | null {
+    const row = this.db
+      .prepare(`SELECT * FROM indirect_commissions WHERE merchant = ? AND order_id = ?`)
+      .get(merchant, orderId) as Record<string, unknown> | undefined;
+    return row ? rowToIndirectCommission(row) : null;
+  }
+
+  /** Moi nhat truoc; tiebreak rowid vi 1 lan import ghi nhieu dong trong cung mili-giay. */
+  listIndirectCommissions(
+    filters: IndirectCommissionFilters,
+    paging?: { limit: number; offset: number }
+  ): IndirectCommission[] {
+    const { where, params } = buildIndirectCommissionsWhere(
+      filters,
+      this.matchProductNames("indirect_commissions", filters.search)
+    );
+    const limitClause = paging ? " LIMIT ? OFFSET ?" : "";
+    const rows = this.db
+      .prepare(`SELECT * FROM indirect_commissions ${where} ORDER BY created_at DESC, rowid DESC${limitClause}`)
+      .all(...params, ...(paging ? [paging.limit, paging.offset] : [])) as Array<Record<string, unknown>>;
+    return rows.map(rowToIndirectCommission);
+  }
+
+  /** Dung CHUNG buildIndirectCommissionsWhere() voi listIndirectCommissions - the KPI khop bang. */
+  getIndirectCommissionTotals(filters: IndirectCommissionFilters): IndirectCommissionTotals {
+    const { where, params } = buildIndirectCommissionsWhere(
+      filters,
+      this.matchProductNames("indirect_commissions", filters.search)
+    );
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+           COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN commission_amount ELSE 0 END), 0) AS commission,
+           COALESCE(SUM(CASE WHEN status != 'reversed' THEN commission_amount - tax_amount ELSE 0 END), 0) AS profit
+         FROM indirect_commissions ${where}`
+      )
+      .get(...params) as Record<string, number>;
+    return {
+      totalEntries: row.total,
+      pendingEntries: row.pending,
+      commissionTotal: row.commission,
+      ownerProfitTotal: row.profit,
+    };
+  }
+
   /**
    * Thay TOAN BO chi tiet san pham cua 1 don (2026-10-11): XOA roi chen lai trong 1 transaction.
    * Khong dung upsert thuan vi bao cao Shopee liet ke lai ca lich su moi lan import: upsert chong duoc
@@ -2623,10 +2903,20 @@ export class LedgerStore {
          WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?`
       )
       .get(fromKey, toKey) as Record<string, number>;
+    // Hoa hong gian tiep (2026-10-14) la tien Shopee tra cho CHU BOT: cong vao "Hoa hong goc" va "Loi
+    // nhuan chu bot" (khong co phan chia user), KHONG cong vao orderCount/userShare (do la don cua user).
+    const indirect = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(commission_amount), 0) AS commission,
+           COALESCE(SUM(commission_amount - tax_amount), 0) AS profit
+         FROM indirect_commissions
+         WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?`
+      )
+      .get(fromKey, toKey) as Record<string, number>;
     return {
-      commission: row.commission,
-      ownerProfit: row.owner_profit,
-      ownerProfitBeforeTax: row.owner_profit_before_tax,
+      commission: row.commission + indirect.commission,
+      ownerProfit: row.owner_profit + indirect.profit,
+      ownerProfitBeforeTax: row.owner_profit_before_tax + indirect.commission,
       userShare: row.user_share,
       orderCount: row.order_count,
     };
@@ -2666,11 +2956,26 @@ export class LedgerStore {
          GROUP BY day`
       )
       .all(fromKey, toKey) as Array<Record<string, unknown>>;
-    return rows.map((r) => ({
-      day: r.day as string,
-      commission: r.commission as number,
-      ownerProfit: r.owner_profit as number,
-    }));
+    // Cong hoa hong gian tiep theo CUNG cong thuc voi getDashboardMoneyTotals - tong cac ngay phai bang the.
+    const indirectRows = this.db
+      .prepare(
+        `SELECT ${DAY_EXPR} AS day,
+           COALESCE(SUM(commission_amount), 0) AS commission,
+           COALESCE(SUM(commission_amount - tax_amount), 0) AS owner_profit
+         FROM indirect_commissions
+         WHERE status != 'reversed' AND ${DAY_EXPR} BETWEEN ? AND ?
+         GROUP BY day`
+      )
+      .all(fromKey, toKey) as Array<Record<string, unknown>>;
+    const byDay = new Map<string, { day: string; commission: number; ownerProfit: number }>();
+    for (const r of [...rows, ...indirectRows]) {
+      const day = r.day as string;
+      const acc = byDay.get(day) ?? { day, commission: 0, ownerProfit: 0 };
+      acc.commission += r.commission as number;
+      acc.ownerProfit += r.owner_profit as number;
+      byDay.set(day, acc);
+    }
+    return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
   }
 
   countEntriesByStatus(fromKey: string, toKey: string): Array<{ status: CommissionStatus; count: number }> {

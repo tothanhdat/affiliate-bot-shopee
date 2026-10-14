@@ -252,7 +252,7 @@ function renderKpiGrid(stats: DashboardStats): string {
       group: "Tiền",
       label: "Hoa hồng gốc",
       value: formatVnd(money.commission),
-      hint: `Shopee trả, trước thuế/phí · ${periodNote}`,
+      hint: `Shopee trả, trước thuế/phí · gồm HH gián tiếp · ${periodNote}`,
     },
     {
       group: "Tiền",
@@ -261,7 +261,8 @@ function renderKpiGrid(stats: DashboardStats): string {
       // Cong thuc: hoa hong - thue - phan chia user (KHONG tru phi 1%, la phi van hanh chu bot tu thu
       // them). So nho ben canh = chua tru thue. Hint KHONG hardcode "1%": ty le la setting.
       sub: `trước thuế ${formatVnd(money.ownerProfitBeforeTax)}`,
-      hint: `Hoa hồng − thuế − phần chia user · ${periodNote}`,
+      // "gom HH gian tiep" (2026-10-14): don khach mua o shop khac voi link - tien cua chu bot, bang rieng.
+      hint: `Hoa hồng − thuế − phần chia user · gồm HH gián tiếp · ${periodNote}`,
       tone: "accent",
     },
     {
