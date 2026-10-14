@@ -209,6 +209,14 @@ export const env = {
     proofDir: optional("WITHDRAWAL_PROOF_DIR", "./data/withdrawal-proofs"),
   },
 
+  tips: {
+    /**
+     * Thu muc luu anh cua Tips (2026-10-14). PHAI nam tren volume (cung cho voi WITHDRAWAL_PROOF_DIR va DB),
+     * neu khong anh mat sau moi lan deploy trong khi ban ghi trong bang tips van con.
+     */
+    imageDir: optional("TIPS_IMAGE_DIR", "./data/tips-images"),
+  },
+
   dashboard: {
     /** Dung de dung link "/d/:token" tra ve khi user nhan "xemhh". */
     baseUrl: optional("DASHBOARD_BASE_URL", "http://localhost:3000"),
