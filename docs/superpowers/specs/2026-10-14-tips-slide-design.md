@@ -216,3 +216,13 @@ Theo `CLAUDE.md` ("cập nhật file rule tương ứng ngay trong cùng lần s
 7. Xem bằng mắt trên trình duyệt (admin ≥1280px, user iframe 390px) + `grep -F` CSS + cập nhật rule + `CLAUDE.md`.
 
 Mỗi bước tự thân chạy được và test xanh; bước 1–3 đã dùng được ở admin dù user chưa thấy gì (nút Tips chỉ hiện từ bước 6).
+
+## 12. Cập nhật 2026-10-14 (sau khi xem bản chạy thật): thiết kế lại trang admin
+
+Chủ bot gửi ảnh tham chiếu và yêu cầu thiết kế lại `/admin/tips`. Thay đổi so với mục 5 phía trên (các mục còn lại giữ nguyên):
+
+- Bố cục: tiêu đề "Quản lý Tips" + phụ đề; thanh công cụ có nút "+ Thêm Tip" và **ô tìm kiếm phía trình duyệt** (mới, không có trong bản đầu); mỗi Tip là một hàng ngang có công tắc hiện/ẩn kiểu iOS, nút Sửa (icon bút), nút Xoá (nền đỏ nhạt, icon thùng rác).
+- Nhãn trạng thái đổi từ "Đã tắt" thành **"Đang ẩn"**; Tip ẩn **không còn làm mờ card**.
+- Form Sửa/Xoá/Thêm mở bằng **checkbox ẩn + label** thay cho `<details>` (không cần JS). Hint "giữ lại thì ẩn, đừng xoá" chuyển vào panel xác nhận xoá.
+- Đang tìm kiếm thì không cho kéo-thả.
+- Chi tiết và lý do: `.claude/rules/admin-ui-tung-trang.md`, mục `/admin/tips`.

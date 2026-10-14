@@ -263,9 +263,74 @@
   }
 
   /*
-   * Danh sach Tips co the keo-tha (/admin/tips, adminTipsHtml.ts). Viet thanh class that thay vi utility
-   * tuy y (xem bay thu 3 o dau file). Khong co preflight nen <ul>/<li> tu bo cham tron va padding.
+   * Trang /admin/tips (adminTipsHtml.ts), thiet ke lai theo anh tham chieu cua chu bot 2026-10-14: moi Tip la 1 hang
+   * ngang. Viet thanh class that thay vi utility tuy y (xem bay thu 3 o dau file); khong co preflight nen <ul>/<li>/<button>
+   * tu bo cham tron, padding, vien, nen. Mo/dong form Sua/Xoa/Them bang checkbox an + label (khong JS): checkbox .tip-toggle
+   * dung TRUOC hang, CSS `:checked ~ .tip-panel-*` hien panel.
    */
+  .tip-h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    line-height: 2rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .tip-sub {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    color: #64748b;
+  }
+  .tip-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+  }
+  .tip-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.125rem;
+    border-radius: 0.75rem;
+    background: #4338ca;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.2);
+    transition: background-color 0.15s ease;
+  }
+  .tip-add-btn:hover,
+  .tip-toggle-create:checked ~ .tip-toolbar .tip-add-btn {
+    background: #3730a3;
+  }
+  .tip-search {
+    position: relative;
+    width: 16rem;
+    max-width: 100%;
+  }
+  /* Checkbox an: van focus duoc bang ban phim nhung khong chiem cho va khong bat click (label moi la nut that). */
+  .tip-toggle {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tip-panel-create {
+    display: none;
+    margin-bottom: 1rem;
+    padding: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    background: #fff;
+  }
+  .tip-toggle-create:checked ~ .tip-panel-create {
+    display: block;
+  }
   .tip-list {
     list-style: none;
     margin: 0;
@@ -273,24 +338,31 @@
   }
   .tip-card {
     list-style: none;
-    transition: opacity 0.15s ease, box-shadow 0.15s ease;
-  }
-  .tip-card.is-inactive {
-    opacity: 0.6;
+    position: relative;
+    margin-bottom: 0.875rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+    transition: opacity 0.15s ease;
   }
   .tip-card.is-dragging {
     opacity: 0.35;
+  }
+  .tip-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
   .tip-handle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 1.5rem;
-    height: 4rem;
+    width: 1.25rem;
+    height: 3rem;
     color: #94a3b8;
-    font-size: 1.125rem;
-    letter-spacing: -0.15em;
     cursor: grab;
     user-select: none;
     -webkit-user-select: none;
@@ -301,11 +373,170 @@
   .tip-handle:active {
     cursor: grabbing;
   }
+  .tip-thumb,
+  .tip-thumb-empty {
+    flex-shrink: 0;
+    width: 5.25rem;
+    height: 5.25rem;
+    border-radius: 0.875rem;
+  }
+  .tip-thumb {
+    display: block;
+    object-fit: cover;
+    background: #e2e8f0;
+  }
+  .tip-thumb-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;
+    color: #94a3b8;
+  }
+  .tip-main {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .tip-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .tip-title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .tip-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+  .tip-pill-on {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .tip-pill-off {
+    background: #e2e8f0;
+    color: #475569;
+  }
+  .tip-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: #64748b;
+    white-space: pre-line;
+  }
+  .tip-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0.75rem;
+  }
+  /* Cong tac hien/an: la <button type=submit role=switch> trong form (reload trang), khong can JS. */
+  .tip-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: #cbd5e1;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  .tip-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.3);
+    transition: transform 0.15s ease;
+  }
+  .tip-switch[aria-checked="true"] {
+    background: #4338ca;
+  }
+  .tip-switch[aria-checked="true"]::after {
+    transform: translateX(1.25rem);
+  }
+  .tip-switch:focus-visible {
+    outline: 2px solid #818cf8;
+    outline-offset: 2px;
+  }
+  .tip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.625rem;
+    background: #fff;
+    color: #334155;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease;
+  }
+  .tip-btn:hover {
+    background: #f8fafc;
+  }
+  .tip-btn-del {
+    border-color: #fecdd3;
+    background: #fff1f2;
+    color: #e11d48;
+  }
+  .tip-btn-del:hover {
+    background: #ffe4e6;
+  }
+  .tip-toggle-edit:checked ~ .tip-row .tip-btn-edit {
+    border-color: #c7d2fe;
+    background: #eef2ff;
+    color: #4338ca;
+  }
+  .tip-toggle-del:checked ~ .tip-row .tip-btn-del {
+    background: #ffe4e6;
+  }
+  .tip-panel {
+    display: none;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #f1f5f9;
+  }
+  .tip-toggle-edit:checked ~ .tip-panel-edit,
+  .tip-toggle-del:checked ~ .tip-panel-del {
+    display: block;
+  }
+  /* Man hep: hang xuong dong, cac nut don ve phai thay vi bi day ra ngoai. */
+  @media (max-width: 720px) {
+    .tip-row {
+      flex-wrap: wrap;
+    }
+    .tip-main {
+      flex-basis: calc(100% - 8rem);
+    }
+    .tip-actions {
+      width: 100%;
+      justify-content: flex-end;
+    }
+  }
   /* Duong ke chi cho se tha the - la 1 <li> that nam giua cac the nen tu day cac the ra, khong de cho trong. */
   .tip-drop-line {
     list-style: none;
     height: 3px;
-    margin: 0.25rem 0;
+    margin: -0.25rem 0 0.625rem;
     border-radius: 2px;
     background: #4f46e5;
   }
