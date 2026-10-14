@@ -597,3 +597,40 @@ test("GET /tips/images/:filename: path traversal khong doc duoc file ngoai thu m
     cleanup();
   }
 });
+
+test("dashboard /d/:token: co Tip dang bat -> co nut Tips; tat het -> mat nut", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const token = userToken(ledgerStore);
+    const before = await (await fetch(`${baseUrl}/d/${token}`)).text();
+    assert.doesNotMatch(before, /class="tips-pill"/);
+
+    const tip = ledgerStore.createTip({ title: "T", description: "", imagePath: null });
+    const withTip = await (await fetch(`${baseUrl}/d/${token}`)).text();
+    assert.match(withTip, new RegExp(`href="/d/${token}/tips"`));
+
+    ledgerStore.setTipActive(tip.id, false);
+    const after = await (await fetch(`${baseUrl}/d/${token}`)).text();
+    assert.doesNotMatch(after, /class="tips-pill"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("trang loi rut tien (POST /d/:token/withdraw 422) cung giu nut Tips", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const token = userToken(ledgerStore);
+    ledgerStore.createTip({ title: "T", description: "", imagePath: null });
+    const res = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ bankName: "", bankAccountNumber: "", bankAccountHolder: "" }),
+      redirect: "manual",
+    });
+    assert.equal(res.status, 422);
+    assert.match(await res.text(), /class="tips-pill"/);
+  } finally {
+    cleanup();
+  }
+});

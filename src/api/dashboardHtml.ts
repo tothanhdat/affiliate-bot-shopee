@@ -320,6 +320,18 @@ export function pageShell(title: string, body: string, extraCss = ""): string {
   button:disabled {
     cursor: not-allowed; opacity: 0.55; box-shadow: none; filter: none;
   }
+  /* Hang tieu de: tieu de ben trai, nut Tips (pill) ben phai; man hep thi nut xuong dong chu khong day tieu de. */
+  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+  .tips-pill {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    min-height: 44px; padding: 0 1.1rem; border-radius: 999px;
+    background: oklch(0.5 0.14 300 / 0.35);
+    border: 1px solid oklch(1 0 0 / 0.22);
+    box-shadow: 0 0 18px oklch(0.6 0.17 300 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.12);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    color: var(--text); text-decoration: none; font-size: 0.9375rem; font-weight: 600;
+  }
+  .tips-pill:active { filter: brightness(1.15); }
   button:disabled:hover { filter: none; }
 ${extraCss}
 </style>
@@ -440,6 +452,11 @@ export function renderDashboardPage(input: {
   /** Ten hien thi lay tu profile Telegram/Zalo (user_profiles) - null neu chua co du lieu. */
   displayName: string | null;
   errorMessage?: string;
+  /**
+   * Co it nhat 1 Tip dang bat (2026-10-14) -> hien nut "💡 Tips". TUY CHON, mac dinh false: cac cho goi/test cu
+   * khong phai sua, va khong co Tip thi giao dien y het truoc day (khong hien thu chua ap dung).
+   */
+  hasTips?: boolean;
 }): string {
   // The dang the xep doc (khong phai bang nhieu cot) - trang nay chu yeu mo tu dien thoai qua
   // Telegram/Zalo, bang ngang co nhieu cot se bi cat mat (can cuon ngang moi thay), day la nguyen
@@ -671,7 +688,11 @@ export function renderDashboardPage(input: {
       )
     : "";
 
-  const body = `<h1>💰 Hoa hồng của bạn</h1>
+  const tipsPill = input.hasTips
+    ? `<a class="tips-pill" href="/d/${encodeURIComponent(input.token)}/tips"><span aria-hidden="true">💡</span> Tips</a>`
+    : "";
+
+  const body = `<div class="page-head"><h1>💰 Hoa hồng của bạn</h1>${tipsPill}</div>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
 ${settledNotice}

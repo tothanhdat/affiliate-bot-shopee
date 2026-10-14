@@ -397,6 +397,7 @@ export function createServer(
         platform: identity.platform,
         userId: identity.userId,
         displayName,
+        hasTips: ledgerStore.countActiveTips() > 0,
       })
     );
   });
@@ -498,6 +499,7 @@ export function createServer(
           userId: identity.userId,
           displayName,
           errorMessage,
+          hasTips: ledgerStore.countActiveTips() > 0,
         })
       );
     }
