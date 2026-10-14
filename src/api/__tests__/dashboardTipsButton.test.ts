@@ -24,7 +24,7 @@ test("co Tip dang bat: nut 💡 Tips tro dung /d/<token>/tips, nam cung hang voi
   const html = renderDashboardPage({ ...BASE, hasTips: true });
   assert.match(html, /<a class="tips-pill" href="\/d\/tok123\/tips">/);
   assert.match(html, /💡/);
-  assert.match(html, /<div class="page-head"><h1>💰 Hoa hồng của bạn<\/h1><a class="tips-pill"/);
+  assert.match(html, /<div class="page-head has-tips"><h1>💰 Hoa hồng của bạn<\/h1><a class="tips-pill"/);
 });
 
 test("khong co Tip (hasTips false hoac vang mat): KHONG co dau vet nao cua nut trong markup", () => {
@@ -45,4 +45,11 @@ test("nut Tips cho phep xuong dong tren man hinh hep va co vung bam >= 44px", ()
   const html = renderDashboardPage({ ...BASE, hasTips: true });
   assert.match(html, /\.page-head \{[^}]*flex-wrap: wrap/);
   assert.match(html, /\.tips-pill \{[^}]*min-height: 44px/);
+});
+
+test("co nut Tips: tieu de thu nho theo be rong man hinh de nut van nam cung hang tren dien thoai ~390px; khong co nut thi khong doi", () => {
+  const withTips = renderDashboardPage({ ...BASE, hasTips: true });
+  assert.match(withTips, /\.page-head\.has-tips h1 \{[^}]*font-size: clamp\(/);
+  const without = renderDashboardPage(BASE);
+  assert.match(without, /<div class="page-head"><h1>/); // khong co class has-tips
 });

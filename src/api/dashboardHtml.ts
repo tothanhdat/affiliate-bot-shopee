@@ -332,6 +332,9 @@ export function pageShell(title: string, body: string, extraCss = ""): string {
     color: var(--text); text-decoration: none; font-size: 0.9375rem; font-weight: 600;
   }
   .tips-pill:active { filter: brightness(1.15); }
+  /* Chi khi co nut Tips: thu nho tieu de theo be rong man hinh de nut van nam CUNG HANG tren dien thoai ~360-430px
+     (do that o khung 390px: tieu de 1.75rem + nut vuot 358px nen nut rot xuong dong). Khong co nut thi tieu de y nhu cu. */
+  .page-head.has-tips h1 { font-size: clamp(1.35rem, 5.6vw, 1.75rem); }
   button:disabled:hover { filter: none; }
 ${extraCss}
 </style>
@@ -692,7 +695,7 @@ export function renderDashboardPage(input: {
     ? `<a class="tips-pill" href="/d/${encodeURIComponent(input.token)}/tips"><span aria-hidden="true">💡</span> Tips</a>`
     : "";
 
-  const body = `<div class="page-head"><h1>💰 Hoa hồng của bạn</h1>${tipsPill}</div>
+  const body = `<div class="page-head${input.hasTips ? " has-tips" : ""}"><h1>💰 Hoa hồng của bạn</h1>${tipsPill}</div>
 <p class="identity-line">${identityLine}</p>
 ${errorBlock}
 ${settledNotice}

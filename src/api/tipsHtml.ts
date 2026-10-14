@@ -7,8 +7,8 @@ import { TIPS_PAGE_SCRIPT } from "./tipsPageScript.js";
  * Trang Tips cua user: /d/:token/tips (2026-10-14). Mobile la man hinh CHINH. Slide ngang bang CSS scroll-snap
  * thuan; script chi danh dau slide dang o giua (xem tipsPageScript.ts). Spec muc 7.
  *
- * Bo cuc slide: --gap + spacer 2 dau (11% - gap) + slide 78% -> slide dau/cuoi cung nam CHINH GIUA va luon lo mep
- * slide ke ben (~11% - gap moi phia). Dung % thuan (cung quy chieu = be rong track) thay vi cqw/calc phuc tap
+ * Bo cuc slide: --gap + spacer 2 dau (14% - gap) + slide 72% -> slide dau/cuoi cung nam CHINH GIUA va luon lo mep
+ * slide ke ben (~14% - gap, tru phan bi scale thu nho; do that o khung 390px ban 78%/11% chi lo ~15px - qua mong). Dung % thuan (cung quy chieu = be rong track) thay vi cqw/calc phuc tap
  * de chay duoc tren WebView Zalo cu.
  */
 
@@ -18,7 +18,7 @@ const TIPS_PAGE_CSS = `
   .tips-viewport { position: relative; max-width: 520px; margin: 1.25rem auto 0; }
   @media (max-width: 560px) { .tips-viewport { margin-left: -1rem; margin-right: -1rem; } }
   .tips-track {
-    --gap: 0.875rem;
+    --gap: 0.75rem;
     display: flex;
     gap: var(--gap);
     align-items: flex-start;
@@ -32,9 +32,9 @@ const TIPS_PAGE_CSS = `
     outline: none;
   }
   .tips-track::-webkit-scrollbar { display: none; }
-  .tips-track::before, .tips-track::after { content: ""; flex: 0 0 calc(11% - var(--gap)); }
+  .tips-track::before, .tips-track::after { content: ""; flex: 0 0 calc(14% - var(--gap)); }
   .tip-slide {
-    flex: 0 0 78%;
+    flex: 0 0 72%;
     scroll-snap-align: center;
     scroll-snap-stop: always;
     background: var(--card-bg);
@@ -45,7 +45,7 @@ const TIPS_PAGE_CSS = `
     border-radius: 18px;
     overflow: hidden;
     opacity: 0.45;
-    transform: scale(0.92);
+    transform: scale(0.94);
     transform-origin: center top;
     transition: opacity 0.35s ease, transform 0.35s ease;
     cursor: pointer;
