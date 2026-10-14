@@ -2295,6 +2295,15 @@ export class LedgerStore {
     return row ? rowToCommissionEntry(row) : null;
   }
 
+  /**
+   * Tim don theo ma don KHONG can biet san (khac getEntryByOrderId): unique la (merchant, order_id)
+   * nen ve ly thuyet 2 san co the trung ma. Caller phai tu xu ly truong hop tra ve > 1 dong.
+   */
+  findEntriesByOrderId(orderId: string): CommissionEntry[] {
+    const rows = this.db.prepare(`SELECT * FROM commission_entries WHERE order_id = ?`).all(orderId);
+    return rows.map(rowToCommissionEntry);
+  }
+
   /** Tra ve token da co neu da tung tao, hoac tao moi neu day la lan dau (idempotent theo platform+userId). */
   findOrCreateDashboardToken(platform: Platform, userId: string): DashboardToken {
     const existing = this.db

@@ -47,7 +47,7 @@ import { importShopeeReport, type ShopeeReportImportResult } from "../core/shope
 import { AlertThrottle } from "../core/alertThrottle.js";
 import { describeRiohubSyncError } from "../core/providers/riohubOrdersSource.js";
 import { importTiktokOrders, type RiohubOrderRecord, type TiktokOrderImportResult } from "../core/tiktokOrderImport.js";
-import type { CommissionStatus, Platform, RequestOutcome } from "../core/types.js";
+import type { CommissionEntry, CommissionStatus, Platform, RequestOutcome } from "../core/types.js";
 import type { NotifyUser } from "../core/notification.js";
 import { buildOrdersConfirmedNotification } from "../core/orderImage/ordersConfirmedNotification.js";
 import {
@@ -625,6 +625,40 @@ export function createServer(
   }
 
   /**
+   * Bao user "don ve" cho 1 entry VUA chuyen sang Kha dung - dung chung cho form "Ghi 1 don le" va
+   * API xac nhan thu cong. Best-effort: loi gui khong duoc lam fail response, don da ghi vao ledger roi.
+   */
+  function notifyOrderConfirmed(entry: CommissionEntry): void {
+    const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
+    const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
+    const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
+    const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT);
+    const confirmedItems = [
+      { orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount },
+    ];
+    // So du doc SAU khi don da ghi vao ledger - doc truoc thi anh bao thieu dung don vua ghi.
+    const held = heldInBatch(entry.platform, entry.userId, new Set([entry.orderId]));
+    // No DOC LAP voi lo don nay - co the den tu mot lan import KHAC (don bi tra hang tu truoc).
+    // Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan voi nhau.
+    const debtVnd = ledgerStore.getOutstandingDebtTotal(entry.platform, entry.userId);
+    buildOrdersConfirmedNotification({
+      items: confirmedItems,
+      availableVnd: ledgerStore.getAvailableBalance(entry.platform, entry.userId),
+      withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
+      heldVnd: held?.amountVnd ?? 0,
+      heldUnlockDayText: held?.unlockDayText ?? null,
+      debtVnd,
+      fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl, held, debtVnd),
+      captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
+      imageEnabled: orderImageEnabled,
+    })
+      .then((notification) => notifyUser(entry.platform, entry.userId, notification))
+      .catch((notifyErr) => {
+        console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
+      });
+  }
+
+  /**
    * Trang /admin/withdrawals - gom lai 1 cho vi co 3 noi render no (GET, 2 nhanh loi 422), de 3 noi
    * khong lech nhau ve du lieu canh bao / tab "Da huy".
    */
@@ -1143,35 +1177,7 @@ export function createServer(
       // nhat voi shopeeReportImport.ts (khong DM cho entry pending). Best-effort - loi gui khong duoc
       // lam fail response, don da ghi vao ledger roi.
       if (entry.status === "confirmed") {
-        const { token } = ledgerStore.findOrCreateDashboardToken(entry.platform, entry.userId);
-        const dashboardUrl = `${dashboardBaseUrl}/d/${token}`;
-        const ordersConfirmedTemplate = ledgerStore.getOrdersConfirmedTemplate(ORDERS_CONFIRMED_TEMPLATE_DEFAULT);
-        const captionTemplate = ledgerStore.getOrdersConfirmedCaptionTemplate(
-          ORDERS_CONFIRMED_CAPTION_TEMPLATE_DEFAULT
-        );
-        const confirmedItems = [
-          { orderId: entry.orderId, productName: entry.productName, userShareAmount: entry.userShareAmount },
-        ];
-        // So du doc SAU khi don da ghi vao ledger - doc truoc thi anh bao thieu dung don vua ghi.
-        const held = heldInBatch(entry.platform, entry.userId, new Set([entry.orderId]));
-        // No DOC LAP voi lo don nay - co the den tu mot lan import KHAC (don bi tra hang tu truoc).
-        // Doc CUNG luc voi availableVnd (sau khi ghi xong) de 2 so nhat quan voi nhau.
-        const debtVnd = ledgerStore.getOutstandingDebtTotal(entry.platform, entry.userId);
-        buildOrdersConfirmedNotification({
-          items: confirmedItems,
-          availableVnd: ledgerStore.getAvailableBalance(entry.platform, entry.userId),
-          withdrawalThresholdVnd: ledgerStore.getWithdrawalThresholdVnd(withdrawalThresholdVnd),
-          heldVnd: held?.amountVnd ?? 0,
-          heldUnlockDayText: held?.unlockDayText ?? null,
-          debtVnd,
-          fallbackText: formatOrdersConfirmedReply(ordersConfirmedTemplate, confirmedItems, dashboardUrl, held, debtVnd),
-          captionText: formatOrdersConfirmedCaption(captionTemplate, dashboardUrl, held, debtVnd),
-          imageEnabled: orderImageEnabled,
-        })
-          .then((notification) => notifyUser(entry.platform, entry.userId, notification))
-          .catch((notifyErr) => {
-            console.warn("[user-notify] gui thong bao don moi that bai:", notifyErr);
-          });
+        notifyOrderConfirmed(entry);
       }
       // Lich su (2026-08-23): form "Ghi 1 don le" luon tao 1 entry MOI (recordSingleOrder
       // chi INSERT, khong bao gio UPDATE entry co san) - vi vay khong bao gio co statusTransitions.
@@ -1202,6 +1208,90 @@ export function createServer(
     } catch (err) {
       const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
       res.status(422).type("html").send(renderRecordOrdersPage(shopeeHistory(), { ok: false, message }, null, null, navPendingWithdrawals(), tiktokView()));
+    }
+  });
+
+  /**
+   * API xac nhan THU CONG 1 don "Cho xac nhan" -> "Kha dung" (2026-10-13), goi bang cURL/Postman cho
+   * vai truong hop hiem (don ghi tay ma bao cao Shopee chua ghi "Hoan thanh"). KHONG co nut tren web.
+   *
+   * Dung lai confirmPendingEntry nen luat giu tien chay NGUYEN: don to bi giam theo payout_hold_days,
+   * don NHO co the van o "pending" them vai ngay (tra 200 kem status="pending" + availableFrom, bam
+   * lai sau ngay do de vao Kha dung). CO Y khong kiem nguon cua don: goi cho don tu bao cao Shopee la
+   * tra tien user TRUOC khi Shopee xac nhan - nguoi goi API tu chiu trach nhiem chon dung orderId.
+   * Tra JSON 401 (khong redirect ve trang login) vi caller la cong cu API.
+   */
+  app.post("/admin/api/orders/confirm", (req: Request, res: Response) => {
+    const cookies = parseCookies(req.headers.cookie);
+    if (!adminSessionStore.isValid(cookies[ADMIN_SESSION_COOKIE])) {
+      res.status(401).json({ ok: false, message: "Chưa đăng nhập: gọi POST /admin/login trước để lấy cookie phiên." });
+      return;
+    }
+    const orderId = typeof req.body?.orderId === "string" ? req.body.orderId.trim() : "";
+    if (orderId === "") {
+      res.status(400).json({ ok: false, message: 'Thiếu "orderId" (chuỗi, JSON body).' });
+      return;
+    }
+
+    const matches = ledgerStore.findEntriesByOrderId(orderId);
+    if (matches.length === 0) {
+      res.status(404).json({ ok: false, message: `Không tìm thấy đơn "${orderId}" trong ledger.` });
+      return;
+    }
+    if (matches.length > 1) {
+      res.status(409).json({
+        ok: false,
+        message: `Mã đơn "${orderId}" trùng ở nhiều sàn (${matches.map((m) => m.merchant).join(", ")}), không biết xác nhận đơn nào.`,
+      });
+      return;
+    }
+    const existing = matches[0];
+    if (existing.status !== "pending") {
+      res.status(409).json({
+        ok: false,
+        currentStatus: existing.status,
+        message: `Đơn "${orderId}" đang ở trạng thái "${existing.status}", chỉ xác nhận được đơn "pending".`,
+      });
+      return;
+    }
+
+    try {
+      const entry = ledgerStore.confirmPendingEntry(existing.id, {
+        // Dung chinh so da luu cua don, khong co nguon nao khac de lay.
+        orderAmount: existing.orderAmount,
+        commissionAmount: existing.commissionAmount,
+        fallbackPercents: commissionFallbackPercents(),
+        maxCommissionRatioPercent: orderConfig.maxCommissionRatioPercent,
+        holdConfig: currentOrderConfig().holdConfig,
+      });
+
+      if (entry.status === "confirmed") {
+        ledgerStore.recordOrderStatusEvent(entry.merchant, entry.orderId, "confirmed", todayVnIso());
+        ledgerStore.recordImportHistory({
+          actionType: "single",
+          newOrderIds: [],
+          statusTransitions: [{ orderId: entry.orderId, from: "pending", to: "confirmed" }],
+        });
+        notifyOrderConfirmed(entry);
+      }
+
+      const deferred = entry.status === "pending";
+      res.json({
+        ok: true,
+        orderId: entry.orderId,
+        merchant: entry.merchant,
+        status: entry.status,
+        availableFrom: entry.availableFrom,
+        userShareAmount: entry.userShareAmount,
+        message: deferred
+          ? `Đơn nhỏ: vẫn "Chờ xác nhận" tới ${entry.availableFrom}. Gọi lại API này từ ngày đó để vào Khả dụng.`
+          : entry.availableFrom !== null && entry.availableFrom > todayVnIso()
+            ? `Đã xác nhận, nhưng đơn lớn bị giữ tới ${entry.availableFrom} mới rút được.`
+            : "Đã xác nhận, user có thể rút ngay.",
+      });
+    } catch (err) {
+      const message = err instanceof AppError ? err.userMessage : "Lỗi không xác định, vui lòng thử lại sau.";
+      res.status(422).json({ ok: false, message });
     }
   });
 

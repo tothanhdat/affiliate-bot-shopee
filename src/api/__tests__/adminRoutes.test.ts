@@ -2251,6 +2251,149 @@ test("/admin/orders hien chi tiet tung mon cua don nhieu mon trong o San pham", 
   }
 });
 
+// ---- POST /admin/api/orders/confirm (xac nhan thu cong 1 don pending, goi bang cURL/Postman) ----
+
+async function confirmOrderApi(baseUrl: string, cookie: string | null, body: unknown) {
+  const res = await fetch(`${baseUrl}/admin/api/orders/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+    redirect: "manual",
+  });
+  return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+}
+
+test("POST /admin/api/orders/confirm chua login -> 401 JSON (khong redirect ve trang login)", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const { status, json } = await confirmOrderApi(baseUrl, null, { orderId: "X" });
+    assert.equal(status, 401);
+    assert.equal(json.ok, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/api/orders/confirm chuyen don pending -> Kha dung, ghi su kien + lich su + bao user", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "MANUAL-1",
+      orderAmount: 200_000,
+      commissionAmount: 20_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+      status: "pending",
+    });
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const { status, json } = await confirmOrderApi(baseUrl, cookie, { orderId: "  MANUAL-1 " });
+
+    assert.equal(status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.status, "confirmed");
+    assert.equal(json.userShareAmount, 16_000);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000);
+
+    const history = ledgerStore.listImportHistory(10);
+    assert.equal(history.length, 1);
+    assert.deepEqual(history[0].newOrderIds, []);
+    assert.deepEqual(history[0].statusTransitions, [{ orderId: "MANUAL-1", from: "pending", to: "confirmed" }]);
+
+    await new Promise((resolve) => setImmediate(resolve)); // notify chay best-effort sau response
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].userId, "user-a");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/api/orders/confirm: thieu orderId -> 400, khong co don -> 404, don da Kha dung -> 409 va KHONG ghi lich su", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "ALREADY-OK",
+      orderAmount: 200_000,
+      commissionAmount: 20_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    const cookie = await loginAndGetCookie(baseUrl);
+
+    assert.equal((await confirmOrderApi(baseUrl, cookie, {})).status, 400);
+    assert.equal((await confirmOrderApi(baseUrl, cookie, { orderId: "   " })).status, 400);
+    assert.equal((await confirmOrderApi(baseUrl, cookie, { orderId: "KHONG-CO" })).status, 404);
+
+    const dup = await confirmOrderApi(baseUrl, cookie, { orderId: "ALREADY-OK" });
+    assert.equal(dup.status, 409);
+    assert.equal(dup.json.currentStatus, "confirmed");
+
+    assert.equal(ledgerStore.listImportHistory(10).length, 0);
+    assert.equal(notifyUserCalls.length, 0);
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 16_000); // khong bi cong 2 lan
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/api/orders/confirm: don NHO bi hoan (luat giam) -> van pending, KHONG ghi su kien/lich su, KHONG bao user", async () => {
+  const { logStore, ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    seedRequestLog(logStore, "telegram-user-a-abc123-def");
+    // Nguong don to 100k, don nho cho 1 ngay: user_share cua don nay = 16k < nguong -> don nho.
+    ledgerStore.setSetting("payout_hold_threshold_vnd", "100000");
+    ledgerStore.setSetting("payout_hold_days", "7");
+    ledgerStore.setSetting("payout_hold_small_days", "1");
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc123-def",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "SMALL-1",
+      orderAmount: 200_000,
+      commissionAmount: 20_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+      status: "pending",
+    });
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const { status, json } = await confirmOrderApi(baseUrl, cookie, { orderId: "SMALL-1" });
+
+    assert.equal(status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.status, "pending");
+    assert.equal(json.availableFrom, addDaysToVnIso(todayVnIso(), 1));
+    assert.equal(ledgerStore.getAvailableBalance("telegram", "user-a"), 0);
+    assert.equal(ledgerStore.listImportHistory(10).length, 0);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(notifyUserCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
 /**
  * Tab "Hoa hong gian tiep" (2026-10-14): don khach mua o SHOP KHAC voi link (Shopee ghi "Đơn hàng từ các
  * Shop khác nhau") - tien cua chu bot, nam o bang rieng, hien o /admin/orders?view=indirect.
