@@ -434,3 +434,70 @@ test("xoa Tip: xoa ban ghi VA file anh; id khong co -> 404", async () => {
     cleanup();
   }
 });
+
+async function reorder(baseUrl: string, cookie: string | null, body: unknown) {
+  const res = await fetch(`${baseUrl}/admin/tips/reorder`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+    redirect: "manual",
+  });
+  return { status: res.status, json: (await res.json()) as { ok: boolean; message?: string } };
+}
+
+function seedThree(store: LedgerStore): number[] {
+  return ["A", "B", "C"].map((title) => store.createTip({ title, description: "", imagePath: null }).id);
+}
+
+test("reorder chua dang nhap -> JSON 401 (KHONG redirect ve trang login)", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const { status, json } = await reorder(baseUrl, null, { ids: [] });
+    assert.equal(status, 401);
+    assert.equal(json.ok, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("reorder: hoan vi dung -> 200 va thu tu moi duoc luu", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const [a, b, c] = seedThree(ledgerStore);
+    const { status, json } = await reorder(baseUrl, cookie, { ids: [c, a, b] });
+    assert.equal(status, 200);
+    assert.equal(json.ok, true);
+    assert.deepEqual(ledgerStore.listTips().map((tip) => tip.title), ["C", "A", "B"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("reorder: thieu / thua / trung / sai kieu -> 422 va DB khong doi", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const [a, b, c] = seedThree(ledgerStore);
+    for (const ids of [[a, b], [a, b, c, 9999], [a, a, b], ["x", "y", "z"], "khong phai mang"]) {
+      const { status, json } = await reorder(baseUrl, cookie, { ids });
+      assert.equal(status, 422, JSON.stringify(ids));
+      assert.equal(json.ok, false);
+    }
+    assert.deepEqual(ledgerStore.listTips().map((tip) => tip.title), ["A", "B", "C"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("reorder: khong bi hieu nham la mot :id cua POST /admin/tips/:id (thu tu khai bao route)", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const [a, b, c] = seedThree(ledgerStore);
+    const { status } = await reorder(baseUrl, cookie, { ids: [b, c, a] });
+    assert.equal(status, 200); // neu bi /:id nuot thi se ra 404 voi trang HTML (json() se nem loi)
+  } finally {
+    cleanup();
+  }
+});

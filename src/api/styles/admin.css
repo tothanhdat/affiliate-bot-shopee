@@ -261,4 +261,52 @@
   .details-plain > summary::-webkit-details-marker {
     display: none;
   }
+
+  /*
+   * Danh sach Tips co the keo-tha (/admin/tips, adminTipsHtml.ts). Viet thanh class that thay vi utility
+   * tuy y (xem bay thu 3 o dau file). Khong co preflight nen <ul>/<li> tu bo cham tron va padding.
+   */
+  .tip-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .tip-card {
+    list-style: none;
+    transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  }
+  .tip-card.is-inactive {
+    opacity: 0.6;
+  }
+  .tip-card.is-dragging {
+    opacity: 0.35;
+  }
+  .tip-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 4rem;
+    color: #94a3b8;
+    font-size: 1.125rem;
+    letter-spacing: -0.15em;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tip-handle:hover {
+    color: #475569;
+  }
+  .tip-handle:active {
+    cursor: grabbing;
+  }
+  /* Duong ke chi cho se tha the - la 1 <li> that nam giua cac the nen tu day cac the ra, khong de cho trong. */
+  .tip-drop-line {
+    list-style: none;
+    height: 3px;
+    margin: 0.25rem 0;
+    border-radius: 2px;
+    background: #4f46e5;
+  }
 }

@@ -99,6 +99,30 @@ export function registerTipsRoutes(app: Express, deps: TipsRoutesDeps): void {
     }
   });
 
+  // PHAI khai bao TRUOC "/admin/tips/:id" - neu khong "reorder" bi hieu la mot :id. Route JSON nen tu kiem tra
+  // dang nhap de tra 401 JSON (cong cu/fetch khong xu ly duoc redirect ve trang login).
+  app.post("/admin/tips/reorder", (req: Request, res: Response) => {
+    if (!deps.isAdminSession(req)) {
+      res.status(401).json({ ok: false, message: "Chưa đăng nhập hoặc phiên đã hết hạn, hãy tải lại trang." });
+      return;
+    }
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids)) {
+      res.status(422).json({ ok: false, message: "Danh sách thứ tự không hợp lệ." });
+      return;
+    }
+    try {
+      ledgerStore.reorderTips(ids as number[]);
+      res.json({ ok: true });
+    } catch (err) {
+      if (err instanceof AppError) {
+        res.status(422).json({ ok: false, message: err.userMessage });
+        return;
+      }
+      throw err;
+    }
+  });
+
   app.post("/admin/tips/:id", requireAdminAuth, parseTipForm, (req: Request, res: Response) => {
     const id = parseTipId(req.params.id);
     if (id === null || ledgerStore.getTipById(id) === null) {
