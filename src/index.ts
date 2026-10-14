@@ -191,7 +191,8 @@ const app = createServer(
   notifyZaloGroup,
   env.orderImage.enabled,
   syncZaloGroupMembers,
-  syncTiktokOrders
+  syncTiktokOrders,
+  env.tips.imageDir
 );
 const httpServer = app.listen(env.port, () => {
   console.log(`[http] Core Service dang chay tai http://localhost:${env.port}`);

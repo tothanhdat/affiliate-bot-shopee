@@ -23,6 +23,7 @@ import {
 import { renderAdminDashboardPage } from "./adminDashboardHtml.js";
 import { renderDashboardPage, renderInvalidTokenPage } from "./dashboardHtml.js";
 import { renderHandbookPage } from "./handbookHtml.js";
+import { registerTipsRoutes } from "./tipsRoutes.js";
 import { LINKS_PAGE_SIZE, renderLinksPage } from "./adminLinksHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
 import { AppError, EntryNotPendingError } from "../core/errors.js";
@@ -194,7 +195,12 @@ export function createServer(
    * Keo toan bo don TikTok tu RioHub (2026-10-11). undefined khi TikTok tat/thieu cau hinh: luc do the
    * "Dong bo don TikTok" khong hien va route tra 404 - duong TikTok TRO HOAN TOAN (spec 6, chot 3).
    */
-  syncTiktokOrders?: () => Promise<RiohubOrderRecord[]>
+  syncTiktokOrders?: () => Promise<RiohubOrderRecord[]>,
+  /**
+   * Thu muc luu anh cua Tips (2026-10-14, env TIPS_IMAGE_DIR). Tham so CUOI co mac dinh de cac cho goi cu
+   * (test) khong phai sua.
+   */
+  tipsImageDir = "./data/tips-images"
 ) {
   const app = express();
   // Can de doc dung IP that cua client tu header X-Forwarded-For - Railway (va da so PaaS) dat app
@@ -219,6 +225,10 @@ export function createServer(
     }
     next();
   }
+
+  /** Chi hoi "da dang nhap admin chua" - dung cho route JSON can tra 401 thay vi redirect. */
+  const isAdminSession = (req: Request): boolean =>
+    adminSessionStore.isValid(parseCookies(req.headers.cookie)[ADMIN_SESSION_COOKIE]);
 
   /**
    * Badge "co bao nhieu yeu cau rut dang cho" tren muc nav cua MOI trang /admin (2026-10-04).
@@ -1620,6 +1630,14 @@ export function createServer(
       }
     }
     res.redirect(303, "/admin/settings?groupsSaved=1");
+  });
+
+  registerTipsRoutes(app, {
+    ledgerStore,
+    tipsImageDir,
+    requireAdminAuth,
+    isAdminSession,
+    navPendingWithdrawals,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

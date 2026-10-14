@@ -53,6 +53,7 @@ const NAV_ITEMS: Array<{ key: string; href: string; label: string; icon: keyof t
   { key: "orders", href: "/admin/orders", label: "Đơn hàng", icon: "shopping-cart" },
   { key: "links", href: "/admin/links", label: "Link đã tạo", icon: "link" },
   { key: "record-orders", href: "/admin/record-orders", label: "Ghi nhận đơn hàng", icon: "file-plus" },
+  { key: "tips", href: "/admin/tips", label: "Tips", icon: "lightbulb" },
   { key: "settings", href: "/admin/settings", label: "Cấu hình", icon: "settings" },
 ];
 
@@ -117,6 +118,8 @@ export const ICON_PATHS: Record<string, string> = {
     '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
   bell:
     '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  lightbulb:
+    '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
   save:
     '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
   bot:

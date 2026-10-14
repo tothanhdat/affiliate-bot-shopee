@@ -1,0 +1,436 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import type { AddressInfo } from "node:net";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createServer } from "../server.js";
+import { AdminSessionStore } from "../../core/adminAuth.js";
+import { LedgerStore } from "../../core/ledgerStore.js";
+import { LogStore } from "../../core/logStore.js";
+import { LinkResolverService } from "../../core/linkResolverService.js";
+import { RateLimiter } from "../../core/rateLimiter.js";
+import { MockAffiliateProvider } from "../../core/providers/mockProvider.js";
+
+const ADMIN_PASSWORD = "test-admin-password";
+const ORDER_CONFIG = {
+  taxPercent: 0,
+  platformFeePercent: 0,
+  userSharePercent: 80,
+  maxCommissionRatioPercent: 1000,
+  holdConfig: { thresholdVnd: 0, holdDays: 0 },
+};
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
+
+function setup() {
+  const logStore = new LogStore(":memory:");
+  const ledgerStore = new LedgerStore(":memory:");
+  const rateLimiter = new RateLimiter(1000, 60_000);
+  const adminLoginRateLimiter = new RateLimiter(1000, 60_000);
+  const resolver = new LinkResolverService(new MockAffiliateProvider(), logStore, rateLimiter);
+  const adminSessionStore = new AdminSessionStore(ADMIN_PASSWORD);
+  const proofDir = mkdtempSync(join(tmpdir(), "withdrawal-proofs-"));
+  const tipsImageDir = mkdtempSync(join(tmpdir(), "tips-images-"));
+
+  const app = createServer(
+    resolver,
+    logStore,
+    ledgerStore,
+    async () => {},
+    50_000,
+    adminSessionStore,
+    ORDER_CONFIG,
+    proofDir,
+    adminLoginRateLimiter,
+    "http://localhost:3002",
+    async () => {},
+    undefined, // notifyZaloGroup
+    true, // orderImageEnabled
+    undefined, // syncZaloGroupMembers
+    undefined, // syncTiktokOrders
+    tipsImageDir
+  );
+  const httpServer = app.listen(0);
+  const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+
+  function cleanup() {
+    httpServer.close();
+    rateLimiter.stop();
+    adminLoginRateLimiter.stop();
+    logStore.close();
+    ledgerStore.close();
+    rmSync(proofDir, { recursive: true, force: true });
+    rmSync(tipsImageDir, { recursive: true, force: true });
+  }
+  return { ledgerStore, baseUrl, tipsImageDir, cleanup };
+}
+
+async function login(baseUrl: string): Promise<string> {
+  const res = await fetch(`${baseUrl}/admin/login`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `password=${encodeURIComponent(ADMIN_PASSWORD)}`,
+    redirect: "manual",
+  });
+  const cookie = res.headers.get("set-cookie");
+  assert.ok(cookie, "dang nhap phai tra cookie");
+  return cookie.split(";")[0];
+}
+
+function tipForm(
+  fields: Record<string, string>,
+  image?: { bytes: Uint8Array; type: string; name: string }
+): FormData {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) formData.append(key, value);
+  if (image) formData.append("image", new Blob([image.bytes], { type: image.type }), image.name);
+  return formData;
+}
+
+function post(baseUrl: string, path: string, cookie: string | null, body: FormData | URLSearchParams) {
+  return fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: cookie ? { cookie } : {},
+    body,
+    redirect: "manual",
+  });
+}
+
+test("chua dang nhap: moi route /admin/tips* redirect ve /admin/login", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const get = await fetch(`${baseUrl}/admin/tips`, { redirect: "manual" });
+    assert.equal(get.status, 303);
+    assert.equal(get.headers.get("location"), "/admin/login");
+    for (const path of ["/admin/tips", "/admin/tips/1", "/admin/tips/1/active", "/admin/tips/1/delete"]) {
+      const res = await post(baseUrl, path, null, new URLSearchParams());
+      assert.equal(res.status, 303, path);
+      assert.equal(res.headers.get("location"), "/admin/login", path);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /admin/tips: 200, co muc Tips trong menu va trang thai rong", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/tips`, { headers: { cookie } });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /href="\/admin\/tips"/);
+    assert.match(html, /Chưa có Tip nào/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip co anh PNG: 303, ghi DB, file nam trong TIPS_IMAGE_DIR voi duoi .png", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const res = await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "Meo 1", description: "Noi dung" }, { bytes: PNG, type: "image/png", name: "x.png" })
+    );
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "/admin/tips");
+    const [created] = ledgerStore.listTips();
+    assert.equal(created.title, "Meo 1");
+    assert.match(created.imagePath ?? "", /\.png$/);
+    assert.equal(existsSync(join(tipsImageDir, created.imagePath as string)), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip khong anh: duoc", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const res = await post(baseUrl, "/admin/tips", cookie, tipForm({ title: "Chi co chu", description: "" }));
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.listTips()[0].imagePath, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip: file GIA MAO (mimetype image/png nhung noi dung la chu) -> 422, khong ghi DB, khong ghi file", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const fake = new TextEncoder().encode("day khong phai anh");
+    const res = await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "Gia mao", description: "mo ta giu lai" }, { bytes: fake, type: "image/png", name: "fake.png" })
+    );
+    assert.equal(res.status, 422);
+    const html = await res.text();
+    assert.match(html, /Ảnh phải là JPG, PNG hoặc WebP/);
+    assert.match(html, /value="Gia mao"/); // giu nguyen chu da go
+    assert.match(html, />mo ta giu lai<\/textarea>/);
+    assert.equal(ledgerStore.listTips().length, 0);
+    assert.deepEqual(existsSync(tipsImageDir) ? readdirSync(tipsImageDir) : [], []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip: SVG bi tu choi", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const res = await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "SVG", description: "" }, { bytes: svg, type: "image/svg+xml", name: "a.svg" })
+    );
+    assert.equal(res.status, 422);
+    assert.equal(ledgerStore.listTips().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip: anh > 5MB -> 422 voi thong bao ro, khong ghi gi", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    big.set(PNG);
+    const res = await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "Anh to", description: "" }, { bytes: big, type: "image/png", name: "big.png" })
+    );
+    assert.equal(res.status, 422);
+    assert.match(await res.text(), /Ảnh quá lớn, tối đa 5MB/);
+    assert.equal(ledgerStore.listTips().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tao Tip: tieu de rong -> 422 va giu nguyen mo ta da go", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const res = await post(baseUrl, "/admin/tips", cookie, tipForm({ title: "  ", description: "mo ta dai" }));
+    assert.equal(res.status, 422);
+    const html = await res.text();
+    assert.match(html, /Tiêu đề không được để trống/);
+    assert.match(html, />mo ta dai<\/textarea>/);
+    assert.equal(ledgerStore.listTips().length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: doi chu va GIU anh khi khong chon gi", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "Cu", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    const created = ledgerStore.listTips()[0];
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: "Moi", description: "mo ta moi", imageAction: "keep" })
+    );
+    assert.equal(res.status, 303);
+    const after = ledgerStore.getTipById(created.id);
+    assert.equal(after?.title, "Moi");
+    assert.equal(after?.imagePath, created.imagePath);
+    assert.equal(existsSync(join(tipsImageDir, created.imagePath as string)), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: thay anh -> file cu bi xoa, file moi ton tai", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "T", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    const created = ledgerStore.listTips()[0];
+    const oldFile = created.imagePath as string;
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: "T", description: "", imageAction: "replace" }, { bytes: JPEG, type: "image/jpeg", name: "b.jpg" })
+    );
+    assert.equal(res.status, 303);
+    const after = ledgerStore.getTipById(created.id);
+    assert.match(after?.imagePath ?? "", /\.jpg$/);
+    assert.equal(existsSync(join(tipsImageDir, oldFile)), false);
+    assert.equal(existsSync(join(tipsImageDir, after?.imagePath as string)), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: chon file nhung radio van de 'keep' -> van coi la thay anh (khong bo qua im lang)", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(baseUrl, "/admin/tips", cookie, tipForm({ title: "T", description: "" }));
+    const created = ledgerStore.listTips()[0];
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: "T", description: "", imageAction: "keep" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    assert.equal(res.status, 303);
+    assert.match(ledgerStore.getTipById(created.id)?.imagePath ?? "", /\.png$/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: bo anh -> imagePath null va file bi xoa", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "T", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    const created = ledgerStore.listTips()[0];
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: "T", description: "", imageAction: "remove" })
+    );
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.getTipById(created.id)?.imagePath, null);
+    assert.equal(existsSync(join(tipsImageDir, created.imagePath as string)), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: 'replace' ma khong co file -> 422, giu nguyen anh cu", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "T", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    const created = ledgerStore.listTips()[0];
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: "T", description: "", imageAction: "replace" })
+    );
+    assert.equal(res.status, 422);
+    assert.equal(ledgerStore.getTipById(created.id)?.imagePath, created.imagePath);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip: tieu de rong -> 422, file anh moi vua upload KHONG bi bo mo coi", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(baseUrl, "/admin/tips", cookie, tipForm({ title: "T", description: "" }));
+    const created = ledgerStore.listTips()[0];
+    const res = await post(
+      baseUrl,
+      `/admin/tips/${created.id}`,
+      cookie,
+      tipForm({ title: " ", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    assert.equal(res.status, 422);
+    assert.deepEqual(existsSync(tipsImageDir) ? readdirSync(tipsImageDir) : [], []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("sua Tip khong ton tai -> 404", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    const res = await post(baseUrl, "/admin/tips/9999", cookie, tipForm({ title: "T", description: "" }));
+    assert.equal(res.status, 404);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tat / bat Tip qua POST /admin/tips/:id/active", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(baseUrl, "/admin/tips", cookie, tipForm({ title: "T", description: "" }));
+    const id = ledgerStore.listTips()[0].id;
+
+    const off = await post(baseUrl, `/admin/tips/${id}/active`, cookie, new URLSearchParams({ active: "0" }));
+    assert.equal(off.status, 303);
+    assert.equal(ledgerStore.getTipById(id)?.isActive, false);
+
+    const on = await post(baseUrl, `/admin/tips/${id}/active`, cookie, new URLSearchParams({ active: "1" }));
+    assert.equal(on.status, 303);
+    assert.equal(ledgerStore.getTipById(id)?.isActive, true);
+
+    const missing = await post(baseUrl, "/admin/tips/9999/active", cookie, new URLSearchParams({ active: "0" }));
+    assert.equal(missing.status, 404);
+  } finally {
+    cleanup();
+  }
+});
+
+test("xoa Tip: xoa ban ghi VA file anh; id khong co -> 404", async () => {
+  const { baseUrl, ledgerStore, tipsImageDir, cleanup } = setup();
+  try {
+    const cookie = await login(baseUrl);
+    await post(
+      baseUrl,
+      "/admin/tips",
+      cookie,
+      tipForm({ title: "T", description: "" }, { bytes: PNG, type: "image/png", name: "a.png" })
+    );
+    const created = ledgerStore.listTips()[0];
+    const res = await post(baseUrl, `/admin/tips/${created.id}/delete`, cookie, new URLSearchParams());
+    assert.equal(res.status, 303);
+    assert.equal(ledgerStore.listTips().length, 0);
+    assert.equal(existsSync(join(tipsImageDir, created.imagePath as string)), false);
+
+    const again = await post(baseUrl, `/admin/tips/${created.id}/delete`, cookie, new URLSearchParams());
+    assert.equal(again.status, 404);
+  } finally {
+    cleanup();
+  }
+});
