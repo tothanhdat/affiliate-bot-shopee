@@ -1,10 +1,14 @@
 import multer from "multer";
+import { existsSync } from "node:fs";
+import { basename, extname, resolve } from "node:path";
 import type { Express, Request, RequestHandler, Response, NextFunction } from "express";
 import type { LedgerStore } from "../core/ledgerStore.js";
 import { AppError, InvalidTipError } from "../core/errors.js";
 import { TIP_IMAGE_MAX_BYTES, deleteTipImage, saveTipImage } from "../core/tipImage.js";
 import { adminShell } from "./adminHtml.js";
 import { renderAdminTipsPage, type TipsAdminDraft } from "./adminTipsHtml.js";
+import { renderInvalidTokenPage } from "./dashboardHtml.js";
+import { renderTipsPage } from "./tipsHtml.js";
 
 /**
  * Route cua Tips (2026-10-14), tach khoi server.ts (da qua dai). Xem
@@ -178,5 +182,33 @@ export function registerTipsRoutes(app: Express, deps: TipsRoutesDeps): void {
     }
     deleteTipImage(tipsImageDir, removed.imagePath);
     res.redirect(303, "/admin/tips");
+  });
+
+  // --- Route cho USER (2026-10-14) ---
+
+  app.get("/d/:token/tips", (req: Request, res: Response) => {
+    const identity = ledgerStore.getUserByToken(req.params.token);
+    if (!identity) {
+      res.status(404).type("html").send(renderInvalidTokenPage());
+      return;
+    }
+    res.type("html").send(renderTipsPage({ token: req.params.token, tips: ledgerStore.listTips({ onlyActive: true }) }));
+  });
+
+  // Anh Tips phuc vu CONG KHAI (khong token): noi dung la meo huong dan chung, khong phai du lieu user, ten file ngau
+  // nhien. Khac route anh chung tu rut tien o cho KHONG kiem tra chu so huu vi khong co chu so huu.
+  const SERVABLE_IMAGE_EXTENSIONS = new Set([".jpg", ".png", ".webp"]);
+  app.get("/tips/images/:filename", (req: Request, res: Response) => {
+    const filename = basename(req.params.filename);
+    const filePath = resolve(tipsImageDir, filename);
+    if (!SERVABLE_IMAGE_EXTENSIONS.has(extname(filename).toLowerCase()) || !existsSync(filePath)) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // headers cua sendFile chi duoc gan khi gui THANH CONG: 404 khong bao gio mang "immutable" (se bi cache vinh vien).
+    res.sendFile(filePath, { headers: { "Cache-Control": "public, max-age=31536000, immutable" }, dotfiles: "deny" }, (err) => {
+      if (err && !res.headersSent) res.status(404).end();
+    });
   });
 }

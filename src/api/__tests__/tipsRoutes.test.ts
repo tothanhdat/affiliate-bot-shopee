@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../server.js";
@@ -498,6 +498,102 @@ test("reorder: khong bi hieu nham la mot :id cua POST /admin/tips/:id (thu tu kh
     const { status } = await reorder(baseUrl, cookie, { ids: [b, c, a] });
     assert.equal(status, 200); // neu bi /:id nuot thi se ra 404 voi trang HTML (json() se nem loi)
   } finally {
+    cleanup();
+  }
+});
+
+
+function userToken(store: LedgerStore): string {
+  return store.findOrCreateDashboardToken("zalo", "tips-user").token;
+}
+
+test("GET /d/:token/tips: token sai -> 404 trang khong hop le", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const res = await fetch(`${baseUrl}/d/khong-co-token/tips`);
+    assert.equal(res.status, 404);
+    assert.match(await res.text(), /Đường dẫn không hợp lệ/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /d/:token/tips: chi hien Tip DANG BAT, dung thu tu, kem anh", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const token = userToken(ledgerStore);
+    const a = ledgerStore.createTip({ title: "Dau tien", description: "", imagePath: "a.png" });
+    const b = ledgerStore.createTip({ title: "Da tat", description: "", imagePath: null });
+    ledgerStore.createTip({ title: "Thu ba", description: "", imagePath: null });
+    ledgerStore.setTipActive(b.id, false);
+    ledgerStore.reorderTips([ledgerStore.listTips()[2].id, a.id, b.id]);
+
+    const res = await fetch(`${baseUrl}/d/${token}/tips`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.ok(html.indexOf("Thu ba") < html.indexOf("Dau tien"), "thu tu theo sort_order");
+    assert.doesNotMatch(html, /Da tat/);
+    assert.match(html, /src="\/tips\/images\/a\.png"/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /d/:token/tips: tat het Tip -> 200 voi cau 'chua co meo' (khong 404)", async () => {
+  const { baseUrl, ledgerStore, cleanup } = setup();
+  try {
+    const token = userToken(ledgerStore);
+    const tip = ledgerStore.createTip({ title: "T", description: "", imagePath: null });
+    ledgerStore.setTipActive(tip.id, false);
+    const res = await fetch(`${baseUrl}/d/${token}/tips`);
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /Chưa có mẹo nào/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /tips/images/:filename: tra anh + header cache dai; KHONG can dang nhap", async () => {
+  const { baseUrl, tipsImageDir, cleanup } = setup();
+  try {
+    mkdirSync(tipsImageDir, { recursive: true });
+    writeFileSync(join(tipsImageDir, "ok.png"), PNG);
+    const res = await fetch(`${baseUrl}/tips/images/ok.png`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "image/png");
+    assert.equal(res.headers.get("cache-control"), "public, max-age=31536000, immutable");
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    assert.deepEqual(new Uint8Array(await res.arrayBuffer()), PNG);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /tips/images/:filename: khong ton tai -> 404 va KHONG kem header cache immutable", async () => {
+  const { baseUrl, cleanup } = setup();
+  try {
+    const res = await fetch(`${baseUrl}/tips/images/khong-co.png`);
+    assert.equal(res.status, 404);
+    assert.doesNotMatch(res.headers.get("cache-control") ?? "", /immutable/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /tips/images/:filename: path traversal khong doc duoc file ngoai thu muc; duoi la bi tu choi", async () => {
+  const { baseUrl, tipsImageDir, cleanup } = setup();
+  try {
+    mkdirSync(tipsImageDir, { recursive: true });
+    writeFileSync(join(tipsImageDir, "..", "secret.png"), PNG); // nam NGOAI thu muc anh
+    writeFileSync(join(tipsImageDir, "notes.txt"), "khong phai anh");
+
+    const traversal = await fetch(`${baseUrl}/tips/images/..%2Fsecret.png`);
+    assert.equal(traversal.status, 404);
+
+    const wrongExt = await fetch(`${baseUrl}/tips/images/notes.txt`);
+    assert.equal(wrongExt.status, 404);
+  } finally {
+    rmSync(join(tipsImageDir, "..", "secret.png"), { force: true });
     cleanup();
   }
 });

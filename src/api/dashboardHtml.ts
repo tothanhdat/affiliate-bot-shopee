@@ -53,7 +53,8 @@ function cancelReason(entry: CommissionEntry): string | null {
   return idx === -1 ? entry.note : entry.note.slice(idx + marker.length);
 }
 
-function pageShell(title: string, body: string): string {
+/** Vo trang chung cua trang user (nen tim + glow). `extraCss` la CSS rieng cua tung trang (vd trang Tips). */
+export function pageShell(title: string, body: string, extraCss = ""): string {
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -320,6 +321,7 @@ function pageShell(title: string, body: string): string {
     cursor: not-allowed; opacity: 0.55; box-shadow: none; filter: none;
   }
   button:disabled:hover { filter: none; }
+${extraCss}
 </style>
 </head>
 <body>
