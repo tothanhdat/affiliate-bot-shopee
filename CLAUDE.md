@@ -40,6 +40,7 @@ src/core/                       logic nghiệp vụ, KHONG biet gi ve Telegram/H
   subId rateLimiter errors                              -> luong-tao-link.md
   ledgerStore commissionMath payoutHold orderIngest
   userCommissionOverride money vietnamDate              -> ledger-va-tien.md
+  tipImage (+ bảng tips trong ledgerStore)              -> trang-cho-user.md + ledger-va-tien.md
   commissionLookup                                      -> tra-hoa-hong-truoc.md
   logStore                                              -> logstore.md
   shopeeReportImport                                    -> import-bao-cao-shopee.md
@@ -54,7 +55,8 @@ src/api/
   adminHtml styles/admin.css adminAssets htmlHelpers    -> admin-ui-nen-tang.md
   adminLinksHtml + rang buoc tung trang /admin/*        -> admin-ui-tung-trang.md
   adminDashboardHtml                                    -> admin-dashboard.md
-  dashboardHtml handbookHtml                            -> trang-cho-user.md
+  dashboardHtml handbookHtml tipsHtml tipsPageScript    -> trang-cho-user.md
+  adminTipsHtml tipsAdminScript tipsRoutes              -> admin-ui-tung-trang.md + server-va-wiring.md
 src/adapters/
   shared/replyText                                      -> settings-va-template.md
   shared/adminNotifier                                  -> server-va-wiring.md
@@ -87,13 +89,13 @@ src/index.ts  wiring + notifyUser/notifyAdmin/notifyZaloGroup -> server-va-wirin
 | `import-bao-cao-shopee.md` | Sửa `shopeeReportImport.ts`, cách đọc cột báo cáo Shopee, bảng quyết định trạng thái đơn |
 | `doi-soat-don-tiktok.md` | Sửa `tiktokOrderImport.ts`, `tiktokCommission.ts`, `orderStatusApply.ts`, `riohubOrdersSource.ts`, nút đồng bộ đơn TikTok; đổi mốc chốt đơn hoặc cách tính hoa hồng TikTok |
 | `admin-ui-nen-tang.md` | **Trước khi sửa giao diện bất kỳ trang `/admin/*`** — 4 cái bẫy Tailwind không-preflight đã dính thật nằm ở đây |
-| `admin-ui-tung-trang.md` | Sửa `/admin/orders`, `/admin/users`, `/admin/withdrawals`, `/admin/record-orders`, `/admin/settings`, `/admin/links` |
+| `admin-ui-tung-trang.md` | Sửa `/admin/orders`, `/admin/users`, `/admin/withdrawals`, `/admin/record-orders`, `/admin/settings`, `/admin/links`, `/admin/tips` |
 | `admin-dashboard.md` | Sửa `/admin/dashboard`, chart, màu trạng thái, `dashboardStats.ts`, công thức lợi nhuận chủ bot |
 | `anh-don-ve.md` | Sửa `src/core/orderImage/*` (satori/resvg/font/toạ độ) hoặc QR chuyển khoản `vietQr.ts` |
 | `zalo-adapter.md` | Sửa `zalo/bot.ts` hay `telegram/bot.ts`: DM, group, chào mừng, kết bạn, reaction, roster thành viên |
 | `faq-zalo-dm.md` | Sửa `src/core/faq/*`, thêm chủ đề FAQ, đổi nhà cung cấp LLM, sửa hành vi im lặng/escalate |
 | `settings-va-template.md` | Thêm/sửa setting ở `/admin/settings`, sửa text tin nhắn bot, đổi default template/FAQ |
-| `trang-cho-user.md` | Sửa dashboard cá nhân (`/d/:token`) hoặc Sổ tay hoàn tiền (`/so-tay`) |
+| `trang-cho-user.md` | Sửa dashboard cá nhân (`/d/:token`), trang Tips (`/d/:token/tips`) hoặc Sổ tay hoàn tiền (`/so-tay`) |
 | `server-va-wiring.md` | Thêm route, sửa `server.ts`, `index.ts`, `env.ts`, đường thông báo cho user/admin |
 | `van-hanh-va-deploy.md` | Chạy/sửa script `src/scripts/*`, chuẩn bị instance mới, bàn giao cho người vận hành khác |
 

@@ -31,3 +31,7 @@
 ## vietnamBanks.ts
 
 **vietnamBanks.ts** — VIETNAM_BANKS: danh sach ten ngan hang/vi dien tu VN pho bien (khong xac thuc gia tri, chi goi y cho <select> tren form rut tien).
+
+## Route Tips (2026-10-14) — `tipsRoutes.ts`
+
+`registerTipsRoutes(app, deps)` gọi ở cuối `createServer()` (tách khỏi `server.ts`): admin `GET/POST /admin/tips`, `POST /admin/tips/reorder` (JSON, **trước** `/:id`), `POST /admin/tips/:id`, `/:id/active`, `/:id/delete`; user `GET /d/:token/tips` và `GET /tips/images/:filename` (công khai, chỉ `.jpg/.png/.webp`, `basename()` chặn path traversal). `createServer()` nhận `tipsImageDir` là tham số CUỐI (mặc định `./data/tips-images`, env `TIPS_IMAGE_DIR`). `isAdminSession(req)` được tạo cạnh `requireAdminAuth` cho route JSON.

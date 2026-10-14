@@ -132,3 +132,16 @@
 - **Chip noi gui dung mau TRUNG TINH** (vien, khong nen mau): 3 mau mang nghia trong khu /admin da kin (cam = cho xac nhan / loi nhuan chu bot, xanh la = kha dung, xanh duong = Zalo), them mau thu tu se lam loang nghia cua chung. Hinh dang + chu la du de phan biet.
 
 - Bo loc: o tim 1 dong (**ten user** / ten san pham / userId / link goc / Sub_id), Kenh, Ket qua (Thanh cong / Loi), va **khoang ngay** (2 o `<input type="date">`, ten tham so `from`/`to`). Ngay sai dinh dang bi BO QUA qua parseIsoDateParam() trong server.ts chu khong loc ra bang rong - day la query string admin go tay duoc, loc rong oan se lam ho tuong mat du lieu; ham do doi chieu lai chuoi goc vi `new Date()` tu "cuon" ngay khong co that (31/02 -> 03/03). Moi link phan trang di qua linksPageHref() GIU NGUYEN ca 6 bo loc.
+
+## /admin/tips (adminTipsHtml.ts, tipsAdminScript.ts, tipsRoutes.ts) — 2026-10-14
+
+Thêm / sửa / **Tắt-Bật** / Xoá Tips; thứ tự kéo-thả chính là thứ tự slide bên user. Ràng buộc:
+
+- **Kéo-thả = HTML5 Drag and Drop gốc, CHỈ tay nắm `.tip-handle` có `draggable`** (kéo cả card sẽ làm không bôi chọn được chữ trong ô nhập). Là `<span>` chứ không `<button>` (Firefox không bắn `dragstart` từ `<button>`). Thả xong TỰ LƯU qua `POST /admin/tips/reorder` (JSON); lưu lỗi thì card tự trả về chỗ cũ + hiện `#tips-order-error`. **Không dùng được bằng cảm ứng** — chủ bot chốt bỏ nút ↑↓ dự phòng vì admin dùng máy tính.
+- **`POST /admin/tips/reorder` khai báo TRƯỚC `/admin/tips/:id`** (nếu không `reorder` bị hiểu là một `:id`) và tự kiểm tra đăng nhập để trả **JSON 401** thay vì redirect.
+- **Xoá = `<details>` hai bước tại chỗ**, nút "Huỷ" đóng bằng `data-close-details` trong script. **Không `window.confirm()`** (từng treo trình duyệt tự động khi test).
+- **Tip đã tắt vẫn nằm trong danh sách admin** (mờ + nhãn CHỮ "Đã tắt", vẫn kéo được); trạng thái không chỉ dựa vào độ mờ. Hint "Muốn giữ lại để dùng sau thì Tắt, đừng Xoá" là bắt buộc: Xoá mất cả file ảnh.
+- **Sửa ảnh**: có file upload mà radio không phải "Bỏ ảnh" → coi là thay ảnh (kể cả radio đang "Giữ nguyên" — chọn file xong mà bị bỏ qua im lặng là bẫy); `replace` mà không có file → 422. File ảnh mới lưu trước, DB lỗi thì xoá lại; file cũ chỉ xoá SAU khi DB ghi xong.
+- Lỗi multer (quá 5MB) KHÔNG rơi xuống error handler chung (JSON 500) mà thành 422 trên trang, giữ nguyên chữ admin đã gõ. Ảnh được nhận diện bằng chữ ký file (jpg/png/webp), không tin mimetype; không nhận SVG/GIF.
+- Class `.tip-*` là CSS thật trong `admin.css`. Script test bằng `node:vm` trên DOM giả: chốt logic (chỗ chèn, thứ tự id, hoàn tác khi lỗi), KHÔNG chứng minh được cảm giác kéo bằng chuột thật. **Đã kiểm 2026-10-14**: chuột giả lập qua trình duyệt tự động KHÔNG kích hoạt được drag gốc (kéo xong thứ tự không đổi — không phải lỗi code); bắn `DragEvent` + `DataTransfer` trực tiếp vào DOM thật thì dragstart → dragover → drop → lưu server đúng. Kéo bằng chuột thật vẫn cần người thử tay.
+- Bố cục nhỏ chưa tối ưu: nút Sửa và Xoá xếp dọc (mỗi `<details>` là một khối), hint "Tắt, đừng Xoá" trôi sang phải khi form xác nhận xoá mở ra.
