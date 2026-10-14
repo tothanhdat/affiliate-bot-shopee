@@ -147,3 +147,9 @@ test("anh Tips hien DAY DU, khong bi cat: khung doc 2:3 + object-fit contain (an
   assert.doesNotMatch(html, /object-fit: cover/);
   assert.doesNotMatch(html, /aspect-ratio: 4 \/ 3/);
 });
+
+test("tieu de cua Tip can GIUA (text-align: center) va cat dong can bang de tieu de 2 dong khong le", () => {
+  const html = renderTipsPage({ token: "tok", tips: [tip(1), tip(2)] });
+  assert.match(html, /h2\.tip-title \{[^}]*text-align: center/);
+  assert.match(html, /h2\.tip-title \{[^}]*text-wrap: balance/);
+});
