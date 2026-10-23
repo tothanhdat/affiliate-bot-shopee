@@ -16,7 +16,7 @@
 | Ngày xem (D) | "Hôm nay" hoặc "Hôm qua"; ngày = [00:00, 00:00 ngày sau) giờ Asia/Ho_Chi_Minh. |
 | Số nhân vật | Tối đa **30**. |
 | Sức chứa shop | Tối đa **5 người bên trong cùng lúc** + tối đa **10 ô chờ** ngoài cửa. |
-| Hàng chờ theo dữ liệu | Độ dài mục tiêu = `min(10, ceil(U_S / 2))`, `U_S` = số user unique có link ở shop S trong ngày D **trong số nhân vật của cảnh**. Hàng chờ chỉ gồm người thật sự có link ở shop đó (chi tiết mục 6). |
+| Hàng chờ theo dữ liệu | Độ dài mục tiêu = `min(10, ceil(U_S / 2), E_S − 1)`. `U_S` = số user unique tạo link thành công ở shop S trong ngày D, **đếm trên toàn bộ dữ liệu** (không chỉ 30 nhân vật). `E_S` = số nhân vật trong cảnh có ≥ 1 lượt ghé S (chặn trên, vì không có khách giả). Hàng chờ chỉ gồm người thật sự có link ở shop đó; 1 user = 1 người dù có bao nhiêu link (chi tiết mục 6). |
 | Bảng đếm trên biển hiệu | Mỗi shop có bảng nổi "🔗 N link hôm nay" (đếm trên **mọi** user Zalo ngày D, khớp dòng tóm tắt); TikTok tắt → "Tạm đóng cửa". "Hôm qua" → "N link hôm qua". |
 | ×N trên nhãn | Tổng số link ngày D của user đó (cả 2 sàn), cố định từ lúc tải trang, không đếm dần. 0 link → không hiện. |
 | Lặp | Cảnh **diễn lại** các lượt của ngày D liên tục (có chú thích rõ). |
@@ -112,6 +112,7 @@ interface StoreSceneData {
   isToday: boolean;               // chữ "hôm nay"/"hôm qua" trên bảng đếm
   tiktokOpen: boolean;
   storeLinks: { shopee: number; tiktokshop: number };   // = summary.shopeeLinks/tiktokLinks (mọi user)
+  storeUsers: { shopee: number; tiktokshop: number };   // U_S: số user UNIQUE có ≥1 link ở sàn đó ngày D (mọi user)
   characters: SceneCharacter[];   // ≤ 30, theo thứ tự ưu tiên
 }
 interface SceneCharacter {
@@ -160,7 +161,7 @@ interface SceneCharacter {
 
 ## 6. Đồ thị đường đi + giữ chỗ
 
-**Đồ thị viết tay** (`graph.ts`), toạ độ mặt phẳng XZ. Loại điểm: spawn (4 mép bản đồ) · vỉa hè · đầu vạch sang đường (qua đường **chỉ** bằng cạnh vạch) · cửa ngoài ↔ cửa trong (mỗi shop) · 5 chỗ xem hàng (mỗi shop) · 10 ô chờ (mỗi shop, xếp thành hàng **uốn dọc vỉa hè** cạnh cửa; ô 1 sát cửa) · vòng dạo quanh 2 sân trước · ghế. Hai hàng chờ không được chắn lối vạch sang đường (test hình học).
+**Đồ thị viết tay** (`graph.ts`), toạ độ mặt phẳng XZ. Loại điểm: spawn (4 mép bản đồ) · vỉa hè · đầu vạch sang đường (qua đường **chỉ** bằng cạnh vạch) · cửa ngoài ↔ cửa trong (mỗi shop) · 5 chỗ xem hàng (mỗi shop) · 10 ô chờ (mỗi shop, xếp thành hàng **uốn dọc vỉa hè** cạnh cửa; ô 1 sát cửa) · vòng dạo quanh 2 sân trước · ghế. Hai hàng chờ: các ô cách đều nhau (khoảng cách cố định ~0.7 đơn vị, đủ để 10 người đọc ra là một hàng dài chứ không dồn cụm), **không chắn vạch sang đường và không đứng trước mặt kính** của shop (test hình học).
 
 - **Tìm đường:** Dijkstra trên đồ thị tĩnh (không khoá cạnh động); kết quả xác định. Đồ thị bắt buộc liên thông (test).
 - **Làn:** mỗi cạnh có 2 làn, mỗi nhân vật đi lệch sang **phải theo hướng đi** một khoảng `0.25 + (seed mod 3)·0.05` → người ngược chiều không đối đầu.
@@ -170,13 +171,25 @@ interface SceneCharacter {
 
 | Tài nguyên | Số lượng | Lấy khi | Trả khi |
 |---|---|---|---|
-| Chỗ xem hàng | 5 / shop | Người đầu hàng được **cổng cửa** cho vào (xem dưới) và có chỗ trống | Đi ra tới cửa ngoài |
-| Ô chờ | 10 / shop, FIFO | **Mọi** lượt ghé đều vào hàng trước (kể cả khi hàng rỗng: đứng ô 1 rồi qua cổng ngay) nếu còn ô | Qua cổng, được chuyển sang chỗ xem hàng |
+| Chỗ xem hàng | 5 / shop | Người đầu hàng qua **cổng cửa** (xem dưới) | Đi ra tới cửa ngoài |
+| Ô chờ | 10 / shop, FIFO | **Mọi** lượt ghé đều đứng vào hàng trước nếu còn ô (hàng rỗng + cổng mở thì đứng ô 1 rồi vào ngay trong cùng bước) | Qua cổng, được chuyển sang chỗ xem hàng |
 
 **Hàng chờ dài ngắn theo dữ liệu (yêu cầu của chủ bot 2026-10-23):** muốn shop đông người thì hàng dài, nên độ dài hàng chờ được ĐIỀU KHIỂN chứ không để tự hình thành.
 
-- **Mục tiêu:** `queueTarget(S) = min(10, ceil(U_S / 2))`, `U_S` = số nhân vật trong cảnh có ≥ 1 lượt ghé shop S. Tính trong lớp mô phỏng (thuần, có test) từ `characters[].visits`. Chia đôi để vẫn còn người đi lại giữa 2 shop và trên đường. Shop đóng cửa → 0.
-- **Cổng cửa:** người đầu hàng chỉ được vào khi có chỗ xem hàng trống **VÀ** (`độ dài hàng > queueTarget(S)` **HOẶC** người đó đã chờ ≥ `maxWait`). `maxWait` = 20–25s (PRNG theo nhân vật). Nhờ đó shop đông giữ được hàng dài, shop vắng gần như vào thẳng, và không ai kẹt mãi.
+- **Hai con số khác nhau, đừng trộn:**
+  - `U_S` (server, `storeUsers`) = số user unique tạo link ở S ngày D trên **toàn bộ** dữ liệu — quyết định hàng **nên** dài bao nhiêu.
+  - `E_S` (mô phỏng) = số nhân vật trong cảnh có ≥ 1 lượt ghé S — giới hạn hàng **có thể** dài bao nhiêu, vì chỉ người thật mới được xếp hàng.
+  - Hai số chỉ lệch khi có > 30 người tạo link trong ngày D (người có link ngày D luôn được chọn vào cảnh trước, mục 3.3).
+- **Mục tiêu:** `queueTarget(S) = shop đóng ? 0 : max(0, min(10, ceil(U_S / 2), E_S − 1))`. Chặn `E_S − 1` để hàng không bao giờ đòi giữ **tất cả** người đủ điều kiện (nếu không sẽ không ai được vào trừ khi hết `maxWait`). Chia đôi để vẫn còn người đi lại giữa 2 shop và trên đường. Ví dụ (E_S đủ lớn): U=0→0, 1→0 (E=1), 3→2, 6→3, 12→6, ≥19→10.
+- **Cổng cửa** — người **đầu hàng** được vào khi và chỉ khi:
+  ```
+  hasFreeBrowseSpot && (queueLength >= queueTarget(S) || waited >= maxWait)
+  ```
+  `queueLength` tính CẢ người đầu hàng. `maxWait` = 20–25s (PRNG theo nhân vật). Hệ quả cố ý:
+  - `queueTarget = 0` (shop vắng, 1 người, hoặc đóng cửa) → `0 >= 0` luôn đúng: vào ngay khi có chỗ, **không có thời gian chờ nhân tạo**.
+  - `queueTarget = 10`, hàng đủ 10 → `10 >= 10` đúng: người đầu hàng vào ngay khi trong shop có chỗ, hàng giữ ở 9–10 người. Không còn ca chỉ vào được nhờ `maxWait`.
+  - Shop đủ 5 người → cổng đóng bất kể độ dài hàng; không ai lọt vào thành người thứ 6.
+  - Trong shop còn chỗ nhưng hàng chưa đạt mục tiêu → người đầu chờ thêm (để hàng dài lên) tối đa `maxWait`.
 - **Trung thực:** hàng chờ shop S chỉ gồm nhân vật thật sự có lượt ghé S chưa diễn trong vòng hiện tại. Không có nhân vật "đóng thế" để làm hàng dài; mỗi người vẫn vào shop **đúng** `visits` lần mỗi vòng diễn. Shop chỉ 1–2 user thì hàng cũng chỉ 1–2 người, có lúc trống — đúng với dữ liệu.
 - **Đưa người về hàng:** người còn lượt ghé S đi thẳng tới S sau khi xuất hiện / sau khi ra khỏi shop kia (không dạo xen giữa các lượt) để hàng có người.
 - Hàng chờ FIFO: khi cổng mở, **người đầu hàng** lấy chỗ xem hàng ngay trong cùng bước; những người còn lại dồn lên 1 ô. Không ai được vượt hàng.
@@ -199,7 +212,7 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 - **Kịch bản = `visits`** theo đúng thứ tự thời gian thật; mỗi vòng diễn tiêu thụ danh sách **đúng 1 lần**, rời cảnh, nghỉ, rồi diễn lại từ đầu (túi reset). Người `visits = []` không bao giờ vào trạng thái nào liên quan tới shop.
 - **Thời gian mô phỏng là thời gian nén** (≈ 12–18s/lượt), không liên quan giờ thật. Không gì trên trang (tóm tắt, bảng tin) đổi trong lúc diễn; trình duyệt không gửi request nào sau khi tải.
 - **PRNG riêng mỗi nhân vật** (mulberry32 từ `seed`): tốc độ đi 0.9–1.15, thời gian xem hàng, thời điểm xuất hiện (0–20s lệch), số vòng dạo. Cùng dữ liệu → cùng diễn biến.
-- **Khởi động ấm:** trước khung hình đầu, chạy mô phỏng tua nhanh 40s (bước cố định 1/30s) để mở trang là shop đã có người **và hàng chờ đã đạt gần độ dài mục tiêu**.
+- **Khởi động ấm:** trước khung hình đầu, tua nhanh mô phỏng (bước cố định 1/30s) **tối thiểu 40s, rồi tiếp tục cho tới khi hàng chờ của mọi shop mở ≥ `queueTarget − 1`, tối đa 120s mô phỏng**. Điều kiện dừng tất định (cùng dữ liệu → cùng điểm dừng). 120s × 30 nhân vật × 30 bước/s = 108.000 bước cập nhật thuần, không vẽ — đo thời gian thật khi kiểm hiệu năng (mục tiêu < 150ms).
 - **Delta time:** chuyển động nhân với dt; dt kẹp tối đa 0.1s.
 - **Ẩn tab:** `visibilitychange` → dừng `requestAnimationFrame` và **đóng băng** đồng hồ mô phỏng. Hiện lại → đặt lại mốc thời gian, khung đầu dt = 0. Không tua bù, không phát hàng loạt sự kiện, không nhảy vị trí.
 
@@ -225,16 +238,22 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 10. JSON nhúng không chứa `userId` của bất kỳ ai; tên chứa `</script><img onerror=…>` không phá trang (cả bảng tin lẫn JSON).
 11. Route: chưa đăng nhập → redirect login; `?ngay=` lạ → hôm nay; TikTok tắt → `tiktokOpen=false`.
 11a. `storeLinks` bằng đúng `summary.shopeeLinks/tiktokLinks` (đếm mọi user, kể cả người ngoài 30 nhân vật).
+11b. `storeUsers`: 1 user tạo 10 link Shopee → đóng góp 1; user tạo link ở cả 2 sàn → được đếm ở cả 2; > 30 user có link ngày D → `storeUsers` vẫn đếm đủ, không bị giới hạn 30.
 
 ### Mô phỏng (`src/web/storeScene/sim/__tests__/*.test.ts`, tsx, không three)
 12. Đồ thị liên thông; mọi đường tìm được chỉ dùng cạnh có thật; qua đường chỉ ở cạnh vạch.
 13. Không điểm đi bộ nào nằm trong vùng bị toà nhà che theo hướng camera (test hình học trên footprint 2D chiếu theo hướng nhìn).
 14. Không bao giờ > 5 người trong shop (chạy 30 nhân vật × 10 phút mô phỏng, kiểm mỗi bước).
 15. Đủ 5 chỗ + 10 ô chờ: người thứ 16 đi vòng dạo, không ai chiếm trùng ô; FIFO đúng thứ tự.
-15a. `queueTarget`: U=0 → 0, U=1 → 1, U=3 → 2, U=12 → 6, U=25 → 10; shop đóng → 0.
-15b. Shop S có U_S = 12, shop kia U = 3 (30 nhân vật, 10 phút mô phỏng sau khởi động ấm): độ dài trung bình hàng S **lớn hơn rõ** hàng kia và không vượt 10.
-15c. Mọi nhân vật từng đứng trong hàng S đều có ≥ 1 lượt S trong `visits`; số lần vào S mỗi vòng diễn = số lượt S.
-15d. Cổng cửa: người đầu hàng vào được sau tối đa `maxWait` khi có chỗ, kể cả khi hàng ngắn hơn mục tiêu.
+15a. `queueTarget` (hàm thuần): (U=0,E=0)→0 · (U=1,E=1)→0 · (U=3,E=3)→2 · (U=12,E=12)→6 · (U=19,E=19)→10 · (U=30,E=30)→10 · (U=100,E=4)→3 · shop đóng → 0.
+15b. U=1: người duy nhất vào shop **trong cùng bước** tới cửa khi có chỗ (thời gian chờ = 0).
+15c. Hai shop U/E khác nhau — kịch bản cố định: 12 nhân vật mỗi người 3 lượt S, 3 nhân vật mỗi người 3 lượt T, 15 nhân vật 0 lượt (tổng 30). Đo mỗi giây trong 10 phút mô phỏng sau khởi động ấm: trung bình hàng S ≥ 0.7 × 6 = 4.2 người **và** ≥ trung bình hàng T + 2; hàng S không bao giờ > 10. Nếu không đạt thì chỉnh tham số nhịp (`maxWait`, thời gian xem hàng, thời gian nghỉ ngoài cảnh) chứ **không hạ ngưỡng**.
+15d. U ≥ 19, hàng đủ 10: khi một chỗ trong shop được trả, người đầu hàng vào ngay trong cùng bước (không phải chờ `maxWait`).
+15e. Shop đủ 5 người + hàng ≥ mục tiêu: cổng đóng, không ai thành người thứ 6.
+15f. Trong shop có chỗ, hàng < mục tiêu: người đầu hàng vào được sau đúng `maxWait` (không kẹt mãi).
+15g. Không khách giả: mọi nhân vật từng đứng trong hàng S đều có ≥ 1 lượt S trong `visits`; số lần vào S mỗi vòng diễn = số lượt S; một user nhiều link chỉ chiếm 1 ô tại một thời điểm.
+15h. Nguồn đếm: dữ liệu có U_S = 40 nhưng cảnh chỉ có E_S = 8 → `queueTarget = 7` (lấy chặn `E_S − 1`), không phải 4 (tính theo E) cũng không phải 10 (tính theo U).
+15i. Khởi động ấm dừng đúng điều kiện và tất định; không vượt 120s mô phỏng.
 16. Nhân vật bị huỷ/rời cảnh khi đang giữ chỗ → chỗ được trả, người đầu hàng vào được.
 17. Không deadlock: sau 10 phút mô phỏng mọi nhân vật đều đã hoàn thành ≥ 1 vòng diễn.
 18. Thứ tự lượt ghé diễn ra đúng `visits`; người `visits = []` không bao giờ vào trạng thái liên quan shop.
@@ -243,7 +262,7 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 21. Đóng băng: dừng đồng hồ rồi chạy lại với dt = 0 → không nhân vật nào đổi vị trí ở khung đầu.
 
 ### Kiểm bằng mắt (Chrome thật, server preview riêng + DB giả, không bật bot)
-22. So với ảnh tham chiếu: bố cục, góc camera, màu, nhãn đọc được; chip ×N đọc được; bảng đếm trên 2 biển hiệu; hàng chờ shop đông dài hơn rõ và không chắn vạch sang đường.
+22. So với ảnh tham chiếu: bố cục, góc camera, màu, nhãn đọc được; chip ×N đọc được; bảng đếm trên 2 biển hiệu; hàng chờ shop đông đọc ra là một hàng dài (cách đều, không dồn cụm), không chắn vạch sang đường, không che mặt kính.
 23. Đo hiệu năng theo mục 8; báo kích thước bundle.
 24. Dự phòng: tắt WebGL (`--disable-webgl`) và chặn file bundle → thông báo hiện đúng, tóm tắt + bảng tin vẫn đủ.
 25. Ẩn tab 30s rồi quay lại: không giật/nhảy.
