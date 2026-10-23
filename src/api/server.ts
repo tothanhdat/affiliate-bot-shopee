@@ -27,6 +27,7 @@ import { registerTipsRoutes } from "./tipsRoutes.js";
 import { LINKS_PAGE_SIZE, renderLinksPage } from "./adminLinksHtml.js";
 import type { AdminSessionStore } from "../core/adminAuth.js";
 import { AppError, EntryNotPendingError } from "../core/errors.js";
+import { buildWithdrawalPaidNotification } from "../core/withdrawalPaidNotification.js";
 import {
   effectivePercents,
   type IndirectCommissionFilters,
@@ -589,10 +590,19 @@ export function createServer(
         // Best-effort: loi gui thong bao khong duoc lam fail response, da danh dau "paid" trong DB roi.
         const { token } = ledgerStore.findOrCreateDashboardToken(paid.platform, paid.userId);
         const withdrawalPaidTemplate = ledgerStore.getWithdrawalPaidTemplate(WITHDRAWAL_PAID_TEMPLATE_DEFAULT);
-        notifyUser(paid.platform, paid.userId, {
+        // Anh chung tu (neu admin dinh kem) gui kem tin nhan (2026-10-23, yeu cau cua chu bot).
+        const paidNotification = buildWithdrawalPaidNotification({
           text: formatWithdrawalPaidReply(withdrawalPaidTemplate, `${dashboardBaseUrl}/d/${token}`),
-        }).catch((notifyErr) => {
+          proof: req.file?.buffer,
+        });
+        notifyUser(paid.platform, paid.userId, paidNotification).catch((notifyErr) => {
           console.warn("[user-notify] gui thong bao da chuyen khoan that bai:", notifyErr);
+          // Gui kem anh loi (anh qua kho/Telegram tu choi kich thuoc...) thi gui lai CHI text: tin bao
+          // tien khong duoc mat chi vi anh. Neu nguyen nhan la user chan bot thi lan 2 cung loi, chi log.
+          if (!paidNotification.image) return;
+          notifyUser(paid.platform, paid.userId, { text: paidNotification.text }).catch((retryErr) => {
+            console.warn("[user-notify] gui lai thong bao (khong anh) cung that bai:", retryErr);
+          });
         });
         res.redirect(303, "/admin/withdrawals");
       } catch (err) {

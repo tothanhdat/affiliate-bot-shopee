@@ -282,6 +282,52 @@ test("POST /admin/withdrawals/:id/mark-paid (kem anh) chuyen dung trang thai, lu
     assert.equal(notifyUserCalls[0].platform, "telegram");
     assert.equal(notifyUserCalls[0].userId, "user-a");
     assert.match(notifyUserCalls[0].message, /Tiền đã bay về bạn rồi đó/);
+    // 4 byte gia khong phai anh doc duoc -> chi gui text (khong doan kich thuoc).
+    assert.equal(notifyUserCalls[0].hasImage, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /admin/withdrawals/:id/mark-paid kem anh THAT -> thong bao cho user co dinh kem anh chung tu", async () => {
+  const { ledgerStore, baseUrl, notifyUserCalls, cleanup } = setup();
+  try {
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc-123",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-1",
+      orderAmount: 1_000_000,
+      commissionAmount: 100_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+    const withdrawal = ledgerStore.requestWithdrawal("telegram", "user-a", THRESHOLD_VND, BANK_INFO);
+
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(1080, 16);
+    png.writeUInt32BE(2400, 20);
+    const formData = new FormData();
+    formData.append("proofImage", new Blob([new Uint8Array(png)], { type: "image/png" }), "bill.png");
+
+    const cookie = await loginAndGetCookie(baseUrl);
+    const res = await fetch(`${baseUrl}/admin/withdrawals/${withdrawal.id}/mark-paid`, {
+      method: "POST",
+      headers: { cookie: cookie! },
+      body: formData,
+      redirect: "manual",
+    });
+    assert.equal(res.status, 303);
+    assert.equal(notifyUserCalls.length, 1);
+    assert.equal(notifyUserCalls[0].hasImage, true);
+    assert.match(notifyUserCalls[0].message, /Tiền đã bay về bạn rồi đó/);
   } finally {
     cleanup();
   }
