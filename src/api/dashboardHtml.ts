@@ -53,6 +53,16 @@ function cancelReason(entry: CommissionEntry): string | null {
   return idx === -1 ? entry.note : entry.note.slice(idx + marker.length);
 }
 
+/**
+ * Che ID user tren dashboard: che 4 ky tu dau + 4 ky tu cuoi bang "****", chi hien phan o giua
+ * (vd 1234567890123456789 -> ****56789012345****). ID tu 8 ky tu tro xuong thi khong con phan giua de hien -> che het.
+ */
+export function maskUserId(userId: string): string {
+  const chars = Array.from(userId);
+  if (chars.length <= 8) return "****";
+  return `****${chars.slice(4, -4).join("")}****`;
+}
+
 /** Vo trang chung cua trang user (nen tim + glow). `extraCss` la CSS rieng cua tung trang (vd trang Tips). */
 export function pageShell(title: string, body: string, extraCss = ""): string {
   return `<!doctype html>
@@ -472,7 +482,7 @@ export function renderDashboardPage(input: {
       const { taxPercent, feePercent } = taxFeePercents(e);
       const proofCell =
         e.status === "paid" && e.proofImagePath
-          ? `<div><div class="label">Bằng chứng</div><div class="value"><a class="proof-link" href="/d/${input.token}/withdrawal-proofs/${encodeURIComponent(e.proofImagePath)}" target="_blank" rel="noopener">Xem ảnh</a></div></div>`
+          ? `<div><div class="label">Chi tiết giao dịch</div><div class="value"><a class="proof-link" href="/d/${input.token}/withdrawal-proofs/${encodeURIComponent(e.proofImagePath)}" target="_blank" rel="noopener">Xem ảnh</a></div></div>`
           : "";
       const reason = cancelReason(e);
       const itemsBlock = renderOrderItems(e, input.entryItems?.get(entryItemsKey(e.merchant, e.orderId)));
@@ -634,9 +644,10 @@ export function renderDashboardPage(input: {
       : "";
 
   const platformLabel = PLATFORM_LABELS[input.platform];
+  const maskedUserId = escapeHtml(maskUserId(input.userId));
   const identityLine = input.displayName
-    ? `👤 ${escapeHtml(input.displayName)} · ${platformLabel} · ID: ${escapeHtml(input.userId)}`
-    : `👤 ${platformLabel} · ID: ${escapeHtml(input.userId)}`;
+    ? `👤 ${escapeHtml(input.displayName)} · ${platformLabel} · ID: ${maskedUserId}`
+    : `👤 ${platformLabel} · ID: ${maskedUserId}`;
 
   // phan-hoi-cai-thien-trai-nghiem-nguoi-dung.md muc 5 (2026-08-20, SUA LAI cung ngay sau khi chot
   // lai voi user): canh bao chi con dung neu con dang "pending" - "confirmed"/"paid" gio la trang
@@ -692,7 +703,7 @@ export function renderDashboardPage(input: {
     : "";
 
   const tipsPill = input.hasTips
-    ? `<a class="tips-pill" href="/d/${encodeURIComponent(input.token)}/tips"><span aria-hidden="true">💡</span> Tips</a>`
+    ? `<a class="tips-pill" href="/d/${encodeURIComponent(input.token)}/tips"><span aria-hidden="true">💡</span> Mẹo</a>`
     : "";
 
   const body = `<div class="page-head${input.hasTips ? " has-tips" : ""}"><h1>💰 Hoa hồng của bạn</h1>${tipsPill}</div>

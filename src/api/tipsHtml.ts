@@ -125,11 +125,11 @@ export function renderTipsPage(input: { token: string; tips: Tip[] }): string {
   const { tips } = input;
   const backHref = `/d/${encodeURIComponent(input.token)}`;
   const head = `<div class="tips-head"><a class="tips-back" href="${backHref}">← Hoa hồng của bạn</a></div>
-<h1>💡 Tips</h1>`;
+<h1>💡 Mẹo</h1>`;
 
   if (tips.length === 0) {
     return pageShell(
-      "Tips",
+      "Mẹo",
       `${head}
 <div class="card" style="margin-top:1.25rem"><p style="margin:0">Chưa có mẹo nào, bạn quay lại sau nhé.</p></div>`,
       TIPS_PAGE_CSS
@@ -163,5 +163,5 @@ ${dots}
 <noscript><style>.tip-slide { opacity: 1; transform: none; }</style></noscript>
 <script>${TIPS_PAGE_SCRIPT}</script>`;
 
-  return pageShell("Tips", body, TIPS_PAGE_CSS);
+  return pageShell("Mẹo", body, TIPS_PAGE_CSS);
 }
