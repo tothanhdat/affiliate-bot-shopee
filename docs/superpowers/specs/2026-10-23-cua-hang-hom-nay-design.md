@@ -15,7 +15,10 @@
 | Active | Có ≥ 1 link thành công trong **7 ngày lịch** D−6…D (giờ VN), không phải 168 giờ. |
 | Ngày xem (D) | "Hôm nay" hoặc "Hôm qua"; ngày = [00:00, 00:00 ngày sau) giờ Asia/Ho_Chi_Minh. |
 | Số nhân vật | Tối đa **30**. |
-| Sức chứa shop | Tối đa **5 người bên trong cùng lúc** + 4 ô chờ ngoài cửa. |
+| Sức chứa shop | Tối đa **5 người bên trong cùng lúc** + tối đa **10 ô chờ** ngoài cửa. |
+| Hàng chờ theo dữ liệu | Độ dài mục tiêu = `min(10, ceil(U_S / 2))`, `U_S` = số user unique có link ở shop S trong ngày D **trong số nhân vật của cảnh**. Hàng chờ chỉ gồm người thật sự có link ở shop đó (chi tiết mục 6). |
+| Bảng đếm trên biển hiệu | Mỗi shop có bảng nổi "🔗 N link hôm nay" (đếm trên **mọi** user Zalo ngày D, khớp dòng tóm tắt); TikTok tắt → "Tạm đóng cửa". "Hôm qua" → "N link hôm qua". |
+| ×N trên nhãn | Tổng số link ngày D của user đó (cả 2 sàn), cố định từ lúc tải trang, không đếm dần. 0 link → không hiện. |
 | Lặp | Cảnh **diễn lại** các lượt của ngày D liên tục (có chú thích rõ). |
 | Cập nhật | Dữ liệu chụp lúc tải trang; không poll, không request nào sau khi tải. |
 | Tương tác | **Không có** (không hover/click nhân vật hay thẻ). |
@@ -106,7 +109,9 @@ interface FeedItem { name: string; avatarUrl: string | null; initials: string;
 ```ts
 interface StoreSceneData {
   dayVn: string;
+  isToday: boolean;               // chữ "hôm nay"/"hôm qua" trên bảng đếm
   tiktokOpen: boolean;
+  storeLinks: { shopee: number; tiktokshop: number };   // = summary.shopeeLinks/tiktokLinks (mọi user)
   characters: SceneCharacter[];   // ≤ 30, theo thứ tự ưu tiên
 }
 interface SceneCharacter {
@@ -142,19 +147,20 @@ interface SceneCharacter {
 - **Camera:** `OrthographicCamera`, yaw 45° / pitch ~35° là điểm khởi đầu, **chỉnh theo ảnh tham chiếu** khi kiểm bằng mắt. Cố định, không xoay/zoom; resize chỉ đổi frustum.
 - **Bố cục:** ngã tư ở giữa, vạch sang đường 4 cạnh, viền lề vàng, vỉa hè nhô. Shopee góc sau trái, TikTok góc sau phải; 2 sân trước có cây, ghế, đèn, bồn cây. Không thêm toà nhà.
 - **Shopee:** thân cam/trắng, mái hiên sọc, biển hiệu túi chữ S (texture canvas), mặt kính, đèn vàng ấm bên trong, 3 kệ + quầy. **TikTok:** thân tối, dải neon cyan/hồng (emissive), biển nốt nhạc. **Đóng cửa:** cửa cuốn xuống, biển tắt, bảng "Tạm đóng cửa".
+- **Bảng đếm trên biển hiệu:** phần tử `CSS2DRenderer` neo phía trên biển hiệu mỗi shop: "🔗 25 link hôm nay" (lấy `storeLinks`), cỡ chữ lớn hơn nhãn tên, màu theo shop (cam / đen viền neon). Bảng cho biết **số link**; hàng chờ cho biết **số người** — hai thứ khác nhau vì một người tạo được nhiều link.
 - **Ánh sáng:** HemisphereLight + 1 DirectionalLight đổ bóng (PCFSoft), ACES tone mapping, bóng tròn mờ dưới chân nhân vật. Bloom (UnrealBloomPass, ngưỡng cao để chỉ neon + đèn sáng) là **tuỳ chọn** theo mức chất lượng. AO không có ở bản đầu.
 - **Nhân vật:** đầu ~45% chiều cao, mắt, má hồng, tóc rời, thân, tay/chân xoay quanh khớp, giày, phụ kiện. Hình khối + vật liệu dùng chung giữa các nhân vật (vật liệu theo bảng màu được cache). Hoạt ảnh bằng code: đi (tay chân ngược pha, nhún), đứng (thở), xem hàng (quay vào kệ, với tay). Túi xuất hiện khi rời kệ: cam = Shopee, đen = TikTok, mỗi tay tối đa 1 túi.
 
 ### 5.1 Nhãn tên
 
-- Dùng `CSS2DRenderer` (phần tử DOM, luôn quay về camera): viên thuốc trắng, avatar tròn (`background-image`, URL đã qua `safeAvatarUrl`) hoặc initials, tên (`textContent`, tối đa 120px, `…`).
+- Dùng `CSS2DRenderer` (phần tử DOM, luôn quay về camera): viên thuốc trắng, avatar tròn (`background-image`, URL đã qua `safeAvatarUrl`) hoặc initials, tên (`textContent`, tối đa 120px, `…`), rồi chip **×N** đậm (N = `visits.length`, tổng cả 2 sàn) — không hiện khi N = 0, nên người chỉ đi dạo có nhãn chỉ tên. N cố định suốt phiên, không tăng theo hoạt ảnh.
 - **Thứ tự trước/sau:** mỗi khung hình đặt `zIndex` theo khoảng cách tới camera (gần hơn đè lên xa hơn) — tự làm, không phụ thuộc hành vi mặc định của thư viện.
 - **Chồng nhãn:** độ cao nhãn có 3 mức xen kẽ theo thứ tự `key`.
 - **Che khuất:** **không có điểm đi bộ nào nằm sau một toà nhà theo góc camera** (ràng buộc thiết kế đồ thị, có test hình học — mục 9). Nhân vật trong shop nhìn qua kính nên nhãn của họ hiện là đúng ý. Vì vậy không cần xử lý nhãn bị vật che.
 
 ## 6. Đồ thị đường đi + giữ chỗ
 
-**Đồ thị viết tay** (`graph.ts`), toạ độ mặt phẳng XZ. Loại điểm: spawn (4 mép bản đồ) · vỉa hè · đầu vạch sang đường (qua đường **chỉ** bằng cạnh vạch) · cửa ngoài ↔ cửa trong (mỗi shop) · 5 chỗ xem hàng (mỗi shop) · 4 ô chờ (mỗi shop, xếp dọc vỉa hè cạnh cửa) · vòng dạo quanh 2 sân trước · ghế.
+**Đồ thị viết tay** (`graph.ts`), toạ độ mặt phẳng XZ. Loại điểm: spawn (4 mép bản đồ) · vỉa hè · đầu vạch sang đường (qua đường **chỉ** bằng cạnh vạch) · cửa ngoài ↔ cửa trong (mỗi shop) · 5 chỗ xem hàng (mỗi shop) · 10 ô chờ (mỗi shop, xếp thành hàng **uốn dọc vỉa hè** cạnh cửa; ô 1 sát cửa) · vòng dạo quanh 2 sân trước · ghế. Hai hàng chờ không được chắn lối vạch sang đường (test hình học).
 
 - **Tìm đường:** Dijkstra trên đồ thị tĩnh (không khoá cạnh động); kết quả xác định. Đồ thị bắt buộc liên thông (test).
 - **Làn:** mỗi cạnh có 2 làn, mỗi nhân vật đi lệch sang **phải theo hướng đi** một khoảng `0.25 + (seed mod 3)·0.05` → người ngược chiều không đối đầu.
@@ -164,21 +170,26 @@ interface SceneCharacter {
 
 | Tài nguyên | Số lượng | Lấy khi | Trả khi |
 |---|---|---|---|
-| Chỗ xem hàng | 5 / shop | Tới điểm tiếp cận cửa mà hàng chờ rỗng và còn chỗ, HOẶC đứng đầu hàng chờ và có chỗ trống | Đi ra tới cửa ngoài |
-| Ô chờ | 4 / shop, FIFO | Tới điểm tiếp cận cửa mà hết chỗ xem hàng (hoặc hàng chờ không rỗng) và còn ô | Được chuyển sang chỗ xem hàng |
+| Chỗ xem hàng | 5 / shop | Người đầu hàng được **cổng cửa** cho vào (xem dưới) và có chỗ trống | Đi ra tới cửa ngoài |
+| Ô chờ | 10 / shop, FIFO | **Mọi** lượt ghé đều vào hàng trước (kể cả khi hàng rỗng: đứng ô 1 rồi qua cổng ngay) nếu còn ô | Qua cổng, được chuyển sang chỗ xem hàng |
 
-- Hàng chờ FIFO: khi một chỗ xem hàng được trả, **người đầu hàng** lấy nó ngay trong cùng bước; những người còn lại dồn lên 1 ô. Không ai được vượt hàng.
-- Hết cả ô chờ → không chờ, đi dạo vòng ngắn (≈ 8–12 giây) rồi quay lại thử.
+**Hàng chờ dài ngắn theo dữ liệu (yêu cầu của chủ bot 2026-10-23):** muốn shop đông người thì hàng dài, nên độ dài hàng chờ được ĐIỀU KHIỂN chứ không để tự hình thành.
+
+- **Mục tiêu:** `queueTarget(S) = min(10, ceil(U_S / 2))`, `U_S` = số nhân vật trong cảnh có ≥ 1 lượt ghé shop S. Tính trong lớp mô phỏng (thuần, có test) từ `characters[].visits`. Chia đôi để vẫn còn người đi lại giữa 2 shop và trên đường. Shop đóng cửa → 0.
+- **Cổng cửa:** người đầu hàng chỉ được vào khi có chỗ xem hàng trống **VÀ** (`độ dài hàng > queueTarget(S)` **HOẶC** người đó đã chờ ≥ `maxWait`). `maxWait` = 20–25s (PRNG theo nhân vật). Nhờ đó shop đông giữ được hàng dài, shop vắng gần như vào thẳng, và không ai kẹt mãi.
+- **Trung thực:** hàng chờ shop S chỉ gồm nhân vật thật sự có lượt ghé S chưa diễn trong vòng hiện tại. Không có nhân vật "đóng thế" để làm hàng dài; mỗi người vẫn vào shop **đúng** `visits` lần mỗi vòng diễn. Shop chỉ 1–2 user thì hàng cũng chỉ 1–2 người, có lúc trống — đúng với dữ liệu.
+- **Đưa người về hàng:** người còn lượt ghé S đi thẳng tới S sau khi xuất hiện / sau khi ra khỏi shop kia (không dạo xen giữa các lượt) để hàng có người.
+- Hàng chờ FIFO: khi cổng mở, **người đầu hàng** lấy chỗ xem hàng ngay trong cùng bước; những người còn lại dồn lên 1 ô. Không ai được vượt hàng.
+- Hết cả 10 ô → không chờ, đi dạo vòng ngắn (≈ 8–12 giây) rồi quay lại thử.
 - `releaseAll(key)` được gọi ở mọi lối ra khỏi trạng thái có giữ chỗ (kể cả rời cảnh/huỷ) — không có chỗ "mồ côi".
-- **Không deadlock:** chỉ có 2 loại tài nguyên, lấy theo thứ tự cố định (ô chờ → chỗ xem hàng), chỗ xem hàng luôn được trả sau thời gian hữu hạn, không có khoá cạnh, đi cùng chiều chỉ giảm tốc. Không thể có chu trình chờ.
+- **Không deadlock / không đói:** chỉ có 2 loại tài nguyên, lấy theo thứ tự cố định (ô chờ → chỗ xem hàng); chỗ xem hàng luôn được trả sau thời gian hữu hạn; cổng cửa luôn mở cho người đầu hàng sau tối đa `maxWait` khi có chỗ; không có khoá cạnh; đi cùng chiều chỉ giảm tốc. Không thể có chu trình chờ, và mọi người trong hàng đều vào được sau thời gian hữu hạn.
 
 ## 7. Máy trạng thái + đạo diễn
 
 ```
 OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
-  ├─ còn lượt ghé ──► GO_TO_STORE ──► (có chỗ) ENTER_STORE ──► BROWSE (1–2 kệ, 2–4s/kệ)
-  │                      │                                        ──► TAKE_BAG ──► EXIT_STORE
-  │                      ├─ (hết chỗ, còn ô) ► QUEUED ──(tới lượt)──► ENTER_STORE
+  ├─ còn lượt ghé ──► GO_TO_STORE ──► (còn ô) QUEUED ──(cổng cửa mở)──► ENTER_STORE ──► BROWSE (1–2 kệ, 2–4s/kệ)
+  │                      │                                                  ──► TAKE_BAG ──► EXIT_STORE
   │                      ├─ (hết ô) ► DETOUR_STROLL ──► GO_TO_STORE
   │                      └─ (shop đóng cửa) ► AT_SHUTTER (1.5s, quay đi, không túi) ──► lượt kế
   │    EXIT_STORE ──► còn lượt? GO_TO_STORE (lượt kế) : STROLL
@@ -188,7 +199,7 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 - **Kịch bản = `visits`** theo đúng thứ tự thời gian thật; mỗi vòng diễn tiêu thụ danh sách **đúng 1 lần**, rời cảnh, nghỉ, rồi diễn lại từ đầu (túi reset). Người `visits = []` không bao giờ vào trạng thái nào liên quan tới shop.
 - **Thời gian mô phỏng là thời gian nén** (≈ 12–18s/lượt), không liên quan giờ thật. Không gì trên trang (tóm tắt, bảng tin) đổi trong lúc diễn; trình duyệt không gửi request nào sau khi tải.
 - **PRNG riêng mỗi nhân vật** (mulberry32 từ `seed`): tốc độ đi 0.9–1.15, thời gian xem hàng, thời điểm xuất hiện (0–20s lệch), số vòng dạo. Cùng dữ liệu → cùng diễn biến.
-- **Khởi động ấm:** trước khung hình đầu, chạy mô phỏng tua nhanh 40s (bước cố định 1/30s) để mở trang là shop đã có người.
+- **Khởi động ấm:** trước khung hình đầu, chạy mô phỏng tua nhanh 40s (bước cố định 1/30s) để mở trang là shop đã có người **và hàng chờ đã đạt gần độ dài mục tiêu**.
 - **Delta time:** chuyển động nhân với dt; dt kẹp tối đa 0.1s.
 - **Ẩn tab:** `visibilitychange` → dừng `requestAnimationFrame` và **đóng băng** đồng hồ mô phỏng. Hiện lại → đặt lại mốc thời gian, khung đầu dt = 0. Không tua bù, không phát hàng loạt sự kiện, không nhảy vị trí.
 
@@ -213,12 +224,17 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 9. Tên thiếu/rỗng → "Khách …xxxx"; avatar `javascript:`/có dấu nháy → `null`.
 10. JSON nhúng không chứa `userId` của bất kỳ ai; tên chứa `</script><img onerror=…>` không phá trang (cả bảng tin lẫn JSON).
 11. Route: chưa đăng nhập → redirect login; `?ngay=` lạ → hôm nay; TikTok tắt → `tiktokOpen=false`.
+11a. `storeLinks` bằng đúng `summary.shopeeLinks/tiktokLinks` (đếm mọi user, kể cả người ngoài 30 nhân vật).
 
 ### Mô phỏng (`src/web/storeScene/sim/__tests__/*.test.ts`, tsx, không three)
 12. Đồ thị liên thông; mọi đường tìm được chỉ dùng cạnh có thật; qua đường chỉ ở cạnh vạch.
 13. Không điểm đi bộ nào nằm trong vùng bị toà nhà che theo hướng camera (test hình học trên footprint 2D chiếu theo hướng nhìn).
 14. Không bao giờ > 5 người trong shop (chạy 30 nhân vật × 10 phút mô phỏng, kiểm mỗi bước).
-15. Đủ 5 chỗ + 4 ô chờ: người thứ 10 đi vòng dạo, không ai chiếm trùng ô; FIFO đúng thứ tự.
+15. Đủ 5 chỗ + 10 ô chờ: người thứ 16 đi vòng dạo, không ai chiếm trùng ô; FIFO đúng thứ tự.
+15a. `queueTarget`: U=0 → 0, U=1 → 1, U=3 → 2, U=12 → 6, U=25 → 10; shop đóng → 0.
+15b. Shop S có U_S = 12, shop kia U = 3 (30 nhân vật, 10 phút mô phỏng sau khởi động ấm): độ dài trung bình hàng S **lớn hơn rõ** hàng kia và không vượt 10.
+15c. Mọi nhân vật từng đứng trong hàng S đều có ≥ 1 lượt S trong `visits`; số lần vào S mỗi vòng diễn = số lượt S.
+15d. Cổng cửa: người đầu hàng vào được sau tối đa `maxWait` khi có chỗ, kể cả khi hàng ngắn hơn mục tiêu.
 16. Nhân vật bị huỷ/rời cảnh khi đang giữ chỗ → chỗ được trả, người đầu hàng vào được.
 17. Không deadlock: sau 10 phút mô phỏng mọi nhân vật đều đã hoàn thành ≥ 1 vòng diễn.
 18. Thứ tự lượt ghé diễn ra đúng `visits`; người `visits = []` không bao giờ vào trạng thái liên quan shop.
@@ -227,7 +243,7 @@ OFFSTAGE ──(hết thời gian nghỉ)──► ENTER_SCENE (đi từ spawn)
 21. Đóng băng: dừng đồng hồ rồi chạy lại với dt = 0 → không nhân vật nào đổi vị trí ở khung đầu.
 
 ### Kiểm bằng mắt (Chrome thật, server preview riêng + DB giả, không bật bot)
-22. So với ảnh tham chiếu: bố cục, góc camera, màu, nhãn đọc được.
+22. So với ảnh tham chiếu: bố cục, góc camera, màu, nhãn đọc được; chip ×N đọc được; bảng đếm trên 2 biển hiệu; hàng chờ shop đông dài hơn rõ và không chắn vạch sang đường.
 23. Đo hiệu năng theo mục 8; báo kích thước bundle.
 24. Dự phòng: tắt WebGL (`--disable-webgl`) và chặn file bundle → thông báo hiện đúng, tóm tắt + bảng tin vẫn đủ.
 25. Ẩn tab 30s rồi quay lại: không giật/nhảy.
