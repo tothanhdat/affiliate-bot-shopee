@@ -205,7 +205,10 @@ export class AddlivetagCommissionLookup implements CommissionLookup {
 
     const body = (await res.json()) as Record<string, unknown> | null;
     if (!body || body.status !== "success") {
-      console.warn(`[commissionLookup] item ${itemId}: status=${String(body?.status)}`);
+      // Kem `message` cua ben cung cap: 2026-10-25 log chi co "status=error" nen phai goi tay moi
+      // biet ly do that ("Database connection failed" - loi phia ho, khong phai key).
+      const message = typeof body?.message === "string" ? ` message=${body.message.slice(0, 200)}` : "";
+      console.warn(`[commissionLookup] item ${itemId}: status=${String(body?.status)}${message}`);
       return null;
     }
 

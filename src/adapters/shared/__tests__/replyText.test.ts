@@ -98,7 +98,7 @@ test("formatGroupJoinWelcomeReply: template admin tu soan khong co placeholder t
 test("formatSuccessReply: template mac dinh chua link, cau hoa hong va dong luu y cuoi", () => {
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee");
   assert.match(result, /Link đây ạ: https:\/\/s\.shopee\.vn\/abc/);
-  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.match(result, /Số tiền hoàn tạm thời em chưa tính được/);
   assert.match(result, /đừng lướt video\/live/);
 });
 
@@ -115,8 +115,14 @@ test("formatSuccessReply: template CU con {{commissionLine}} van render ra cau h
   const result = formatSuccessReply("LINK: {{link}} | GHI CHU: {{commissionLine}}", "https://x.test", "shopee");
   assert.equal(
     result,
-    "LINK: https://x.test | GHI CHU: Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!"
+    "LINK: https://x.test | GHI CHU: Số tiền hoàn tạm thời em chưa tính được, sẽ khôi phục lại sớm. Bạn vẫn có thể mua ngay và vẫn nhận hoa hồng nhé. Số tiền hoàn sẽ chốt theo giá thực trả khi Shopee duyệt nha"
   );
+});
+
+test("formatSuccessReply: cau chua tinh duoc so nhac DUNG ten san cua link (TikTok khong bi noi Shopee)", () => {
+  const result = formatSuccessReply("{{commissionLine}}", "https://x.test", "tiktokshop");
+  assert.match(result, /khi TikTok Shop duyệt nha$/);
+  assert.doesNotMatch(result, /Shopee/);
 });
 
 test("formatSuccessReply: placeholder khong biet duoc giu nguyen, khong throw", () => {
@@ -276,12 +282,12 @@ test("formatSuccessReply: co uoc tinh thi thay cau 'chua bao so duoc' bang so ti
   assert.match(result, /9\.822đ/);
   // Hai cau nay loai tru nhau: noi "em chua bao so lien duoc" ngay canh mot con so cu the la
   // tu mau thuan truoc mat user.
-  assert.doesNotMatch(result, /chưa báo số liền được/);
+  assert.doesNotMatch(result, /em chưa tính được/);
 });
 
 test("formatSuccessReply: khong co uoc tinh thi giu nguyen cau cho xac nhan", () => {
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null);
-  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.match(result, /Số tiền hoàn tạm thời em chưa tính được/);
   assert.ok(!result.includes("{{"), `con placeholder chua thay trong: ${result}`);
 });
 
@@ -313,7 +319,7 @@ test("formatSuccessReply: noCommission -> bao thang la chua bat hoa hong, KHONG 
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null, true);
 
   assert.match(result, /chưa bật hoa hồng/);
-  assert.doesNotMatch(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.doesNotMatch(result, /Số tiền hoàn tạm thời em chưa tính được/);
   assert.ok(!result.includes("{{"), `con placeholder chua thay: ${result}`);
 });
 
@@ -332,7 +338,7 @@ test("formatSuccessReply: khong biet (null, false) -> van la cau hen nhu cu", ()
   // vao day. Noi "san pham chua bat hoa hong" o ca nay la noi SAI ve mot san pham binh thuong.
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://s.shopee.vn/abc", "shopee", null, false);
 
-  assert.match(result, /Hoa hồng chỉ chốt được sau khi Shopee xác nhận đơn/);
+  assert.match(result, /Số tiền hoàn tạm thời em chưa tính được/);
   assert.doesNotMatch(result, /chưa bật hoa hồng/);
 });
 
@@ -450,7 +456,7 @@ test("formatSuccessReply: link TikTok -> cau uoc tinh goi dung ten TikTok Shop, 
 
 test("formatSuccessReply: link TikTok khong co uoc tinh -> cau hen cung goi dung ten san", () => {
   const result = formatSuccessReply(SUCCESS_REPLY_TEMPLATE_DEFAULT, "https://www.tiktok.com/t/abc", "tiktokshop", null);
-  assert.match(result, /sau khi TikTok Shop xác nhận đơn/);
+  assert.match(result, /khi TikTok Shop duyệt nha/);
   assert.doesNotMatch(result, /Shopee/);
 });
 

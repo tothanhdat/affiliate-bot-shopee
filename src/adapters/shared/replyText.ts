@@ -43,9 +43,17 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 /**
  * Cau giai thich vi sao chua bao duoc so hoa hong ngay luc tra link - dung khi KHONG tra duoc
  * uoc tinh (chua bat COMMISSION_LOOKUP_ENABLED, link khong co item_id, hoac nguon loi/timeout).
+ *
+ * (2026-10-25, cau chu cua chu bot sau su co addlivetag "Database connection failed") Cau nay noi
+ * "se khoi phuc lai som" vi ca 2 instance deu BAT tra hoa hong - truong hop thuc te gap la nguon
+ * loi. Instance nao TAT COMMISSION_LOOKUP_ENABLED thi cau nay se hua mot thu khong bao gio den.
  */
 function commissionPendingLine(merchantName: string): string {
-  return `Hoa hồng chỉ chốt được sau khi ${merchantName} xác nhận đơn nên em chưa báo số liền được — đơn confirm là em nhắn ngay nha!`;
+  return (
+    "Số tiền hoàn tạm thời em chưa tính được, sẽ khôi phục lại sớm. " +
+    "Bạn vẫn có thể mua ngay và vẫn nhận hoa hồng nhé. " +
+    `Số tiền hoàn sẽ chốt theo giá thực trả khi ${merchantName} duyệt nha`
+  );
 }
 
 /**
