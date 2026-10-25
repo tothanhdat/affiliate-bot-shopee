@@ -936,11 +936,19 @@ export class ZaloGroupBot {
  * TAttachmentContent voi URL that nam o field href, khong phai string nua. Truoc day code chi
  * check `typeof content === "string"` nen IM LANG voi moi tin nhan co preview - tuc la voi da so
  * cach user thuong gui link (phat hien 2026-08-19, xem rui-ro-can-giai-quyet.md).
+ *
+ * THE (content la object) CHI duoc tinh la co noi dung khi href la LINK SAN PHAM (2026-10-25, bug
+ * that instance sanhoantien, user "Vc"): khach chap nhan ket ban -> Zalo day vao DM mot the "ban
+ * moi" co href = URL ANH cua the (res-zalo.zadn.vn/.../ecard_newfriend_...png). Truoc day href do
+ * di xuong FAQ nhu mot cau hoi va bot tra cau "ngoai pham vi" cho nguoi chua hoi gi. The khong bao
+ * gio la cau hoi (cau hoi luon la text thuan), nen the khong chua link san pham -> null (im lang),
+ * ca trong DM lan group.
  */
 function extractMessageText(content: string | TAttachmentContent | Record<string, unknown>): string | null {
   if (typeof content === "string") return content;
   if (typeof content === "object" && content !== null && typeof (content as TAttachmentContent).href === "string") {
-    return (content as TAttachmentContent).href;
+    const href = (content as TAttachmentContent).href;
+    return extractProductUrls(href).length > 0 ? href : null;
   }
   return null;
 }

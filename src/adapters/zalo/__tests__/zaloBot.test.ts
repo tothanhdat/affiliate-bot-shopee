@@ -972,6 +972,70 @@ test("Zalo DM: tin nhan chi co khoang trang -> im lang hoan toan", async () => {
   }
 });
 
+// 2026-10-25 (bug that, instance sanhoantien, user "Vc"): khach chap nhan ket ban -> Zalo day vao
+// thread DM mot THE "ban moi" (ecard) - content la object co href tro toi ANH cua the, khong phai
+// chuoi rong. Bot lay href lam noi dung, dua vao classifier va gui cau "ngoai pham vi".
+function makeCardMessage(type: ThreadType, href: string, uid = "user-1"): Message {
+  return {
+    type,
+    threadId: type === ThreadType.User ? uid : "group-1",
+    isSelf: false,
+    data: {
+      uidFrom: uid,
+      dName: "Vc",
+      content: { title: "", description: "", href, thumb: href, childnumber: 0, action: "", params: "", type: "" },
+      msgId: "msg-1",
+      cliMsgId: "cli-1",
+    },
+  } as unknown as Message;
+}
+
+const NEW_FRIEND_ECARD_URL =
+  "https://res-zalo.zadn.vn/upload/media/2018/4/23/ecard_newfriend_3_VN_2x_1524478617325.png";
+
+test("Zalo DM: the 'ban moi' khi khach chap nhan ket ban -> im lang, khong goi classifier", async () => {
+  const { sent, handleMessage, attachFaq, cleanup } = setup();
+  try {
+    let classifyCalls = 0;
+    attachFaq(async () => {
+      classifyCalls += 1;
+      return [];
+    });
+
+    await handleMessage(makeCardMessage(ThreadType.User, NEW_FRIEND_ECARD_URL));
+
+    assert.equal(sent.length, 0, "the he thong khong phai cau hoi, khong duoc gui gi");
+    assert.equal(classifyCalls, 0, "khong duoc dua href cua the vao classifier");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo group: the khong phai link san pham -> khong tra huong dan su dung", async () => {
+  const { sent, handleMessage, cleanup } = setup();
+  try {
+    await handleMessage(makeCardMessage(ThreadType.Group, NEW_FRIEND_ECARD_URL));
+
+    assert.equal(sent.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Zalo DM: link san pham dan kem preview (content la the) -> VAN tra link affiliate", async () => {
+  const { sent, ledgerStore, handleMessage, cleanup } = setup();
+  try {
+    ledgerStore.tryClaimWelcomeMessage("zalo", "user-1");
+
+    await handleMessage(makeCardMessage(ThreadType.User, PRODUCT_URL));
+
+    assert.equal(sent.length, 1);
+    assert.match(bodyOf(sent[0]), /https:\/\/mock-aff\.local\//);
+  } finally {
+    cleanup();
+  }
+});
+
 test("Zalo group: tin nhan noi dung RONG -> khong tra huong dan su dung", async () => {
   const { sent, handleMessage, cleanup } = setup();
   try {
