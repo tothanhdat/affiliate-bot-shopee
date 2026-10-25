@@ -203,6 +203,47 @@ test("GET /d/:token du nguong -> co form rut tien; POST thanh cong goi notifyAdm
   }
 });
 
+// 2026-10-25 (yeu cau chu bot): tin bao admin chi co "zalo/<uid>" thi khong biet la ai -> kem ten
+// hien thi, VAN giu uid (2 user co the trung ten). Chua co ten thi giu nguyen dang cu.
+test("POST withdraw: tin bao admin kem TEN hien thi cua user (van giu platform/userId)", async () => {
+  const { ledgerStore, baseUrl, notifyCalls, cleanup } = setup();
+  try {
+    ledgerStore.upsertUserProfile("telegram", "user-a", "Nguyễn Văn A");
+    const { token } = ledgerStore.findOrCreateDashboardToken("telegram", "user-a");
+    ledgerStore.recordConversion({
+      subId: "telegram-user-a-abc-123",
+      platform: "telegram",
+      userId: "user-a",
+      merchant: "shopee",
+      orderId: "order-1",
+      orderAmount: 1_000_000,
+      commissionAmount: 100_000,
+      taxPercent: 0,
+      platformFeePercent: 0,
+      userSharePercent: 80,
+      maxCommissionRatioPercent: 1000,
+      holdConfig: { thresholdVnd: 0, holdDays: 0 },
+    });
+
+    const res = await fetch(`${baseUrl}/d/${token}/withdraw`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        bankName: "Vietcombank",
+        bankAccountNumber: "0123456789",
+        bankAccountHolder: "Nguyen Van A",
+      }),
+    });
+    assert.equal(res.status, 303);
+    assert.equal(notifyCalls.length, 1);
+    assert.match(notifyCalls[0], /Yêu cầu rút tiền mới: Nguyễn Văn A \(telegram\/user-a\) - /);
+    assert.doesNotMatch(notifyCalls[0], /\(id: /, "chu bot khong can ma yeu cau rut trong tin bao");
+  } finally {
+    cleanup();
+  }
+});
+
 test("don da rut hien link xem anh bang chung; user khac khong xem duoc anh cua nguoi khac", async () => {
   const { ledgerStore, baseUrl, withdrawalProofDir, cleanup } = setup();
   try {

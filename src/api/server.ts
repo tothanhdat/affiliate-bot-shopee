@@ -465,10 +465,15 @@ export function createServer(
       }
 
       // Best-effort: loi gui thong bao khong duoc lam fail response, yeu cau rut tien da luu DB roi.
+      // Kem ten hien thi (2026-10-25, yeu cau chu bot: chi co uid thi khong biet la ai) nhung VAN giu
+      // platform/userId - 2 user co the trung ten. Chua co ho so/ten rong -> dang cu, chi uid.
+      const userKey = `${identity.platform}/${identity.userId}`;
+      const displayName = ledgerStore.getDisplayName(identity.platform, identity.userId)?.trim();
+      const userLabel = displayName ? `${displayName} (${userKey})` : userKey;
       notifyAdmin(
         withdrawal.debtApplied > 0
-          ? `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - rút ${formatVnd(requestedVnd)}, trừ nợ ${formatVnd(withdrawal.debtApplied)}, cần chuyển ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
-          : `💸 Yêu cầu rút tiền mới: ${identity.platform}/${identity.userId} - ${formatVnd(withdrawal.amount)} (id: ${withdrawal.id})`
+          ? `💸 Yêu cầu rút tiền mới: ${userLabel} - rút ${formatVnd(requestedVnd)}, trừ nợ ${formatVnd(withdrawal.debtApplied)}, cần chuyển ${formatVnd(withdrawal.amount)}`
+          : `💸 Yêu cầu rút tiền mới: ${userLabel} - ${formatVnd(withdrawal.amount)}`
       ).catch((notifyErr) => {
         console.warn("[admin-notify] gui thong bao yeu cau rut tien that bai:", notifyErr);
       });
